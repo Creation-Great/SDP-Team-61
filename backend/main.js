@@ -22,7 +22,7 @@ const cas = new CASAuthentication({
   is_dev_mode: false,
 });
 
-// --- Default route ---
+// Default route
 app.get("/", (req, res) => {
   res.send(`
     <h1>Peer Review Login</h1>
