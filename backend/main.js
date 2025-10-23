@@ -34,30 +34,15 @@ const cas = new CASAuthentication({
   is_dev_mode: false,
 });
 
-// File upload configuration
+
 const upload = multer({ dest: UPLOAD_DIR });
 
-// Data storage
+// Temp data storage
 let DOCS = [];
 let NEXT_DOC_ID = 1;
 const ASSIGNED_REVIEWERS = new Set();
-const ROSTER = []; // Add your roster here
+const ROSTER = [];
 
-// Helper functions
-function determineRole(netid) {
-  const facultyNetids = ['faculty1', 'professor', 'instructor'];
-  return facultyNetids.includes(netid.toLowerCase()) ? 'faculty' : 'student';
-}
-
-function requireRole(role) {
-  return (req, res, next) => {
-    if (req.session.role === role) {
-      next();
-    } else {
-      res.status(403).send('Access denied. Insufficient permissions.');
-    }
-  };
-}
 
 function pickRandomReviewer(ownerNetid) {
   const pool = ROSTER.filter(
@@ -69,7 +54,6 @@ function pickRandomReviewer(ownerNetid) {
   return reviewer;
 }
 
-// Routes
 // Default route
 app.get("/", (req, res) => {
   res.send(`
@@ -121,12 +105,7 @@ app.get("/submit-document", cas.block, requireRole("student"), (req, res) => {
 });
 
 // Document submission handler
-app.post(
-  "/submit-document",
-  cas.block,
-  requireRole("student"),
-  upload.single("file"),              
-  (req, res) => {
+app.post("/submit-document", cas.block, requireRole("student"), upload.single("file"), (req, res) => {
     const owner = req.session[cas.session_name];
     const { title } = req.body || {};
     if (!title) return res.status(400).send("Title is required.");
