@@ -22,7 +22,7 @@ app.use(morgan('dev'));
 // Dev-only header-based auth; replace with CAS/JWT gateway in prod
 app.use(devAuth);
 
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
+app.get('/healthz', (_req: any, res: any) => res.json({ ok: true }));
 
 app.use('/me', meRouter);
 app.use('/submissions', submissionsRouter);
@@ -35,7 +35,12 @@ app.use((err: any, _req: any, res: any, _next: any) => {
   res.status(500).json({ error: 'internal_error', detail: String(err?.message || err) });
 });
 
+// Only start server when not running tests
 const port = process.env.PORT || 8080;
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`API listening on http://localhost:${port}`);
+  });
+}
+
+export default app;

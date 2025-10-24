@@ -33,7 +33,7 @@ router.get('/:id/assignments', asyncHandler(async (req, res) => {
       );
       return r.rows;
     });
-    return res.json(rows);
+    res.json(rows);
   } else {
     const row = await withDb(user_id, role, async (client) => {
       const r = await client.query(
@@ -44,7 +44,7 @@ router.get('/:id/assignments', asyncHandler(async (req, res) => {
       );
       return r.rows[0];
     });
-    return res.json(row);
+    res.json(row);
   }
 }));
 

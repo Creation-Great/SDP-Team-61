@@ -180,3 +180,21 @@ BEGIN
   REFRESH MATERIALIZED VIEW CONCURRENTLY mv_instructor_cohort;
 END
 $$;
+
+-- Views for student/reviewer aggregates
+DROP VIEW IF EXISTS v_submission_assignment_counts;
+CREATE VIEW v_submission_assignment_counts AS
+SELECT s.submission_id,
+       s.user_id,
+       COUNT(a.assignment_id) FILTER (WHERE a.status <> 'canceled') AS assigned_count,
+       COUNT(a.assignment_id) FILTER (WHERE a.status = 'completed') AS completed_count
+FROM submissions s
+LEFT JOIN assignments a USING (submission_id)
+GROUP BY s.submission_id, s.user_id;
+
+DROP VIEW IF EXISTS v_reviewer_todo;
+CREATE VIEW v_reviewer_todo AS
+SELECT a.assignment_id, a.submission_id, a.reviewer_id, a.created_at
+FROM assignments a
+LEFT JOIN reviews r ON r.submission_id = a.submission_id AND r.reviewer_id = a.reviewer_id
+WHERE a.status = 'pending' AND r.review_id IS NULL;

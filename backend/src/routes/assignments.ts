@@ -60,7 +60,7 @@ router.post('/', requireRole('instructor'), asyncHandler(async (req, res) => {
     return { code: 200, body: { note: 'already_assigned', status } };
   });
 
-  return res.status(result.code).json(result.body);
+  res.status(result.code).json(result.body);
 }));
 
 export default router;
