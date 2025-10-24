@@ -8,7 +8,7 @@ paths:
   /me/submissions:
     get: { summary: My submissions counts, responses: { '200': { description: ok } } }
   /me/assignments:
-    get: { summary: My reviewer todo, responses: { '200': { description: ok } } }
+    get: { summary: My reviewer todo, responses: { '200': { description: ok (includes assignment_id, submission_id, created_at, title, masked_uri) } } }
   /submissions:
     post: { summary: Create submission meta, responses: { '201': { description: created } } }
   /submissions/{id}/assignments:

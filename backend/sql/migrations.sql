@@ -102,6 +102,20 @@ DROP POLICY IF EXISTS p_submissions_owner ON submissions;
 CREATE POLICY p_submissions_owner ON submissions
 USING (user_id = COALESCE(current_setting('app.current_user_id', true), '00000000-0000-0000-0000-000000000000')::uuid);
 
+-- Allow assigned reviewers to read the specific submissions they are assigned to (read-only)
+DROP POLICY IF EXISTS p_submissions_assigned_reviewer_read ON submissions;
+CREATE POLICY p_submissions_assigned_reviewer_read ON submissions
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM assignments a
+    WHERE a.submission_id = submissions.submission_id
+      AND a.reviewer_id = COALESCE(current_setting('app.current_user_id', true), '00000000-0000-0000-0000-000000000000')::uuid
+      AND a.status <> 'canceled'
+  )
+);
+
 DROP POLICY IF EXISTS p_assignments_reader ON assignments;
 CREATE POLICY p_assignments_reader ON assignments
 USING (

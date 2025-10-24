@@ -33,10 +33,20 @@ router.get('/assignments', async (req, res, next) => {
     const { user_id, role } = (req as any).user;
     const rows = await withDb(user_id, role, async (client) => {
       const q = `
-        SELECT a.assignment_id, a.submission_id, a.created_at
+        SELECT
+          a.assignment_id,
+          a.submission_id,
+          a.created_at,
+          s.title,
+          s.masked_uri
         FROM assignments a
-        LEFT JOIN reviews r ON r.submission_id = a.submission_id AND r.reviewer_id = a.reviewer_id
-        WHERE a.reviewer_id = $1 AND a.status = 'pending' AND r.review_id IS NULL
+        JOIN submissions s ON s.submission_id = a.submission_id
+        LEFT JOIN reviews r
+               ON r.submission_id = a.submission_id
+              AND r.reviewer_id   = a.reviewer_id
+        WHERE a.reviewer_id = $1
+          AND a.status = 'pending'
+          AND r.review_id IS NULL
         ORDER BY a.created_at DESC
       `;
       const r = await client.query(q, [user_id]);
