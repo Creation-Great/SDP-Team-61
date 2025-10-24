@@ -28,7 +28,8 @@
     "escape-html": "^1.0.3",
     "etag": "^1.8.1",
     "express": "^5.1.0",
-    "express-session": "^1.18.2",
+  "express-session": "^1.18.2",
+  "express-async-handler": "^1.2.0",
     "finalhandler": "^2.1.0",
     "forwarded": "^0.2.0",
     "fresh": "^2.0.0",
@@ -83,7 +84,7 @@
   "scripts": {
     "test": "jest",
     "start": "node main.js",
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+  "dev": "tsx src/app.ts",
     "build": "tsc",
     "migrate": "psql $DATABASE_URL -f sql/migrations.sql",
     "seed": "psql $DATABASE_URL -f sql/seed.sql",
@@ -93,11 +94,14 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@types/jest": "^29.5.12",
     "@types/node": "^20.11.17",
     "@types/supertest": "^2.0.16",
     "jest": "^29.7.0",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
   }
