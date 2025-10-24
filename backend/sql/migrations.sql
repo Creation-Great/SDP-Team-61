@@ -47,6 +47,8 @@ DO $$ BEGIN
 END$$;
 CREATE INDEX IF NOT EXISTS idx_assign_reviewer ON assignments(reviewer_id);
 CREATE INDEX IF NOT EXISTS idx_assign_submission ON assignments(submission_id);
+-- Optimize reviewer pending lookups
+CREATE INDEX IF NOT EXISTS idx_assign_reviewer_pending ON assignments(reviewer_id, status);
 
 CREATE TABLE IF NOT EXISTS reviews (
   review_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),

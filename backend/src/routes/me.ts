@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { withDb } from '../db';
+import { getMaskedDownloadUrl } from '../utils/storage';
 const router = Router();
 
 router.get('/submissions', async (req, res, next) => {
@@ -24,7 +25,12 @@ router.get('/submissions', async (req, res, next) => {
       const r = await client.query(q, [user_id]);
       return r.rows;
     });
-    res.json(rows);
+    // Optionally replace masked_uri with a short-lived download URL
+    const transformed = await Promise.all(rows.map(async (row: any) => ({
+      ...row,
+      masked_uri: await getMaskedDownloadUrl(row.masked_uri),
+    })));
+    res.json(transformed);
   } catch (e) { next(e); }
 });
 
