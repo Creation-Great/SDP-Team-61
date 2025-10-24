@@ -26,7 +26,7 @@ app.use(
   })
 );
 
-// Initialize CAS 
+// Initialize CAS
 const cas = new CASAuthentication({
   cas_url: process.env.CAS_URL,
   service_url: process.env.SERVICE_URL,
@@ -34,25 +34,27 @@ const cas = new CASAuthentication({
   is_dev_mode: false,
 });
 
-
 const upload = multer({ dest: UPLOAD_DIR });
 
-// Temp data storage
+// Temporary in-memory storage
 let DOCS = [];
 let NEXT_DOC_ID = 1;
 const ASSIGNED_REVIEWERS = new Set();
 const ROSTER = [];
 
 
+// Random reviewer picker
 function pickRandomReviewer(ownerNetid) {
   const pool = ROSTER.filter(
-    n => n !== ownerNetid.toLowerCase() && !ASSIGNED_REVIEWERS.has(n)
+    (n) => n !== ownerNetid.toLowerCase() && !ASSIGNED_REVIEWERS.has(n)
   );
   if (pool.length === 0) return null;
   const reviewer = pool[Math.floor(Math.random() * pool.length)];
-  ASSIGNED_REVIEWERS.add(reviewer); 
+  ASSIGNED_REVIEWERS.add(reviewer);
   return reviewer;
 }
+
+// --- Routes ---
 
 // Default route
 app.get("/", (req, res) => {
@@ -62,7 +64,6 @@ app.get("/", (req, res) => {
     <a href="/login">Login</a>
   `);
 });
-
 
 // Login route
 app.get("/login", cas.bounce, (req, res) => {
@@ -77,17 +78,27 @@ app.get("/login", cas.bounce, (req, res) => {
 // Logout route
 app.get("/logout", cas.logout);
 
-
-app.get("/student", requireRole("student"), (req, res) => {
+// Student dashboard
+app.get("/student", (req, res) => {
   res.send(`
     <h1>Student Dashboard</h1>
+    <p>Welcome ${req.session[cas.session_name]}</p>
+    <a href='/submit-document'>Submit Document</a><br/>
+    <a href='/logout'>Logout</a>
+  `);
+});
+
+// Faculty dashboard
+app.get("/faculty", (req, res) => {
+  res.send(`
+    <h1>Faculty Dashboard</h1>
     <p>Welcome ${req.session[cas.session_name]}</p>
     <a href='/logout'>Logout</a>
   `);
 });
 
 // Document submission form
-app.get("/submit-document", cas.block, requireRole("student"), (req, res) => {
+app.get("/submit-document", (req, res) => {
   res.send(`
     <h1>Submit Document (PDF)</h1>
     <form action="/submit-document" method="post" enctype="multipart/form-data">
@@ -105,38 +116,36 @@ app.get("/submit-document", cas.block, requireRole("student"), (req, res) => {
 });
 
 // Document submission handler
-app.post("/submit-document", cas.block, requireRole("student"), upload.single("file"), (req, res) => {
-    const owner = req.session[cas.session_name];
-    const { title } = req.body || {};
-    if (!title) return res.status(400).send("Title is required.");
-    if (!req.file) return res.status(400).send("PDF file is required.");
+app.post("/submit-document", upload.single("file"), (req, res) => {
+  const owner = req.session[cas.session_name];
+  const { title } = req.body || {};
+  if (!title) return res.status(400).send("Title is required.");
+  if (!req.file) return res.status(400).send("PDF file is required.");
 
-    const reviewer = pickRandomReviewer(owner);
+  const reviewer = pickRandomReviewer(owner);
 
-    const doc = {
-      id: NEXT_DOC_ID++,
-      owner,
-      title,
-      fileStoredName: req.file.filename,
-      fileOriginalName: req.file.originalname,
-      fileSize: req.file.size,
-      fileMime: req.file.mimetype,
-      storedPath: req.file.path,
-      submissionDate: new Date().toISOString(),
-      reviewer,
-      reviewDate: null,
-      reviewStatus: reviewer ? "assigned" : "pending",
-      reviewFeedback: null,
-    };
+  const doc = {
+    id: NEXT_DOC_ID++,
+    owner,
+    title,
+    fileStoredName: req.file.filename,
+    fileOriginalName: req.file.originalname,
+    fileSize: req.file.size,
+    fileMime: req.file.mimetype,
+    storedPath: req.file.path,
+    submissionDate: new Date().toISOString(),
+    reviewer,
+    reviewDate: null,
+    reviewStatus: reviewer ? "assigned" : "pending",
+    reviewFeedback: null,
+  };
 
-    DOCS.push(doc);
-    console.log("New document:", doc);
+  DOCS.push(doc);
+  console.log("New document:", doc);
 
-    return res.redirect("/student");
-  }
-);
-
+  return res.redirect("/student");
+});
 
 app.listen(5000, () =>
-  console.log("Server running on http://localhost:5000")
+  console.log(" Server running on http://localhost:5000")
 );
