@@ -68,11 +68,7 @@ app.get("/", (req, res) => {
 // Login route
 app.get("/login", cas.bounce, (req, res) => {
   const netid = req.session[cas.session_name];
-  const role = determineRole(netid);
-  req.session.role = role;
-
-  if (role === "faculty") res.redirect("/faculty");
-  else res.redirect("/student");
+  res.redirect("/student");
 });
 
 // Logout route
