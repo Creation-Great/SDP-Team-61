@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import cors from "cors";
 import { fileURLToPath } from "url";
 
 dotenv.config();
@@ -17,16 +18,28 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 // App setup
 const app = express();
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 
+
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    credentials: true,
+  })
+);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session setup
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
-    saveUninitialized: true,
+    saveUninitialized: false,
   })
 );
 
-// Initialize CAS
+// CAS setup
 const cas = new CASAuthentication({
   cas_url: process.env.CAS_URL,
   service_url: process.env.SERVICE_URL,
@@ -36,12 +49,11 @@ const cas = new CASAuthentication({
 
 const upload = multer({ dest: UPLOAD_DIR });
 
-// Temporary in-memory storage
+//Temporary In-Memory Storage
 let DOCS = [];
 let NEXT_DOC_ID = 1;
 const ASSIGNED_REVIEWERS = new Set();
 const ROSTER = [];
-
 
 // Random reviewer picker
 function pickRandomReviewer(ownerNetid) {
@@ -54,69 +66,32 @@ function pickRandomReviewer(ownerNetid) {
   return reviewer;
 }
 
-// --- Routes ---
+// ROUTES
 
-// Default route
+// Default
 app.get("/", (req, res) => {
-  res.send(`
-    <h1>Peer Review Login</h1>
-    <p>Log in using your UConn NetID and Password.</p>
-    <a href="/login">Login</a>
-  `);
+  res.json({ status: "ok", message: "PeerReview backend active" });
 });
 
-// Login route
+// Login (handled by CAS)
 app.get("/login", cas.bounce, (req, res) => {
   const netid = req.session[cas.session_name];
-  res.redirect("/student");
+  req.session.netid = netid;
+  console.log(`Logged in: ${netid}`);
+  res.redirect(`${FRONTEND_URL}/student`);
 });
 
-// Logout route
+// Logout
 app.get("/logout", cas.logout);
 
-// Student dashboard
-app.get("/student", (req, res) => {
-  res.send(`
-    <h1>Student Dashboard</h1>
-    <p>Welcome ${req.session[cas.session_name]}</p>
-    <a href='/submit-document'>Submit Document</a><br/>
-    <a href='/logout'>Logout</a>
-  `);
-});
-
-// Faculty dashboard
-app.get("/faculty", (req, res) => {
-  res.send(`
-    <h1>Faculty Dashboard</h1>
-    <p>Welcome ${req.session[cas.session_name]}</p>
-    <a href='/logout'>Logout</a>
-  `);
-});
-
-// Document submission form
-app.get("/submit-document", (req, res) => {
-  res.send(`
-    <h1>Submit Document (PDF)</h1>
-    <form action="/submit-document" method="post" enctype="multipart/form-data">
-      <label for="title">Title:</label><br/>
-      <input type="text" id="title" name="title" required /><br/><br/>
-
-      <label for="file">PDF File:</label><br/>
-      <input type="file" id="file" name="file" accept="application/pdf" required /><br/><br/>
-
-      <button type="submit">Submit</button>
-    </form>
-    <br/>
-    <a href="/student">Back to Dashboard</a>
-  `);
-});
-
-// Document submission handler
+// Handle document submission
 app.post("/submit-document", upload.single("file"), (req, res) => {
   const owner = req.session[cas.session_name];
   const { title } = req.body || {};
-  if (!title) return res.status(400).send("Title is required.");
-  if (!req.file) return res.status(400).send("PDF file is required.");
+
+  if (!owner) return res.status(401).json({ error: "Not authenticated" });
+  if (!title) return res.status(400).json({ error: "Title is required." });
+  if (!req.file) return res.status(400).json({ error: "PDF file is required." });
 
   const reviewer = pickRandomReviewer(owner);
 
@@ -127,21 +102,19 @@ app.post("/submit-document", upload.single("file"), (req, res) => {
     fileStoredName: req.file.filename,
     fileOriginalName: req.file.originalname,
     fileSize: req.file.size,
-    fileMime: req.file.mimetype,
     storedPath: req.file.path,
     submissionDate: new Date().toISOString(),
     reviewer,
-    reviewDate: null,
     reviewStatus: reviewer ? "assigned" : "pending",
-    reviewFeedback: null,
   };
 
   DOCS.push(doc);
-  console.log("New document:", doc);
+  console.log(" New document submitted:", doc);
 
-  return res.redirect("/student");
+  res.status(201).json({ success: true, message: "Document uploaded.", doc });
 });
 
-app.listen(5000, () =>
-  console.log(" Server running on http://localhost:5000")
-);
+// Server start
+app.listen(5000, () => {
+  console.log(" Backend running on http://localhost:5000");
+});
