@@ -1,21 +1,502 @@
 openapi: 3.0.3
 info:
   title: Peer Review API
-  version: "0.1.3"
+  version: "2.0.0"
+  description: |
+    Enhanced peer review system with assignment visibility and fairness tracking.
+    Version 2.0 includes: Assignment explainability, cost breakdown, fairness metrics, privacy-safe audit logs.
+  contact:
+    name: Yanxiao (Database & Security Lead)
+
 servers:
   - url: http://localhost:8080
+    description: Local development server
+
+components:
+  schemas:
+    CostBreakdown:
+      type: object
+      description: Detailed cost vector breakdown
+      properties:
+        workload:
+          type: number
+          format: float
+          description: Current reviewer workload cost (0-1)
+        diversity:
+          type: number
+          format: float
+          description: Diversity cost for varied perspectives (0-1)
+        conflict:
+          type: number
+          format: float
+          description: Conflict of interest cost (0-1)
+        total:
+          type: number
+          format: float
+          description: Total combined cost
+    
+    FairnessMetrics:
+      type: object
+      description: Fairness indicators snapshot
+      properties:
+        tpr_gap:
+          type: number
+          format: float
+          description: True Positive Rate gap between groups
+        fpr_gap:
+          type: number
+          format: float
+          description: False Positive Rate gap between groups
+        demographic_parity:
+          type: number
+          format: float
+          description: Demographic parity measure
+        workload_gini:
+          type: number
+          format: float
+          description: Gini coefficient for workload distribution
+    
+    AssignmentDetail:
+      type: object
+      properties:
+        assignment_id:
+          type: string
+          format: uuid
+        reviewer_id:
+          type: string
+          format: uuid
+        reviewer_netid:
+          type: string
+        reviewer_role:
+          type: string
+          enum: [student, instructor, admin]
+        strategy:
+          type: string
+          enum: [hungarian, ilp, ppo, manual]
+          description: Assignment algorithm used
+        score:
+          type: number
+          format: float
+          description: Objective function score
+        cost_breakdown:
+          $ref: '#/components/schemas/CostBreakdown'
+        fairness_metrics:
+          $ref: '#/components/schemas/FairnessMetrics'
+        status:
+          type: string
+          enum: [pending, completed, canceled]
+        assigned_at:
+          type: string
+          format: date-time
+        review_submitted:
+          type: boolean
+        review_created_at:
+          type: string
+          format: date-time
+          nullable: true
+
 paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
   /me/submissions:
-    get: { summary: My submissions counts, responses: { '200': { description: ok } } }
+    get:
+      summary: My submissions counts
+      responses:
+        '200':
+          description: ok
+
   /me/assignments:
-    get: { summary: My reviewer todo, responses: { '200': { description: ok (includes assignment_id, submission_id, created_at, title, masked_uri) } } }
+    get:
+      summary: My reviewer todo
+      responses:
+        '200':
+          description: ok (includes assignment_id, submission_id, created_at, title, masked_uri)
+
   /submissions:
-    post: { summary: Create submission meta, responses: { '201': { description: created } } }
+    post:
+      summary: Create submission meta
+      responses:
+        '201':
+          description: created
+
   /submissions/{id}/assignments:
-    get: { summary: Counts for student / list for instructor, responses: { '200': { description: ok } } }
+    get:
+      summary: Counts for student / list for instructor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: ok
+
   /assign:
-    post: { summary: Assign or revive canceled assignment, responses: { '200': { description: already }, '201': { description: created } } }
+    post:
+      summary: Assign or revive canceled assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submission_id:
+                  type: string
+                  format: uuid
+                reviewer_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: already assigned
+        '201':
+          description: created
+
+  /assign/v1/by-submission/{id}:
+    get:
+      summary: Get all assignments for a submission with visibility details
+      description: |
+        Returns detailed assignment information including strategy, cost breakdown, and fairness metrics.
+        Accessible by submission owner, assigned reviewers, or instructors.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Submission ID
+        - name: include_canceled
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include canceled assignments
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submission_id:
+                    type: string
+                    format: uuid
+                  assignees:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssignmentDetail'
+                  total_count:
+                    type: integer
+                  active_count:
+                    type: integer
+                  completed_count:
+                    type: integer
+              example:
+                submission_id: "123e4567-e89b-12d3-a456-426614174000"
+                assignees:
+                  - assignment_id: "223e4567-e89b-12d3-a456-426614174001"
+                    reviewer_id: "323e4567-e89b-12d3-a456-426614174002"
+                    reviewer_netid: "abc123"
+                    reviewer_role: "student"
+                    strategy: "hungarian"
+                    score: 0.82
+                    cost_breakdown:
+                      workload: 0.3
+                      diversity: 0.4
+                      conflict: 0.12
+                      total: 0.82
+                    fairness_metrics:
+                      tpr_gap: 0.06
+                      fpr_gap: 0.05
+                    status: "pending"
+                    assigned_at: "2025-11-11T10:00:00Z"
+                    review_submitted: false
+                total_count: 1
+                active_count: 1
+                completed_count: 0
+        '403':
+          description: Forbidden (not authorized to view)
+        '404':
+          description: Submission not found
+
+  /assign/v1/by-reviewer/{id}:
+    get:
+      summary: Get all assignments for a reviewer
+      description: |
+        Returns assignments for a specific reviewer with pagination.
+        Reviewers can only view their own assignments unless they are instructors.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Reviewer user ID
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, completed, canceled]
+          description: Filter by assignment status
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reviewer_id:
+                    type: string
+                    format: uuid
+                  assignments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        assignment_id:
+                          type: string
+                          format: uuid
+                        submission_id:
+                          type: string
+                          format: uuid
+                        submission_title:
+                          type: string
+                        strategy:
+                          type: string
+                        score:
+                          type: number
+                        cost_breakdown:
+                          $ref: '#/components/schemas/CostBreakdown'
+                        fairness_metrics:
+                          $ref: '#/components/schemas/FairnessMetrics'
+                        status:
+                          type: string
+                  pagination:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      limit:
+                        type: integer
+                      offset:
+                        type: integer
+                      has_more:
+                        type: boolean
+        '403':
+          description: Forbidden (cannot view other reviewer's assignments)
+
+  /assign/v1/explain/{assignment_id}:
+    get:
+      summary: Get detailed explanation of an assignment decision
+      description: |
+        Returns comprehensive explanation of why this specific assignment was made,
+        including cost breakdown, fairness snapshot, and alternative options (for instructors).
+      parameters:
+        - name: assignment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  assignment_id:
+                    type: string
+                    format: uuid
+                  submission_id:
+                    type: string
+                    format: uuid
+                  submission_title:
+                    type: string
+                  submitter:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      netid:
+                        type: string
+                      group_id:
+                        type: string
+                  reviewer:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      netid:
+                        type: string
+                      group_id:
+                        type: string
+                  assignment:
+                    type: object
+                    properties:
+                      strategy:
+                        type: string
+                      score:
+                        type: number
+                      status:
+                        type: string
+                      assigned_at:
+                        type: string
+                        format: date-time
+                      review_submitted:
+                        type: boolean
+                  cost_breakdown:
+                    $ref: '#/components/schemas/CostBreakdown'
+                  fairness_metrics:
+                    $ref: '#/components/schemas/FairnessMetrics'
+                  explanation:
+                    type: object
+                    properties:
+                      objective:
+                        type: string
+                        description: What the assignment algorithm optimizes
+                      why_this_pair:
+                        type: string
+                        description: Why this specific reviewer-submission pairing
+                      key_factors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            factor:
+                              type: string
+                            impact:
+                              type: string
+                            note:
+                              type: string
+                  alternatives:
+                    type: array
+                    description: Alternative assignment options (instructors only)
+                    items:
+                      type: object
+                      properties:
+                        assignment_id:
+                          type: string
+                          format: uuid
+                        reviewer_id:
+                          type: string
+                          format: uuid
+                        reviewer_netid:
+                          type: string
+                        score:
+                          type: number
+                        delta_score:
+                          type: number
+                          description: Score difference from chosen assignment
+              example:
+                assignment_id: "223e4567-e89b-12d3-a456-426614174001"
+                submission_id: "123e4567-e89b-12d3-a456-426614174000"
+                submission_title: "ML Ethics Paper"
+                submitter:
+                  user_id: "423e4567-e89b-12d3-a456-426614174003"
+                  netid: "submitter123"
+                  group_id: "group-a"
+                reviewer:
+                  user_id: "323e4567-e89b-12d3-a456-426614174002"
+                  netid: "reviewer456"
+                  group_id: "group-b"
+                assignment:
+                  strategy: "hungarian"
+                  score: 0.82
+                  status: "pending"
+                  assigned_at: "2025-11-11T10:00:00Z"
+                  review_submitted: false
+                cost_breakdown:
+                  workload: 0.3
+                  diversity: 0.4
+                  conflict: 0.12
+                  total: 0.82
+                fairness_metrics:
+                  tpr_gap: 0.06
+                  fpr_gap: 0.05
+                  demographic_parity: 0.93
+                explanation:
+                  objective: "Minimize total cost using Hungarian algorithm (optimal bipartite matching)"
+                  why_this_pair: "This pairing achieves the lowest feasible total cost under constraints"
+                  key_factors:
+                    - factor: "workload"
+                      impact: "low"
+                      note: "Reviewer has light current workload"
+                    - factor: "diversity"
+                      impact: "good"
+                      note: "High reviewer diversity for this submission"
+        '404':
+          description: Assignment not found or unauthorized
+
   /reviews:
-    post: { summary: Create review; ML stores outputs separately, responses: { '201': { description: created } } }
+    post:
+      summary: Create review; ML stores outputs separately
+      responses:
+        '201':
+          description: created
+
   /instructor/overview:
-    get: { summary: Cohort-level weekly aggregates, responses: { '200': { description: ok } } }
+    get:
+      summary: Cohort-level weekly aggregates
+      responses:
+        '200':
+          description: ok
+
+security:
+  - DevHeaders: []
+
+components:
+  securitySchemes:
+    DevHeaders:
+      type: apiKey
+      in: header
+      name: x-user-id
+      description: |
+        Development-only authentication via headers:
+        - x-user-id: UUID of user
+        - x-user-role: student | instructor | admin
+        - x-user-course: course ID
+        - x-user-group: group ID (optional)
+        
+        In production, replace with CAS/JWT/OAuth2.
+
