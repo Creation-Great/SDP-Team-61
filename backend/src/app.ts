@@ -10,7 +10,8 @@ import assignmentsRouter from './routes/assignments';
 import assignmentVisibilityRouter from './routes/assignmentVisibility';
 import instructorRouter from './routes/instructor';
 import reviewsRouter from './routes/reviews';
-import { devAuth } from './middleware/auth';
+import aiRouter from './routes/ai';
+import { authenticate, devAuth } from './middleware/auth';
 import { 
   correlationIdMiddleware, 
   privacyHashMiddleware, 
@@ -36,7 +37,9 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
-app.use(devAuth);
+// Use authentication middleware based on environment
+// In test mode, always use devAuth for compatibility
+app.use(process.env.NODE_ENV === 'test' ? devAuth : authenticate);
 
 app.get('/healthz', (_req: any, res: any) => res.json({ ok: true }));
 
@@ -46,6 +49,7 @@ app.use('/assign', assignmentsRouter);
 app.use('/assign', assignmentVisibilityRouter);
 app.use('/instructor', instructorRouter);
 app.use('/reviews', reviewsRouter);
+app.use('/ai', aiRouter);
 
 app.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err);
