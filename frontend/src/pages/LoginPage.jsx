@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import API from "../services/api";
+import "../styles/AuthForm.css";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const handleLogin = async (e) => {
@@ -13,9 +15,7 @@ export default function LoginPage() {
 
     try {
       const res = await API.post("/auth/login", { email, password });
-      const token = res.data.token;
-
-      localStorage.setItem("token", token);
+      localStorage.setItem("token", res.data.token);
       navigate("/home");
     } catch (err) {
       setError("Invalid email or password");
@@ -23,30 +23,50 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ maxWidth: "300px", margin: "50px auto" }}>
-      <h2>Login</h2>
+    <div className="auth-wrapper">
+      <div className="auth-card">
+        <h2>Login</h2>
 
-      <form onSubmit={handleLogin}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
+        <form onSubmit={handleLogin}>
+          <div className="input-group">
+            <input
+              type="email"
+              placeholder="Email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+          <div className="input-group password-container">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
 
-        {error && <p style={{ color: "red" }}>{error}</p>}
+            <button
+              type="button"
+              className="show-hide-btn"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
 
-        <button type="submit">Login</button>
-      </form>
+          {error && <p className="error-text">{error}</p>}
+
+          <button type="submit" className="auth-btn">
+            Login
+          </button>
+        </form>
+
+        <p className="auth-switch">
+          Don’t have an account? <Link to="/register">Register</Link>
+        </p>
+      </div>
     </div>
   );
 }

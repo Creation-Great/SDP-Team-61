@@ -1,0 +1,184 @@
+/* ============================================
+   FULL PAGE WRAPPER (centers the card perfectly)
+=============================================== */
+.auth-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+  
+  /* ============================================
+     AUTH CARD (matches your screenshot exactly)
+  =============================================== */
+  .auth-card {
+    width: 420px;
+    background: rgba(255, 255, 255, 0.10);
+    padding: 40px 38px;
+    border-radius: 18px;
+    backdrop-filter: blur(22px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+    text-align: center;
+  }
+  
+  /* Title */
+  .auth-card h2 {
+    color: white;
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 28px;
+  }
+  
+  /* ============================================
+     INPUT GROUP (spacing)
+  =============================================== */
+  .input-group {
+    width: 100%;
+    margin-bottom: 20px;
+  }
+  
+  /* Input + Select styling */
+  .input-group input,
+  .input-group select {
+    width: 100%;
+    padding: 14px 18px;
+    font-size: 15px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    outline: none;
+    color: white;
+    transition: 0.2s ease;
+  }
+  
+  .input-group select {
+    cursor: pointer;
+  }
+  
+  /* Placeholder color */
+  .input-group input::placeholder {
+    color: rgba(255, 255, 255, 0.65);
+  }
+  
+  /* Focus effect */
+  .input-group input:focus,
+  .input-group select:focus {
+    background: rgba(255, 255, 255, 0.32);
+    border-color: rgba(255, 255, 255, 0.55);
+  }
+  
+  /* ============================================
+     PASSWORD FIELD (show/hide button)
+  =============================================== */
+  .password-container {
+    position: relative;
+  }
+  
+  .show-hide-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+  
+    background: rgba(255, 255, 255, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    color: #1d1d1d;
+    transition: 0.15s ease-in-out;
+  
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .show-hide-btn:hover {
+    background: rgba(255, 255, 255, 0.55);
+  }
+  
+  /* keeps input text from being covered */
+  .password-container input {
+    padding-right: 82px !important;
+  }
+  
+  /* ============================================
+     FIX AUTOFILL COLOR (Chrome & Safari)
+  =============================================== */
+  input:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.25) inset !important;
+    -webkit-text-fill-color: white !important;
+    caret-color: white;
+  }
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.32) inset !important;
+  }
+  
+  /* ============================================
+     MAIN BUTTON
+  =============================================== */
+  .auth-btn {
+    width: 100%;
+    padding: 15px;
+    margin-top: 10px;
+    background: #4da3ff;
+    color: white;
+    font-size: 17px;
+    font-weight: 600;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: 0.2s ease;
+  }
+  
+  .auth-btn:hover {
+    background: #6ab5ff;
+  }
+  
+  /* ============================================
+     FOOTER TEXT
+  =============================================== */
+  .auth-switch {
+    color: #dddddd;
+    margin-top: 18px;
+    font-size: 15px;
+  }
+  
+  .auth-switch a {
+    color: #87baff;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  
+  .auth-switch a:hover {
+    text-decoration: underline;
+  }
+  
+  /* ============================================
+     ERROR MESSAGE
+  =============================================== */
+  .error-text {
+    color: #ff6d6d;
+    font-size: 14px;
+    margin-top: -8px;
+    margin-bottom: 10px;
+  }
+  /* ================================
+   FORCE AUTOFILL TO MATCH DARK STYLE
+  =================================*/
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.15) inset !important;
+    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.15) inset !important;
+    -webkit-text-fill-color: white !important;
+    caret-color: white !important;
+    border-radius: 8px !important;
+    transition: background-color 9999s ease-in-out 0s !important;
+  }

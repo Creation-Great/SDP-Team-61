@@ -1,29 +1,28 @@
 import { Link, useNavigate } from "react-router-dom";
+import "./Navbar.css";
 
 export default function Navbar() {
   const navigate = useNavigate();
-  const role = localStorage.getItem("role");
-  const loggedIn = !!localStorage.getItem("token");
 
-  function handleLogout() {
-    localStorage.clear();
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     navigate("/login");
-  }
+  };
 
   return (
-    <nav style={{ padding: "10px", background: "#eee" }}>
-      <Link to="/" style={{ marginRight: "10px" }}>Home</Link>
+    <div className="navbar">
+      <div className="navbar-left">AI Peer Review</div>
 
-      {role === "student" && (
-        <Link to="/submit-review" style={{ marginRight: "10px" }}>Submit Review</Link>
-      )}
+      <div className="navbar-center">
+        <Link to="/home">Home</Link>
+        <Link to="/upload">Upload Assignment</Link>
+        <Link to="/submit-review">Submit Review</Link>
+      </div>
 
-      {role === "instructor" && (
-        <Link to="/instructor" style={{ marginRight: "10px" }}>Dashboard</Link>
-      )}
-
-      {!loggedIn && <Link to="/login">Login</Link>}
-      {loggedIn && <button onClick={handleLogout}>Logout</button>}
-    </nav>
+      <div className="navbar-right">
+        <button onClick={handleLogout}>Logout</button>
+      </div>
+    </div>
   );
 }
