@@ -10,6 +10,6 @@ export default function StudentRoute({ children }) {
   if (user.role !== "student") {
     return <Navigate to="/instructor" replace />;
   }
-
+  
   return children;
 }

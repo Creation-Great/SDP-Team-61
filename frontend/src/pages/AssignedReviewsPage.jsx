@@ -3,15 +3,17 @@ import { motion } from "framer-motion";
 import API from "../services/api";
 import { useNavigate } from "react-router-dom";
 
-export default function StudentDashboardPage() {
-  const [submissions, setSubmissions] = useState([]);
+export default function AssignedReviewsPage() {
+  const [reviews, setReviews] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Load student's own submissions
-    API.get("/assignments/mine")
-      .then((res) => setSubmissions(res.data))
-      .catch(() => setSubmissions([]));
+    API.get("/assignments/reviews/my-tasks")
+      .then((res) => setReviews(res.data))
+      .catch((err) => {
+        console.error("Failed to load assigned tasks:", err);
+        setReviews([]);
+      });
   }, []);
 
   return (
@@ -29,20 +31,19 @@ export default function StudentDashboardPage() {
         transition={{ duration: 0.5 }}
         style={{ maxWidth: "900px", margin: "0 auto" }}
       >
-        {/* -------------------- MY SUBMISSIONS -------------------- */}
         <h1
           style={{
             color: "white",
             fontSize: "42px",
             fontWeight: "700",
             textAlign: "center",
-            marginBottom: "30px",
+            marginBottom: "40px",
           }}
         >
-          Your Submissions
+          Assigned Reviews
         </h1>
 
-        {submissions.length === 0 ? (
+        {reviews.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -59,32 +60,15 @@ export default function StudentDashboardPage() {
               color: "white",
             }}
           >
-            <h3>No submissions yet</h3>
+            <h3>No review tasks assigned yet</h3>
             <p style={{ opacity: 0.8, marginTop: "10px" }}>
-              Upload your first assignment to get started.
+              When assignments are uploaded, you will receive peer review tasks here.
             </p>
-
-            <a
-              href="/upload"
-              style={{
-                marginTop: "20px",
-                display: "inline-block",
-                background: "rgba(255,255,255,0.2)",
-                padding: "12px 24px",
-                borderRadius: "10px",
-                color: "white",
-                textDecoration: "none",
-                border: "1px solid rgba(255,255,255,0.3)",
-                fontWeight: "600",
-              }}
-            >
-              Upload Assignment
-            </a>
           </motion.div>
         ) : (
-          submissions.map((s, idx) => (
+          reviews.map((r, idx) => (
             <motion.div
-              key={s._id}
+              key={r._id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.07 }}
@@ -100,15 +84,32 @@ export default function StudentDashboardPage() {
                 boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
               }}
             >
-              <h2>{s.title}</h2>
+              <h2>{r.assignment?.title || "Untitled Assignment"}</h2>
 
               <p style={{ opacity: 0.85 }}>
-                <strong>Status:</strong> {s.status}
+                <strong>Student:</strong>{" "}
+                {r.assignment?.user?.name || "Unknown"}
               </p>
 
               <p style={{ opacity: 0.6 }}>
-                Submitted: {new Date(s.createdAt).toLocaleString()}
+                Assigned: {new Date(r.createdAt).toLocaleString()}
               </p>
+
+              <button
+                onClick={() => navigate(`/review/${r._id}`)}
+                style={{
+                  marginTop: "15px",
+                  background: "rgba(255,255,255,0.25)",
+                  padding: "12px 20px",
+                  borderRadius: "10px",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                }}
+              >
+                Start Review
+              </button>
             </motion.div>
           ))
         )}

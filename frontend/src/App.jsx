@@ -1,24 +1,29 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
+// Components
 import Navbar from "./components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+// Pages
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import HomePage from "./pages/HomePage";
-import SubmitReviewPage from "./pages/SubmitReviewPage";
-import InstructorDashboardPage from "./pages/InstructorDashboardPage";
+import HomePage from "./pages/HomePage"; // if you still use it
 import StudentDashboardPage from "./pages/StudentDashboardPage";
 import UploadAssignment from "./pages/UploadAssignment";
-import ProtectedRoute from "./components/ProtectedRoute";
+import AssignedReviewsPage from "./pages/AssignedReviewsPage";
+import ReviewPage from "./pages/ReviewPage";
+import InstructorDashboardPage from "./pages/InstructorDashboardPage";
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
 
-        {/* Public Routes */}
+        {/* ----------- PUBLIC ROUTES ----------- */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Student Dashboard */}
+        {/* ----------- STUDENT DASHBOARD ----------- */}
         <Route
           path="/home"
           element={
@@ -29,18 +34,7 @@ export default function App() {
           }
         />
 
-        {/* Submit Review */}
-        <Route
-          path="/submit-review"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <SubmitReviewPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Upload Assignment */}
+        {/* ----------- UPLOAD ASSIGNMENT ----------- */}
         <Route
           path="/upload"
           element={
@@ -51,7 +45,29 @@ export default function App() {
           }
         />
 
-        {/* Instructor Dashboard */}
+        {/* ----------- ASSIGNED REVIEWS PAGE ----------- */}
+        <Route
+          path="/reviews"
+          element={
+            <ProtectedRoute>
+              <Navbar />
+              <AssignedReviewsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ----------- REVIEW FORM PAGE ----------- */}
+        <Route
+          path="/review/:id"
+          element={
+            <ProtectedRoute>
+              <Navbar />
+              <ReviewPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ----------- INSTRUCTOR DASHBOARD ----------- */}
         <Route
           path="/instructor"
           element={
@@ -62,7 +78,7 @@ export default function App() {
           }
         />
 
-        {/* Default route: ALWAYS send the user to login first */}
+        {/* ----------- DEFAULT REDIRECT ----------- */}
         <Route path="*" element={<Navigate to="/login" replace />} />
 
       </Routes>

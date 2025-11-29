@@ -5,25 +5,31 @@ import dotenv from "dotenv";
 
 import authRoutes from "./routes/authRoutes.js";
 import assignmentRoutes from "./routes/assignmentRoutes.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
 
-dotenv.config();  // Load .env variables
+dotenv.config();
 
 const app = express();
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(express.json());
 
-// Connect to MongoDB (Mongoose v9 syntax)
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .catch((err) => console.error("MongoDB error:", err));
 
-// Serve uploaded files
 app.use("/uploads", express.static("uploads"));
 
-// Routes
 app.use("/auth", authRoutes);
 app.use("/assignments", assignmentRoutes);
+app.use("/reviews", reviewRoutes);
 
 export default app;

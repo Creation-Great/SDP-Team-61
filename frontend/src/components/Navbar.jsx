@@ -17,7 +17,7 @@ export default function Navbar() {
       <div className="navbar-center">
         <Link to="/home">Home</Link>
         <Link to="/upload">Upload Assignment</Link>
-        <Link to="/submit-review">Submit Review</Link>
+        <Link to="/reviews">Assigned Reviews</Link>
       </div>
 
       <div className="navbar-right">
