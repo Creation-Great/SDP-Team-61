@@ -1,3 +1,4 @@
+// frontend/src/pages/StudentDashboardPage.jsx
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import API from "../services/api";
@@ -8,7 +9,6 @@ export default function StudentDashboardPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Load student's own submissions
     API.get("/assignments/mine")
       .then((res) => setSubmissions(res.data))
       .catch(() => setSubmissions([]));
@@ -29,7 +29,6 @@ export default function StudentDashboardPage() {
         transition={{ duration: 0.5 }}
         style={{ maxWidth: "900px", margin: "0 auto" }}
       >
-        {/* -------------------- MY SUBMISSIONS -------------------- */}
         <h1
           style={{
             color: "white",
@@ -82,35 +81,62 @@ export default function StudentDashboardPage() {
             </a>
           </motion.div>
         ) : (
-          submissions.map((s, idx) => (
-            <motion.div
-              key={s._id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.07 }}
-              whileHover={{ scale: 1.02 }}
-              style={{
-                backdropFilter: "blur(14px)",
-                background: "rgba(255,255,255,0.12)",
-                borderRadius: "16px",
-                padding: "22px",
-                marginBottom: "20px",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.2)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-              }}
-            >
-              <h2>{s.title}</h2>
+          submissions.map((s, idx) => {
+            // ⭐ CHECK IF ANY REVIEW FOR THIS ASSIGNMENT IS COMPLETED
+            const hasCompletedReview =
+              s.reviews &&
+              Array.isArray(s.reviews) &&
+              s.reviews.some((r) => r.completed === true);
 
-              <p style={{ opacity: 0.85 }}>
-                <strong>Status:</strong> {s.status}
-              </p>
+            return (
+              <motion.div
+                key={s._id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.07 }}
+                whileHover={{ scale: 1.02 }}
+                style={{
+                  backdropFilter: "blur(14px)",
+                  background: "rgba(255,255,255,0.12)",
+                  borderRadius: "16px",
+                  padding: "22px",
+                  marginBottom: "20px",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
+                }}
+              >
+                <h2>{s.title}</h2>
 
-              <p style={{ opacity: 0.6 }}>
-                Submitted: {new Date(s.createdAt).toLocaleString()}
-              </p>
-            </motion.div>
-          ))
+                <p style={{ opacity: 0.85 }}>
+                  <strong>Status:</strong> {s.status}
+                </p>
+
+                <p style={{ opacity: 0.6 }}>
+                  Submitted: {new Date(s.createdAt).toLocaleString()}
+                </p>
+
+                {/* ⭐ SHOW VIEW REVIEW BUTTON ONLY IF REVIEW EXISTS */}
+                {hasCompletedReview && (
+                  <button
+                    onClick={() => navigate(`/view-review/${s._id}`)}
+                    style={{
+                      marginTop: "15px",
+                      padding: "10px 18px",
+                      background: "rgba(255,255,255,0.15)",
+                      border: "1px solid rgba(255,255,255,0.3)",
+                      borderRadius: "10px",
+                      color: "white",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    View Review
+                  </button>
+                )}
+              </motion.div>
+            );
+          })
         )}
       </motion.div>
     </div>

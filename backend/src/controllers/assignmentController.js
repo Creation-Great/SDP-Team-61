@@ -20,7 +20,7 @@ export const uploadAssignment = async (req, res) => {
       title,
       description,
       filename: req.file.filename,
-      fileUrl: `/uploads/${req.file.filename}`,   // 🔥 IMPORTANT
+      fileUrl: `/uploads/${req.file.filename}`,
       status: "Submitted",
     });
 
@@ -84,15 +84,23 @@ export const uploadAssignment = async (req, res) => {
 };
 
 // ==============================
-// Get My Assignments
+// Get My Assignments (UPDATED)
 // ==============================
 export const getMyAssignments = async (req, res) => {
   try {
-    const assignments = await Assignment.find({ user: req.user._id }).sort({
-      createdAt: -1,
-    });
+    const assignments = await Assignment.find({ user: req.user._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Attach review info to each assignment
+    for (let a of assignments) {
+      const reviews = await Review.find({ assignment: a._id }).lean();
+      a.reviews = reviews;
+    }
+
     res.json(assignments);
   } catch (err) {
+    console.error("Error fetching student assignments:", err);
     res.status(500).json({ message: "Failed to fetch assignments" });
   }
 };

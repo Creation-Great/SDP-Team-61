@@ -1,3 +1,4 @@
+// backend/src/models/Assignment.js
 import mongoose from "mongoose";
 
 const assignmentSchema = new mongoose.Schema(
@@ -14,7 +15,6 @@ const assignmentSchema = new mongoose.Schema(
 
     filename: { type: String, required: true },
 
-    // Needed for showing PDF in the reviewer screen
     fileUrl: { type: String, required: true },
 
     status: {
@@ -23,9 +23,7 @@ const assignmentSchema = new mongoose.Schema(
       default: "Submitted",
     },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 export default mongoose.model("Assignment", assignmentSchema);

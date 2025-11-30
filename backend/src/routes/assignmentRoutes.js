@@ -14,18 +14,18 @@ const router = express.Router();
 // STUDENT UPLOAD
 router.post("/upload", authMiddleware, upload.single("file"), uploadAssignment);
 
-// STUDENT VIEW OF THEIR OWN ASSIGNMENTS
+// STUDENT VIEW THEIR OWN ASSIGNMENTS (UPDATED)
 router.get("/mine", authMiddleware, getMyAssignments);
 
-// INSTRUCTOR VIEW OF ALL ASSIGNMENTS
+// INSTRUCTOR VIEW ALL ASSIGNMENTS
 router.get("/all", authMiddleware, getAllAssignments);
 
-// REVIEWER – VIEW THEIR ASSIGNED REVIEWS
+// REVIEWER — GET ASSIGNED REVIEWS
 router.get("/reviews/my-tasks", authMiddleware, async (req, res) => {
   try {
     const tasks = await Review.find({
       reviewer: req.user._id,
-      completed: false,          // 🔥 ONLY SHOW PENDING REVIEWS
+      completed: false,
     }).populate("assignment");
 
     res.json(tasks);
