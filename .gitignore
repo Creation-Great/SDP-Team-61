@@ -1,0 +1,16 @@
+# OS junk
+.DS_Store
+
+# IDE stuff
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Environment variables (root-level)
+.env
+*.env
+
+# Ignore top-level node_modules (if someone installs wrongly)
+node_modules/

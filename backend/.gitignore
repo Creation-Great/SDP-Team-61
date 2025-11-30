@@ -1,3 +1,11 @@
-uploads/
+# Node modules
 node_modules/
+
+# Environment variables
 .env
+
+# Uploaded files directory
+uploads/
+
+# Logs
+*.log
