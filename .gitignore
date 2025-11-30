@@ -5,12 +5,13 @@
 .vscode/
 .idea/
 
-# Logs
-*.log
-
-# Environment variables (root-level)
+# Environment variables
 .env
 *.env
 
-# Ignore top-level node_modules (if someone installs wrongly)
-node_modules/
+# Ignore node_modules ONLY inside backend and frontend
+backend/node_modules/
+frontend/node_modules/
+
+# Ignore uploads ONLY in backend
+backend/uploads/
