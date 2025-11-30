@@ -5,7 +5,8 @@ node_modules/
 .env
 
 # Uploaded files directory
-uploads/
+uploads/*
+!uploads/.gitkeep
 
 # Logs
 *.log
