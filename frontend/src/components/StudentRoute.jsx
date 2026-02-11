@@ -1,15 +1,17 @@
-import { Navigate } from "react-router-dom";
+import { Navigate } from 'react-router-dom';
 
 export default function StudentRoute({ children }) {
-  const token = localStorage.getItem("token");
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
+  const token = localStorage.getItem('token');
+  let user = {};
+  try {
+    user = JSON.parse(localStorage.getItem('user') || '{}');
+  } catch {
+    // invalid JSON
+  }
 
-  if (!token || !user) return <Navigate to="/login" replace />;
-
-  // Block instructor from student-only pages
-  if (user.role !== "student") {
+  if (!token) return <Navigate to="/login" replace />;
+  if (user.role === 'instructor' || user.role === 'admin') {
     return <Navigate to="/instructor" replace />;
   }
-  
   return children;
 }

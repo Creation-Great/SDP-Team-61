@@ -1,98 +1,78 @@
-// frontend/src/App.jsx
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import ProtectedRoute from './components/ProtectedRoute';
+import InstructorRoute from './components/InstructorRoute';
+import StudentRoute from './components/StudentRoute';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import StudentDashboardPage from './pages/StudentDashboardPage';
+import InstructorDashboardPage from './pages/InstructorDashboardPage';
+import UploadAssignment from './pages/UploadAssignment';
+import AssignedReviewsPage from './pages/AssignedReviewsPage';
+import ReviewPage from './pages/ReviewPage';
+import ViewReviewPage from './pages/ViewReviewPage';
+import './App.css';
 
-// Components
-import Navbar from "./components/Navbar";
-import ProtectedRoute from "./components/ProtectedRoute";
-
-// Pages
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import HomePage from "./pages/HomePage";
-import StudentDashboardPage from "./pages/StudentDashboardPage";
-import UploadAssignment from "./pages/UploadAssignment";
-import AssignedReviewsPage from "./pages/AssignedReviewsPage";
-import ReviewPage from "./pages/ReviewPage";
-import InstructorDashboardPage from "./pages/InstructorDashboardPage";
-import ViewReviewPage from "./pages/ViewReviewPage";
+function AppLayout({ children }) {
+  return (
+    <>
+      <Navbar />
+      <main className="page">
+        <div className="page-content">{children}</div>
+      </main>
+    </>
+  );
+}
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* PUBLIC ROUTES */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+    <Routes>
+      {/* Public routes */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
-        {/* STUDENT DASHBOARD */}
-        <Route
-          path="/home"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <StudentDashboardPage />
-            </ProtectedRoute>
-          }
-        />
+      {/* Student routes */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><StudentDashboardPage /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/upload" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><UploadAssignment /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/reviews" element={
+        <ProtectedRoute>
+          <AppLayout><AssignedReviewsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/review/:id" element={
+        <ProtectedRoute>
+          <AppLayout><ReviewPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/view-review/:submissionId" element={
+        <ProtectedRoute>
+          <AppLayout><ViewReviewPage /></AppLayout>
+        </ProtectedRoute>
+      } />
 
-        {/* UPLOAD */}
-        <Route
-          path="/upload"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <UploadAssignment />
-            </ProtectedRoute>
-          }
-        />
+      {/* Instructor routes */}
+      <Route path="/instructor" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><InstructorDashboardPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
 
-        {/* ASSIGNED REVIEWS */}
-        <Route
-          path="/reviews"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <AssignedReviewsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* REVIEW FORM */}
-        <Route
-          path="/review/:id"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <ReviewPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* ⭐ VIEW STUDENT REVIEW PAGE */}
-        <Route
-          path="/view-review/:assignmentId"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <ViewReviewPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* INSTRUCTOR DASHBOARD */}
-        <Route
-          path="/instructor"
-          element={
-            <ProtectedRoute>
-              <Navbar />
-              <InstructorDashboardPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* DEFAULT REDIRECT */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    </BrowserRouter>
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }

@@ -1,63 +1,109 @@
 .navbar {
-    width: 100%;
-    height: 70px;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(12px);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 20px;
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    overflow: hidden; /* prevent layout overflow */
+  width: 100%;
+  height: var(--navbar-height);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.navbar-brand {
+  font-size: 1.4rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.navbar-links {
+  display: flex;
+  gap: 32px;
+}
+
+.navbar-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 8px 0;
+  border-bottom: 2px solid transparent;
+  transition: all 0.25s;
+}
+
+.navbar-links a:hover {
+  color: var(--primary);
+}
+
+.navbar-links a.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.navbar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.navbar-username {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.chip-role {
+  background: rgba(77, 163, 255, 0.2);
+  color: var(--primary);
+  border: 1px solid rgba(77, 163, 255, 0.3);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.btn-logout {
+  background: var(--danger);
+  border: none;
+  padding: 8px 18px;
+  border-radius: var(--border-radius-sm);
+  color: white;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-logout:hover {
+  background: var(--danger-hover);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0 12px;
+    gap: 8px;
   }
-  
-  .navbar-left {
-    font-size: 24px;
-    font-weight: 700;
-    white-space: nowrap;
+
+  .navbar-brand {
+    font-size: 1.1rem;
   }
-  
-  .navbar-center {
-    display: flex;
-    gap: 40px;
-    margin: 0 auto;      /* centers the middle menu */
+
+  .navbar-links {
+    gap: 16px;
   }
-  
-  .navbar-center a {
-    color: white;
-    text-decoration: none;
-    font-size: 16px;
-    font-weight: 500;
-    transition: 0.25s;
+
+  .navbar-links a {
+    font-size: 0.85rem;
   }
-  
-  .navbar-center a:hover {
-    color: #66e0ff;
+
+  .navbar-username {
+    display: none;
   }
-  
-  .navbar-right {
-    display: flex;
-    align-items: center;
-    white-space: nowrap;   /* prevents wrapping */
-  }
-  
-  .navbar-right button {
-    background: #ff6b6b;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 10px;
-    color: white;
-    font-weight: 600;
-    cursor: pointer;
-    transition: 0.25s;
-  }
-  
-  .navbar-right button:hover {
-    background: #ff8585;
-  }
-  
+}

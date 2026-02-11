@@ -1,187 +1,185 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import API from "../services/api";
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import API from '../services/api';
 
 export default function ReviewPage() {
-  const { id } = useParams();
+  const { id } = useParams(); // assignment_id
   const navigate = useNavigate();
-
   const [review, setReview] = useState(null);
   const [score, setScore] = useState(3);
-  const [reviewText, setReviewText] = useState("");
-  const [error, setError] = useState("");
+  const [comments, setComments] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  // ===========================
-  // LOAD THE REVIEW + FILE
-  // ===========================
   useEffect(() => {
-    API.get(`/reviews/${id}`)   // ❌ removed headers
+    API.get(`/reviews/${id}`)
       .then((res) => setReview(res.data))
       .catch((err) => {
-        console.error("Failed to load review", err);
-        setError("Failed to load review");
-      });
+        console.error('Failed to load review:', err);
+        setError('Failed to load review details');
+      })
+      .finally(() => setLoading(false));
   }, [id]);
 
-  // ===========================
-  // SUBMIT REVIEW
-  // ===========================
-  const submitReview = async () => {
-    console.log("TOKEN AT SUBMIT =", localStorage.getItem("token"));
+  const handleSubmit = async () => {
+    if (!comments.trim()) {
+      setError('Please provide comments for your review.');
+      return;
+    }
 
+    setSubmitting(true);
+    setError('');
     try {
-      const response = await API.post(`/reviews/${id}/submit`, {
-        score,
-        reviewText,
-      }); // ❌ removed headers
-
-      console.log("SUBMIT RESPONSE =", response.data);
-
-      navigate("/reviews");  // redirect to Assigned Reviews
+      await API.post(`/reviews/${id}/submit`, { score, comments });
+      navigate('/reviews');
     } catch (err) {
-      console.log("BACKEND ERROR RESPONSE =", err.response?.data);
-      console.log("STATUS =", err.response?.status);
-
-      setError("Failed to submit review.");
+      setError(err.response?.data?.message || 'Failed to submit review');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        paddingTop: "120px",
-        paddingBottom: "50px",
-        display: "flex",
-        gap: "30px",
-        width: "100%",
-        paddingLeft: "40px",
-        paddingRight: "40px",
-      }}
-    >
-      {/* PDF */}
-      <div
-        style={{
-          flex: 2,
-          backdropFilter: "blur(14px)",
-          background: "rgba(255,255,255,0.08)",
-          borderRadius: "18px",
-          padding: "20px",
-          border: "1px solid rgba(255,255,255,0.25)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-          minHeight: "80vh",
-        }}
-      >
-        {review?.assignment?.filename ? (
-          <iframe
-            src={`http://localhost:8000/uploads/${review.assignment.filename}`}
-            style={{
-              width: "100%",
-              height: "100%",
-              borderRadius: "12px",
-              border: "none",
-            }}
-          />
-        ) : (
-          <p style={{ color: "white", textAlign: "center", marginTop: "20px" }}>
-            Loading PDF…
-          </p>
-        )}
-      </div>
+  if (loading) {
+    return <div className="empty-state"><p>Loading review...</p></div>;
+  }
 
-      {/* FORM */}
-      <div
-        style={{
-          flex: 1,
-          backdropFilter: "blur(18px)",
-          background: "rgba(255,255,255,0.12)",
-          borderRadius: "18px",
-          padding: "35px",
-          border: "1px solid rgba(255,255,255,0.3)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-          color: "white",
-          maxHeight: "80vh",
-        }}
-      >
-        <h1
-          style={{
-            textAlign: "center",
-            marginBottom: "30px",
-            fontSize: "32px",
-            fontWeight: "700",
-          }}
-        >
-          Review Submission
-        </h1>
-
-        {/* Score Input */}
-        <div style={{ marginBottom: "20px" }}>
-          <label style={{ marginRight: "10px", fontSize: "18px" }}>
-            Score (1–5)
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="5"
-            value={score}
-            onChange={(e) => setScore(e.target.value)}
-            style={{
-              background: "rgba(255,255,255,0.15)",
-              border: "1px solid rgba(255,255,255,0.3)",
-              borderRadius: "10px",
-              padding: "8px 14px",
-              color: "white",
-              width: "80px",
-              fontSize: "16px",
-            }}
-          />
-        </div>
-
-        {/* Review Comments */}
-        <div style={{ marginBottom: "10px" }}>
-          <label style={{ fontSize: "18px" }}>Review Comments</label>
-          <textarea
-            value={reviewText}
-            onChange={(e) => setReviewText(e.target.value)}
-            placeholder="Write constructive feedback..."
-            style={{
-              marginTop: "8px",
-              width: "100%",
-              height: "200px",
-              background: "rgba(255,255,255,0.15)",
-              border: "1px solid rgba(255,255,255,0.3)",
-              borderRadius: "12px",
-              padding: "15px",
-              color: "white",
-              fontSize: "16px",
-              resize: "none",
-            }}
-          />
-        </div>
-
-        <button
-          onClick={submitReview}
-          style={{
-            marginTop: "20px",
-            width: "100%",
-            background: "rgba(255,255,255,0.25)",
-            padding: "12px",
-            borderRadius: "10px",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.35)",
-            cursor: "pointer",
-            fontWeight: "600",
-            fontSize: "18px",
-          }}
-        >
-          Submit Review
+  if (error && !review) {
+    return (
+      <div className="card empty-state">
+        <h3>Error</h3>
+        <p className="error-text">{error}</p>
+        <button className="btn btn-secondary" onClick={() => navigate('/reviews')}>
+          Back to Reviews
         </button>
+      </div>
+    );
+  }
 
-        {error && (
-          <p style={{ marginTop: "20px", color: "#ffb3b3", textAlign: "center" }}>
-            {error}
-          </p>
-        )}
+  return (
+    <div>
+      <h1 className="page-title">Review Assignment</h1>
+      <p className="page-subtitle">
+        Reviewing: <strong>{review?.title}</strong> by {review?.student_name}
+      </p>
+
+      <div className="split-pane">
+        {/* Left: Document viewer */}
+        <motion.div
+          className="card"
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          style={{ minHeight: '500px' }}
+        >
+          <h3 className="card-title">Document</h3>
+          {review?.file_url ? (
+            review.file_url.endsWith('.pdf') ? (
+              <iframe
+                src={review.file_url}
+                title="Document Preview"
+                style={{
+                  width: '100%',
+                  height: '450px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  background: 'white',
+                }}
+              />
+            ) : (
+              <div style={{ marginTop: '12px' }}>
+                <p className="card-meta">This file type cannot be previewed inline.</p>
+                <a
+                  href={review.file_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-secondary"
+                  style={{ marginTop: '12px' }}
+                >
+                  Download File
+                </a>
+              </div>
+            )
+          ) : (
+            <p className="card-muted">No file available</p>
+          )}
+        </motion.div>
+
+        {/* Right: Review form */}
+        <motion.div
+          className="card"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <h3 className="card-title">Your Review</h3>
+
+          {review?.review_id ? (
+            // Already reviewed
+            <div>
+              <p className="success-text" style={{ marginBottom: '16px' }}>
+                This review has already been submitted.
+              </p>
+              <div style={{ marginBottom: '12px' }}>
+                <span className="card-meta">Score: </span>
+                <span className="score-badge">{review.score}</span>
+              </div>
+              <div>
+                <span className="card-meta">Comments:</span>
+                <p style={{ marginTop: '8px' }}>{review.comments}</p>
+              </div>
+            </div>
+          ) : (
+            // Review form
+            <div>
+              <div className="form-group">
+                <label className="form-label">Score (1-5)</label>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`btn ${score === n ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ padding: '10px 18px', fontSize: '1rem' }}
+                      onClick={() => setScore(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="comments">Comments</label>
+                <textarea
+                  id="comments"
+                  className="form-textarea"
+                  placeholder="Provide detailed feedback on this submission..."
+                  value={comments}
+                  onChange={(e) => setComments(e.target.value)}
+                  rows={6}
+                />
+              </div>
+
+              {error && <p className="error-text">{error}</p>}
+
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                >
+                  {submitting ? 'Submitting...' : 'Submit Review'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => navigate('/reviews')}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </motion.div>
       </div>
     </div>
   );

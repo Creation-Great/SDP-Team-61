@@ -1,17 +1,6 @@
-# OS junk
-.DS_Store
-
-# IDE stuff
-.vscode/
-.idea/
-
-# Environment variables
+node_modules/
+dist/
 .env
-*.env
-
-# Ignore node_modules ONLY inside backend and frontend
-backend/node_modules/
-frontend/node_modules/
-
-# Ignore uploads ONLY in backend
-backend/uploads/
+uploads/*
+!uploads/.gitkeep
+*.log

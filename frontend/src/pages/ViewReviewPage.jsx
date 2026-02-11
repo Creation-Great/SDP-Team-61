@@ -1,114 +1,111 @@
-// frontend/src/pages/ViewReviewPage.jsx
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import API from "../services/api";
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import API from '../services/api';
 
 export default function ViewReviewPage() {
-  const { assignmentId } = useParams();
+  const { submissionId } = useParams();
   const navigate = useNavigate();
-
-  const [assignment, setAssignment] = useState(null);
+  const [submission, setSubmission] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await API.getReviewsForAssignment(assignmentId);
-        setAssignment(res.data.assignment);
+        const res = await API.get(`/reviews/by-submission/${submissionId}`);
+        setSubmission(res.data.submission);
         setReviews(res.data.reviews);
       } catch (err) {
-        console.error("Error loading reviews:", err);
+        console.error('Error loading reviews:', err);
+        setError('Failed to load reviews');
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [assignmentId]);
+  }, [submissionId]);
 
-  if (loading) return <p style={{ color: "white" }}>Loading...</p>;
+  if (loading) {
+    return <div className="empty-state"><p>Loading reviews...</p></div>;
+  }
 
-  if (!assignment) {
+  if (error) {
     return (
-      <div style={{ color: "white", textAlign: "center", marginTop: "40px" }}>
-        <h2>Assignment not found</h2>
-        <button onClick={() => navigate("/home")}>Back</button>
+      <div className="card empty-state">
+        <h3>Error</h3>
+        <p className="error-text">{error}</p>
+        <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
+          Back to Dashboard
+        </button>
       </div>
     );
   }
 
   return (
-    <div style={{ maxWidth: "700px", margin: "30px auto", color: "white" }}>
-      <h1>Review for: {assignment.title}</h1>
+    <div>
+      <h1 className="page-title">Review Feedback</h1>
+      {submission && (
+        <p className="page-subtitle">
+          Reviews for: <strong>{submission.title}</strong>
+        </p>
+      )}
 
-      <div style={{ margin: "20px 0" }}>
-        <strong>Your submitted file:</strong>
-        <br />
-        <a
-          href={assignment.fileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: "#4db8ff" }}
-        >
-          Download File
-        </a>
-      </div>
-
-      <hr style={{ opacity: 0.2 }} />
-
-      <h2>Reviewer Feedback</h2>
+      {submission?.file_url && (
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <a
+            href={submission.file_url}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-secondary"
+          >
+            Download Your Submission
+          </a>
+        </div>
+      )}
 
       {reviews.length === 0 ? (
-        <p>No review has been completed yet. Check back later.</p>
+        <div className="card empty-state">
+          <h3>No reviews yet</h3>
+          <p>Your submission has not been reviewed yet. Check back later.</p>
+        </div>
       ) : (
-        reviews.map((r) => (
-          <div
-            key={r._id}
-            style={{
-              border: "1px solid rgba(255,255,255,0.2)",
-              padding: "15px",
-              borderRadius: "8px",
-              marginBottom: "20px",
-              background: "rgba(255,255,255,0.08)",
-              boxShadow: "0 4px 18px rgba(0,0,0,0.2)",
-            }}
+        reviews.map((review, idx) => (
+          <motion.div
+            key={review.review_id}
+            className="card"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.08 }}
           >
-            <p>
-              <strong>Reviewer:</strong> {r.reviewer?.name || "Unknown"}
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 className="card-title">
+                  Review by {review.reviewer_name}
+                </h3>
+                <p className="card-muted">
+                  {new Date(review.created_at).toLocaleString()}
+                </p>
+              </div>
+              <div className="score-badge">{review.score}</div>
+            </div>
 
-            <p>
-              <strong>Score:</strong> {r.score ?? "No score"}
-            </p>
-
-            <p>
-              <strong>Comments:</strong>
-            </p>
-            <p style={{ marginTop: "5px" }}>
-              {r.comments || "No comments provided."}
-            </p>
-
-            <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "10px" }}>
-              Reviewed on: {new Date(r.createdAt).toLocaleString()}
-            </p>
-          </div>
+            {review.comments && (
+              <div style={{ marginTop: '16px' }}>
+                <label className="form-label">Feedback</label>
+                <p style={{ lineHeight: '1.6' }}>{review.comments}</p>
+              </div>
+            )}
+          </motion.div>
         ))
       )}
 
-      <button
-        onClick={() => navigate("/home")}
-        style={{
-          marginTop: "20px",
-          background: "rgba(255,255,255,0.15)",
-          border: "1px solid rgba(255,255,255,0.3)",
-          padding: "10px 20px",
-          borderRadius: "10px",
-          color: "white",
-          fontWeight: 600,
-        }}
-      >
-        Back to Dashboard
-      </button>
+      <div style={{ textAlign: 'center', marginTop: '24px' }}>
+        <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
+          Back to Dashboard
+        </button>
+      </div>
     </div>
   );
 }

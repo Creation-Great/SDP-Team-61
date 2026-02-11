@@ -1,217 +1,149 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import API from "../services/api";
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import API from '../services/api';
 
 export default function UploadAssignment() {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const navigate = useNavigate();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [file, setFile] = useState(null);
-  const [message, setMessage] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleUpload = async (e) => {
     e.preventDefault();
+    setError('');
+    setMessage('');
 
-    if (!title || !file) {
-      setMessage("Please enter a title and choose a file.");
+    if (!title.trim()) {
+      setError('Please enter a title.');
+      return;
+    }
+    if (!file) {
+      setError('Please select a file to upload.');
       return;
     }
 
     const formData = new FormData();
-    formData.append("title", title);
-    formData.append("description", description);
-    formData.append("file", file);
+    formData.append('title', title);
+    formData.append('description', description);
+    formData.append('file', file);
 
+    setLoading(true);
     try {
-      await API.post("/assignments/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const res = await API.post('/submissions/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-
-      setMessage("Upload successful!");
-      setTitle("");
-      setDescription("");
+      setMessage(res.data.message || 'Upload successful!');
+      setTitle('');
+      setDescription('');
       setFile(null);
+      // Redirect after short delay
+      setTimeout(() => navigate('/dashboard'), 1500);
     } catch (err) {
-      console.error(err);
-      setMessage("Upload failed. Try again.");
+      setError(err.response?.data?.message || 'Upload failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
-
-  const placeholderStyle = `
-    ::placeholder {
-      color: rgba(255,255,255,0.88) !important;
-      opacity: 1 !important;
-    }
-  `;
 
   const handleDragOver = (e) => {
     e.preventDefault();
     setIsDragging(true);
   };
 
-  const handleDragLeave = (e) => {
-    e.preventDefault();
+  const handleDragLeave = () => {
     setIsDragging(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-    }
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) setFile(droppedFile);
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        paddingTop: "120px",
-        paddingBottom: "60px",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "flex-start",
-        width: "100%",
-      }}
-    >
-      <style>{placeholderStyle}</style>
+    <div>
+      <h1 className="page-title">Upload Assignment</h1>
+      <p className="page-subtitle">Submit your work for peer review. A reviewer will be assigned automatically.</p>
 
       <motion.div
-        initial={{ opacity: 0, y: 25 }}
+        className="card"
+        initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        style={{
-          width: "90%",
-          maxWidth: "720px",
-          backdropFilter: "blur(20px)",
-          background: "rgba(255,255,255,0.12)",
-          border: "1px solid rgba(255,255,255,0.25)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-          borderRadius: "20px",
-          padding: "45px",
-        }}
+        style={{ maxWidth: '640px', margin: '0 auto' }}
       >
-        <h1
-          style={{
-            color: "white",
-            textAlign: "center",
-            marginBottom: "25px",
-            fontSize: "38px",
-            fontWeight: "700",
-          }}
-        >
-          Upload Assignment
-        </h1>
-
-        <form
-          onSubmit={handleUpload}
-          style={{ display: "flex", flexDirection: "column", gap: "22px" }}
-        >
-          <input
-            type="text"
-            placeholder="Assignment Title *"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            style={{
-              padding: "16px",
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.25)",
-              background: "rgba(255,255,255,0.25)", // FIXED CONTRAST
-              color: "rgba(255,255,255,0.95)",      // FIXED TEXT BRIGHTNESS
-              fontSize: "17px",
-              outline: "none",
-              backdropFilter: "blur(5px)",
-            }}
-          />
-
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            style={{
-              padding: "16px",
-              minHeight: "150px",
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.25)",
-              background: "rgba(255,255,255,0.25)", // FIXED CONTRAST
-              color: "rgba(255,255,255,0.95)",      // FIXED TEXT BRIGHTNESS
-              fontSize: "17px",
-              resize: "vertical",
-              outline: "none",
-              backdropFilter: "blur(5px)",
-            }}
-          />
-
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            style={{
-              border: "2px dashed rgba(255,255,255,0.4)",
-              borderRadius: "16px",
-              padding: "35px",
-              textAlign: "center",
-              color: "white",
-              cursor: "pointer",
-              transition: "0.25s",
-              background: isDragging
-                ? "rgba(255,255,255,0.18)"
-                : "rgba(255,255,255,0.12)",
-              backdropFilter: "blur(5px)",
-            }}
-            onClick={() => document.getElementById("fileInput").click()}
-          >
-            {file ? (
-              <span style={{ fontSize: "17px" }}>📄 {file.name}</span>
-            ) : (
-              <span style={{ fontSize: "17px", opacity: 0.95 }}>
-                Drag & drop a file here, or click to browse
-              </span>
-            )}
+        <form onSubmit={handleUpload}>
+          <div className="form-group">
+            <label className="form-label" htmlFor="title">Title</label>
             <input
-              id="fileInput"
-              type="file"
-              onChange={(e) => setFile(e.target.files[0])}
-              style={{ display: "none" }}
+              id="title"
+              className="form-input"
+              type="text"
+              placeholder="Assignment title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
             />
           </div>
 
-          <motion.button
-            type="submit"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.96 }}
-            style={{
-              background: "linear-gradient(135deg, #56CCF2, #2F80ED)",
-              padding: "15px",
-              borderRadius: "14px",
-              color: "white",
-              fontSize: "20px",
-              fontWeight: "600",
-              border: "none",
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-            }}
-          >
-            Upload
-          </motion.button>
-        </form>
+          <div className="form-group">
+            <label className="form-label" htmlFor="description">Description (optional)</label>
+            <textarea
+              id="description"
+              className="form-textarea"
+              placeholder="Brief description of your assignment..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
 
-        {message && (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            style={{
-              marginTop: "22px",
-              textAlign: "center",
-              color: "white",
-              fontSize: "17px",
-              opacity: 0.9,
-            }}
+          <div className="form-group">
+            <label className="form-label">File</label>
+            <div
+              className={`drop-zone ${isDragging ? 'active' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById('file-input').click()}
+            >
+              {file ? (
+                <p style={{ color: 'var(--success)' }}>
+                  Selected: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
+                </p>
+              ) : (
+                <>
+                  <p>Drag & drop your file here, or click to browse</p>
+                  <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>
+                    Supported: PDF, DOC, DOCX, TXT (max 10MB)
+                  </p>
+                </>
+              )}
+            </div>
+            <input
+              id="file-input"
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              style={{ display: 'none' }}
+            />
+          </div>
+
+          {error && <p className="error-text">{error}</p>}
+          {message && <p className="success-text">{message}</p>}
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-block"
+            disabled={loading}
           >
-            {message}
-          </motion.p>
-        )}
+            {loading ? 'Uploading...' : 'Submit Assignment'}
+          </button>
+        </form>
       </motion.div>
     </div>
   );

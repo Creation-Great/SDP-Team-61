@@ -1,316 +1,211 @@
-# 🎓 AI Peer Review System  
-A full-stack web application for assignment submission, peer review task assignment, and student review viewing.  
-Built with **Node.js**, **Express**, **MongoDB**, **React**, and **Framer Motion**.
+# SDP Peer Review System – Integrated
 
----
+> 整合自 `SDP-Team-61-main`（新版）和 `SDP-Team-61-old-main`（旧版），取两者之长，弃各自之短。
 
-## 📌 Overview
+## Tech Stack
 
-The AI Peer Review System allows students to upload assignments, automatically assigns peer reviewers, and enables reviewers to provide feedback. Students can later view the completed feedback along with scores and comments.  
-This system supports:
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | React 19 · React Router 7 · Axios · Framer Motion · CSS Variables |
+| **Backend** | TypeScript · Express 5 · PostgreSQL 16 · JWT + bcrypt |
+| **AI Service** | Python · Flask (stub，待接入 ML 模型) |
+| **DevOps** | Docker Compose · Vite dev proxy |
 
-- Secure file uploads  
-- Automated reviewer selection  
-- Reviewer dashboard  
-- Student dashboard  
-- Viewing completed peer reviews  
-- AI (future): automatic summaries of documents  
-
----
-
-## 🚀 Features
-
-### 🧑‍🎓 Student Features
-- Upload assignments with PDF or DOCX files  
-- See all submitted assignments  
-- Track review status  
-- View reviewer feedback  
-- Download uploaded files  
-
-### 🧑‍🏫 Reviewer Features
-- View assigned review tasks  
-- Open student documents  
-- Submit comment + score  
-- Mark reviews as completed  
-
-### 🧠 AI (Future Feature)
-- Auto-generate summaries of uploaded PDFs  
-- Help reviewers understand content quicker  
-
----
-
-## 🛠️ Tech Stack
-
-### **Frontend**
-- React  
-- React Router  
-- Axios  
-- Framer Motion  
-- Vite  
-
-### **Backend**
-- Node.js  
-- Express.js  
-- MongoDB + Mongoose  
-- Multer (file uploads)  
-- JWT Authentication  
-
----
-
-## 📁 Project Structure
+## Architecture
 
 ```
-AI-Peer-Review-System/
-│
-├── backend/
-│   ├── src/
-│   │   ├── controllers/
-│   │   ├── middleware/
-│   │   ├── models/
-│   │   └── routes/
-│   ├── uploads/
-│   │   └── .gitkeep
-│   ├── package.json
-│   └── .gitignore
-│
-├── frontend/
-│   ├── src/
-│   ├── package.json
-│   └── .gitignore
-│
-├── README.md
-└── .gitignore
+┌──────────────┐     ┌──────────────────┐     ┌──────────────┐
+│   Frontend   │────▶│  Backend (TS)    │────▶│ PostgreSQL   │
+│  React/Vite  │     │  Express 5 + JWT │     │  RLS + Audit │
+│  :5173       │     │  :8080           │     │  :5432       │
+└──────────────┘     └──────────────────┘     └──────────────┘
+                            │
+                     ┌──────▼──────┐
+                     │ AI Service  │
+                     │ Flask :5001 │
+                     └─────────────┘
 ```
 
----
+## Integration Decisions
 
-# 🧩 Setup Instructions (For Teammates)
+| Feature | Kept From | Reason |
+|---------|-----------|--------|
+| TypeScript backend | Old | Type safety, better maintainability |
+| PostgreSQL + RLS | Old | Row-level security per user/role |
+| Audit logging | Old | Traceability for all critical actions |
+| Materialized views | Old | Fast instructor dashboard queries |
+| JWT authentication | New | Stateless, no external CAS dependency |
+| MVC controller pattern | New | Clear separation of concerns |
+| Complete peer review workflow | New | 8 pages with full feature coverage |
+| CSS Variables + semantic classes | Old | Maintainable, responsive styling |
+| Vite dev proxy | New design | No hardcoded API URLs |
+| Drag-and-drop upload | New | Better UX |
+| Framer Motion animations | New | Smooth transitions |
+| Smart reviewer auto-assignment | Old | Fair distribution algorithm |
 
-Follow these steps to run the project on your machine.
+### Discarded
 
----
+- CAS SSO (old) → replaced by JWT
+- MongoDB (new) → replaced by PostgreSQL
+- `main.js` legacy entry (old) → single TS entry point
+- Inline styles (new) → CSS classes
+- Hardcoded URLs (new) → Vite proxy
+- S3 storage (old) → local disk with Multer (simpler dev setup)
 
-## 1️⃣ Clone the Repository
+## Quick Start
+
+### Prerequisites
+
+- Node.js ≥ 18
+- Docker & Docker Compose
+- Python ≥ 3.10 (only for AI service)
+
+### 1. Start Database
 
 ```bash
-git clone https://github.com/Creation-Great/SDP-Team-61.git
-cd SDP-Team-61
+docker compose up -d
 ```
 
----
+This starts PostgreSQL 16 and auto-runs `backend/sql/migrations.sql` + `seed.sql`.
 
-# 🗄️ Backend Setup
-
-Navigate into the backend folder:
+### 2. Setup Backend
 
 ```bash
 cd backend
-```
-
-### Install backend dependencies:
-
-```bash
+cp .env.example .env    # 编辑 .env 填写 JWT_SECRET 等
 npm install
-```
-
-### Create required folders:
-
-```bash
-mkdir -p uploads
-```
-
-This folder stores uploaded assignments.  
-It contains a `.gitkeep` file so that GitHub keeps the folder.
-
-### Create a `.env` file:
-
-Inside `/backend`, create:
-
-```
-.env
-```
-
-Add the following:
-
-```
-MONGO_URI=your_mongodb_connection_string_here
-JWT_SECRET=your_secret_key_here
-```
-
-If you're unsure what to use:
-
-- Ask the team member hosting MongoDB  
-- Or install **MongoDB Atlas** (cloud)  
-- Or install **MongoDB Local**
-
-### Start the backend server:
-
-```bash
-npm start
-```
-
-Backend is running on:
-
-```
-http://localhost:8000
-```
-
-Leave this terminal open.
-
----
-
-# 💻 Frontend Setup
-
-Open a **new terminal** (keep the backend running).
-
-Navigate to the frontend folder:
-
-```bash
-cd frontend
-```
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Start the development server:
-
-```bash
 npm run dev
 ```
 
-Frontend will run on:
+Backend runs on `http://localhost:8080`.
 
-```
-http://localhost:5173
-```
+### 3. Setup Frontend
 
----
-
-## 4️⃣ Login & Usage
-
-### Default Steps
-1. Register a new account  
-2. Log in  
-3. Upload an assignment  
-4. Reviewer will see tasks in their dashboard  
-5. Reviewer submits a review  
-6. Student can view completed review under *View Review*  
-
----
-
-## 5️⃣ Troubleshooting
-
-### ❗ Backend fails to start  
-Check `.env` file exists and contains:
-
-```
-MONGO_URI=
-JWT_SECRET=
-```
-
-### ❗ Cannot upload files  
-Ensure this folder exists:
-
-```
-backend/uploads/
-```
-
-### ❗ CORS or network errors  
-Restart both servers:
 ```bash
-cd backend && npm start
-cd frontend && npm run dev
+cd frontend
+npm install
+npm run dev
 ```
 
----
+Frontend runs on `http://localhost:5173` with API proxy to backend.
 
-# 🔐 Environment Variables
+### 4. (Optional) AI Service
 
-Backend requires:
-
-| Variable | Description |
-|----------|-------------|
-| `MONGO_URI` | MongoDB connection URL |
-| `JWT_SECRET` | Key for JWT authentication |
-
----
-
-# 📡 API Routes
-
-### **Assignments**
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/assignments/upload` | Student uploads assignment |
-| GET | `/api/assignments/mine` | Get logged-in student's assignments |
-| GET | `/api/assignments/all` | Instructor view of all assignments |
-| GET | `/api/assignments/reviews/my-tasks` | Reviewer’s assigned tasks |
-
----
-
-### **Reviews**
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/reviews/by-assignment/:assignmentId` | Student: view reviewer feedback |
-| GET | `/api/reviews/:id` | Fetch one review |
-| POST | `/api/reviews/:id/submit` | Reviewer submits a review |
-
----
-
-# 📂 Uploads Folder
-
-Git does **not** track real uploaded PDFs.  
-To keep the folder in GitHub, a `.gitkeep` file is included.
-
-`.gitignore` rule:
-
-```
-uploads/*
-!uploads/.gitkeep
+```bash
+cd ai-service
+pip install -r requirements.txt
+python app.py
 ```
 
-Every teammate will automatically get the folder when cloning.
+AI service runs on `http://localhost:5001`.
 
----
+### One-command (from root)
 
-# 📸 Screenshots (Add later)
-
-You may include screenshots like:
-
-```
-/screenshots/
-   dashboard.png
-   upload-page.png
-   review-form.png
+```bash
+docker compose up -d
+npm install        # installs backend + frontend via root package.json
+npm run dev        # runs backend + frontend concurrently
 ```
 
----
+## API Routes
 
-# 👥 Team 61
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| POST | `/auth/register` | ✗ | – | Register new user |
+| POST | `/auth/login` | ✗ | – | Login, returns JWT |
+| GET | `/auth/me` | ✓ | – | Current user info |
+| POST | `/submissions/upload` | ✓ | student | Upload assignment (file + metadata) |
+| GET | `/submissions/mine` | ✓ | student | My submissions with review counts |
+| GET | `/submissions/all` | ✓ | instructor | All submissions overview |
+| GET | `/submissions/reviews/my-tasks` | ✓ | student | Pending review assignments |
+| GET | `/reviews/by-submission/:id` | ✓ | – | All reviews for a submission |
+| GET | `/reviews/:id` | ✓ | – | Single review detail |
+| POST | `/reviews/:id/submit` | ✓ | student | Submit a review |
+| GET | `/instructor/overview` | ✓ | instructor | Cohort overview (materialized view) |
+| POST | `/instructor/assign` | ✓ | instructor | Manual reviewer assignment |
 
-| Name | Role |
-|------|------|
-| Dhruv Tyagi | Lead Developer |
-| Add member | Developer |
-| Add member | Reviewer | 
-| Add member | Documentation |
+## Project Structure
 
----
+```
+SDP-Team-61-integrated/
+├── docker-compose.yml        # PostgreSQL service
+├── package.json              # Monorepo root (concurrently)
+├── backend/
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── .env.example
+│   ├── sql/
+│   │   ├── migrations.sql    # Full schema with RLS
+│   │   └── seed.sql
+│   ├── src/
+│   │   ├── app.ts            # Express app setup
+│   │   ├── server.ts         # Entry point
+│   │   ├── db.ts             # PG pool + RLS context
+│   │   ├── types.ts          # Shared types
+│   │   ├── utils/audit.ts
+│   │   ├── middleware/
+│   │   │   ├── auth.ts       # JWT verify
+│   │   │   ├── roleGuard.ts  # RBAC
+│   │   │   └── upload.ts     # Multer config
+│   │   ├── controllers/
+│   │   │   ├── authController.ts
+│   │   │   ├── submissionController.ts
+│   │   │   ├── reviewController.ts
+│   │   │   └── instructorController.ts
+│   │   └── routes/
+│   │       ├── authRoutes.ts
+│   │       ├── submissionRoutes.ts
+│   │       ├── reviewRoutes.ts
+│   │       └── instructorRoutes.ts
+│   └── uploads/
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.js        # Proxy to backend
+│   ├── index.html
+│   └── src/
+│       ├── main.jsx
+│       ├── index.css          # CSS variables
+│       ├── App.css            # Component styles
+│       ├── App.jsx            # Router
+│       ├── config.js
+│       ├── services/api.js    # Axios + JWT interceptor
+│       ├── components/
+│       │   ├── Navbar.jsx
+│       │   ├── Navbar.css
+│       │   ├── ProtectedRoute.jsx
+│       │   ├── InstructorRoute.jsx
+│       │   └── StudentRoute.jsx
+│       └── pages/
+│           ├── LoginPage.jsx
+│           ├── RegisterPage.jsx
+│           ├── StudentDashboardPage.jsx
+│           ├── InstructorDashboardPage.jsx
+│           ├── UploadAssignment.jsx
+│           ├── AssignedReviewsPage.jsx
+│           ├── ReviewPage.jsx
+│           └── ViewReviewPage.jsx
+└── ai-service/
+    ├── app.py                # Flask AI stub
+    └── requirements.txt
+```
 
-# 📜 License
+## Security Features
 
-Project created for academic use under UConn School of Engineering.  
-Team 61 – Senior Design Project.
+- **Row-Level Security (RLS)**: PostgreSQL policies enforce data isolation per user
+- **JWT Authentication**: Stateless token-based auth with configurable expiry
+- **RBAC Middleware**: `requireRole()` guards protect instructor-only routes
+- **Audit Trail**: All critical operations logged to `audit` table
+- **bcrypt**: Passwords hashed with bcrypt (12 rounds)
+- **Helmet**: HTTP security headers
+- **CORS**: Configurable origin whitelist
+- **File Validation**: Upload type/size limits enforced server-side
 
----
+## Default Accounts (from seed.sql)
 
-# 🎯 Notes
+| Email | Role | Password |
+|-------|------|----------|
+| instructor@test.com | instructor | (set your own hash) |
+| alice@test.com | student | (set your own hash) |
+| bob@test.com | student | (set your own hash) |
 
-- Backend must run before frontend  
-- Ensure MongoDB URI is valid  
-- Only `.gitkeep` exists in uploads directory  
-- Real PDF uploads stay local, not in GitHub  
+> ⚠️ Seed file uses placeholder password hashes. Generate real bcrypt hashes before use.
