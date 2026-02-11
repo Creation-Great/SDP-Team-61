@@ -1,6 +1,6 @@
 # SDP Peer Review System – Integrated
 
-> 整合自 `SDP-Team-61-main`（新版）和 `SDP-Team-61-old-main`（旧版），取两者之长，弃各自之短。
+> Integrated from `SDP-Team-61-main` (new) and `SDP-Team-61-old-main` (old), keeping the strengths of each and discarding the weaknesses.
 
 ## Tech Stack
 
@@ -8,7 +8,7 @@
 |-------|-----------|
 | **Frontend** | React 19 · React Router 7 · Axios · Framer Motion · CSS Variables |
 | **Backend** | TypeScript · Express 5 · PostgreSQL 16 · JWT + bcrypt |
-| **AI Service** | Python · Flask (stub，待接入 ML 模型) |
+| **AI Service** | Python · Flask (stub, ML model to be integrated) |
 | **DevOps** | Docker Compose · Vite dev proxy |
 
 ## Architecture
@@ -72,7 +72,7 @@ This starts PostgreSQL 16 and auto-runs `backend/sql/migrations.sql` + `seed.sql
 
 ```bash
 cd backend
-cp .env.example .env    # 编辑 .env 填写 JWT_SECRET 等
+cp .env.example .env    # Edit .env and set JWT_SECRET etc.
 npm install
 npm run dev
 ```
