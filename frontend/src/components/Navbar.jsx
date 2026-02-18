@@ -39,6 +39,9 @@ export default function Navbar() {
         <NavLink to="/reviews" className={({ isActive }) => isActive ? 'active' : ''}>
           Reviews
         </NavLink>
+        <NavLink to="/peer-review" className={({ isActive }) => isActive ? 'active' : ''}>
+          Peer Review
+        </NavLink>
       </div>
       <div className="navbar-user">
         <span className="navbar-username">{user.name || 'User'}</span>

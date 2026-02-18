@@ -7,6 +7,7 @@ export default function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('student');
+  const [groupId, setGroupId] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -28,7 +29,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await API.post('/auth/register', { name, email, password, role });
+      await API.post('/auth/register', { name, email, password, role, group_id: groupId || undefined });
       navigate('/login?registered=true');
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');
@@ -102,6 +103,17 @@ export default function RegisterPage() {
               <option value="instructor">Instructor</option>
             </select>
           </div>
+          {role === 'student' && (
+            <div className="form-group">
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Team Number (e.g., 61)"
+                value={groupId}
+                onChange={(e) => setGroupId(e.target.value)}
+              />
+            </div>
+          )}
           {error && <p className="error-text">{error}</p>}
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
             {loading ? 'Creating account...' : 'Create Account'}

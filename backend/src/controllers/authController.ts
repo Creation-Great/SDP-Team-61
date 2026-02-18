@@ -23,7 +23,7 @@ function generateToken(user: { user_id: string; email: string; role: string }): 
  */
 export async function register(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, group_id } = req.body;
 
     if (!name || !email || !password) {
       res.status(400).json({ error: 'validation', message: 'Name, email, and password are required' });
@@ -48,10 +48,10 @@ export async function register(req: AuthRequest, res: Response): Promise<void> {
       }
 
       const result = await client.query(
-        `INSERT INTO users (email, password_hash, name, role)
-         VALUES ($1, $2, $3, $4)
-         RETURNING user_id, email, name, role, created_at`,
-        [email, passwordHash, name, userRole]
+        `INSERT INTO users (email, password_hash, name, role, group_id)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING user_id, email, name, role, group_id, created_at`,
+        [email, passwordHash, name, userRole, group_id || null]
       );
 
       await audit(client, result.rows[0].user_id, 'REGISTER', 'user', result.rows[0].user_id, { email });

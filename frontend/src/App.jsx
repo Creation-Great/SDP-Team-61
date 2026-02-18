@@ -11,6 +11,9 @@ import UploadAssignment from './pages/UploadAssignment';
 import AssignedReviewsPage from './pages/AssignedReviewsPage';
 import ReviewPage from './pages/ReviewPage';
 import ViewReviewPage from './pages/ViewReviewPage';
+import PeerReviewSessionsPage from './pages/PeerReviewSessionsPage';
+import PeerReviewFormPage from './pages/PeerReviewFormPage';
+import PeerReviewResultsPage from './pages/PeerReviewResultsPage';
 import './App.css';
 
 function AppLayout({ children }) {
@@ -59,6 +62,27 @@ export default function App() {
       <Route path="/view-review/:submissionId" element={
         <ProtectedRoute>
           <AppLayout><ViewReviewPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Peer Review routes (both roles) */}
+      <Route path="/peer-review" element={
+        <ProtectedRoute>
+          <AppLayout><PeerReviewSessionsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+      <Route path="/peer-review/:sessionId" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><PeerReviewFormPage /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/peer-review/:sessionId/results" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><PeerReviewResultsPage /></AppLayout>
+          </InstructorRoute>
         </ProtectedRoute>
       } />
 
