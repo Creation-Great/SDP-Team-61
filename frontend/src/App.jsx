@@ -4,7 +4,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 import InstructorRoute from './components/InstructorRoute';
 import StudentRoute from './components/StudentRoute';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import StudentDashboardPage from './pages/StudentDashboardPage';
 import InstructorDashboardPage from './pages/InstructorDashboardPage';
 import UploadAssignment from './pages/UploadAssignment';
@@ -34,7 +33,6 @@ export default function App() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
 
       {/* Student routes */}
       <Route path="/dashboard" element={
