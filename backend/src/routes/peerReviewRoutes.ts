@@ -7,6 +7,7 @@ import {
   toggleSession,
   getMyTeam,
   submitPeerReviews,
+  getTeamReviews,
   getSessionResults,
   exportCsv,
 } from '../controllers/peerReviewController.js';
@@ -20,6 +21,7 @@ router.get('/sessions', getSessions as any);
 // Student endpoints
 router.get('/sessions/:sessionId/my-team', getMyTeam as any);
 router.post('/sessions/:sessionId/submit', submitPeerReviews as any);
+router.get('/sessions/:sessionId/team-reviews', getTeamReviews as any);
 
 // Instructor-only endpoints
 router.post('/sessions', requireRole('instructor') as any, createSession as any);

@@ -392,6 +392,97 @@ export async function getSessionResults(req: AuthRequest, res: Response): Promis
 }
 
 /**
+ * GET /peer-review/sessions/:sessionId/team-reviews
+ * Students can view all reviews submitted within their own team (real-time sync).
+ */
+export async function getTeamReviews(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { user_id, role } = req.user;
+    const { sessionId } = req.params;
+
+    const data = await withDb(user_id, role, async (client) => {
+      // Get user's group_id
+      const me = await client.query('SELECT group_id FROM users WHERE user_id = $1', [user_id]);
+      const groupId = me.rows[0]?.group_id;
+
+      if (!groupId) {
+        throw { status: 400, message: 'You are not assigned to a team' };
+      }
+
+      // Session info
+      const session = await client.query(
+        'SELECT session_id, title, is_open FROM peer_review_sessions WHERE session_id = $1',
+        [sessionId]
+      );
+      if (session.rows.length === 0) {
+        throw { status: 404, message: 'Session not found' };
+      }
+
+      // All team members
+      const teammates = await client.query(
+        `SELECT user_id, name FROM users
+         WHERE group_id = $1 AND role = 'student'
+         ORDER BY name`,
+        [groupId]
+      );
+
+      // All reviews within this team for this session
+      const reviews = await client.query(
+        `SELECT
+           pr.reviewer_id,
+           u_reviewer.name AS reviewer_name,
+           pr.reviewee_id,
+           u_reviewee.name AS reviewee_name,
+           pr.is_self,
+           pr.technical_contributions,
+           pr.team_interactions,
+           pr.project_management,
+           pr.individual_comments,
+           pr.updated_at
+         FROM peer_reviews pr
+         JOIN users u_reviewer ON u_reviewer.user_id = pr.reviewer_id
+         JOIN users u_reviewee ON u_reviewee.user_id = pr.reviewee_id
+         WHERE pr.session_id = $1
+           AND u_reviewer.group_id = $2
+         ORDER BY u_reviewer.name, u_reviewee.name`,
+        [sessionId, groupId]
+      );
+
+      // Team chemistry scores for this team
+      const chemistry = await client.query(
+        `SELECT tc.reviewer_id, u.name AS reviewer_name, tc.score
+         FROM peer_review_team_chemistry tc
+         JOIN users u ON u.user_id = tc.reviewer_id
+         WHERE tc.session_id = $1 AND u.group_id = $2
+         ORDER BY u.name`,
+        [sessionId, groupId]
+      );
+
+      // Who has submitted (distinct reviewer_ids)
+      const submittedSet = new Set(reviews.rows.map((r: any) => r.reviewer_id));
+
+      return {
+        session: session.rows[0],
+        teammates: teammates.rows,
+        reviews: reviews.rows,
+        chemistry: chemistry.rows,
+        submittedReviewerIds: Array.from(submittedSet),
+        groupId,
+      };
+    });
+
+    res.json(data);
+  } catch (err: any) {
+    if (err.status) {
+      res.status(err.status).json({ error: 'validation', message: err.message });
+      return;
+    }
+    console.error('Get team reviews error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch team reviews' });
+  }
+}
+
+/**
  * GET /peer-review/sessions/:sessionId/export-csv
  * Export aggregated results as CSV download.
  */

@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../services/api';
 
-function ScoreSelector({ value, onChange, label }) {
+const POLL_INTERVAL = 5000; // 5s real-time poll
+
+function ScoreSelector({ value, onChange, label, disabled }) {
   return (
     <div style={{ marginBottom: '12px' }}>
       <label className="form-label">{label}</label>
@@ -12,7 +14,8 @@ function ScoreSelector({ value, onChange, label }) {
           <button
             key={n}
             type="button"
-            onClick={() => onChange(n)}
+            onClick={() => !disabled && onChange(n)}
+            disabled={disabled}
             style={{
               width: '44px',
               height: '44px',
@@ -22,7 +25,8 @@ function ScoreSelector({ value, onChange, label }) {
               color: value === n ? '#fff' : 'var(--text-secondary)',
               fontSize: '1rem',
               fontWeight: 600,
-              cursor: 'pointer',
+              cursor: disabled ? 'default' : 'pointer',
+              opacity: disabled ? 0.6 : 1,
               transition: 'all 0.2s',
             }}
           >
@@ -30,6 +34,22 @@ function ScoreSelector({ value, onChange, label }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ── Mini score badge (read-only) ── */
+function ScoreBadge({ value, label }) {
+  if (!value && value !== 0) return null;
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{
+        width: '38px', height: '38px', borderRadius: '10px',
+        background: 'var(--primary)', color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '0.95rem', fontWeight: 700, margin: '0 auto 4px',
+      }}>{value}</div>
+      <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{label}</span>
     </div>
   );
 }
@@ -48,9 +68,21 @@ export default function PeerReviewFormPage() {
   const [teamChemistry, setTeamChemistry] = useState(null);
   const [groupId, setGroupId] = useState('');
 
+  // Team-wide live data
+  const [teamData, setTeamData] = useState(null);
+  const [showTeamBoard, setShowTeamBoard] = useState(true);
+  const pollRef = useRef(null);
+
   const user = (() => {
     try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; }
   })();
+
+  // ── Fetch team-wide reviews (polling) ──
+  const fetchTeamReviews = useCallback(() => {
+    API.get(`/peer-review/sessions/${sessionId}/team-reviews`)
+      .then((res) => setTeamData(res.data))
+      .catch(() => {/* silent */});
+  }, [sessionId]);
 
   useEffect(() => {
     API.get(`/peer-review/sessions/${sessionId}/my-team`)
@@ -61,7 +93,6 @@ export default function PeerReviewFormPage() {
         setGroupId(gid);
         setTeamChemistry(tc);
 
-        // Initialize reviews state
         const initial = {};
         tm.forEach((t) => {
           const existing = existingReviews.find((r) => r.reviewee_id === t.user_id);
@@ -78,7 +109,12 @@ export default function PeerReviewFormPage() {
         setError(err.response?.data?.message || 'Failed to load team data');
       })
       .finally(() => setLoading(false));
-  }, [sessionId]);
+
+    // Start polling for team reviews
+    fetchTeamReviews();
+    pollRef.current = setInterval(fetchTeamReviews, POLL_INTERVAL);
+    return () => clearInterval(pollRef.current);
+  }, [sessionId, fetchTeamReviews]);
 
   const updateReview = (userId, field, value) => {
     setReviews((prev) => ({
@@ -118,7 +154,7 @@ export default function PeerReviewFormPage() {
       };
       await API.post(`/peer-review/sessions/${sessionId}/submit`, payload);
       setSuccess('Peer reviews submitted successfully!');
-      setTimeout(() => navigate('/peer-review'), 1500);
+      fetchTeamReviews(); // refresh team board immediately
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to submit reviews');
     } finally {
@@ -142,6 +178,21 @@ export default function PeerReviewFormPage() {
     );
   }
 
+  // ── Helpers for team board ──
+  const submittedIds = teamData?.submittedReviewerIds || [];
+  const allTeammates = teamData?.teammates || teammates;
+  const teamReviews = teamData?.reviews || [];
+  const teamChemistryList = teamData?.chemistry || [];
+
+  // Group reviews by reviewer
+  const reviewsByReviewer = {};
+  teamReviews.forEach((r) => {
+    if (!reviewsByReviewer[r.reviewer_id]) reviewsByReviewer[r.reviewer_id] = [];
+    reviewsByReviewer[r.reviewer_id].push(r);
+  });
+  const chemistryMap = {};
+  teamChemistryList.forEach((c) => { chemistryMap[c.reviewer_id] = c.score; });
+
   return (
     <div>
       <h1 className="page-title">{session?.title || 'Peer Review'}</h1>
@@ -160,6 +211,138 @@ export default function PeerReviewFormPage() {
         </motion.div>
       )}
 
+      {/* ════════ TEAM LIVE BOARD ════════ */}
+      <motion.div
+        className="card"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: '24px', border: '1px solid rgba(78,205,196,0.3)' }}
+      >
+        <div
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+          onClick={() => setShowTeamBoard(!showTeamBoard)}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h3 className="card-title" style={{ marginBottom: 0 }}>
+              Team Board — Live
+            </h3>
+            <span style={{
+              display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+              background: '#4ecdc4', boxShadow: '0 0 6px #4ecdc4',
+              animation: 'pulse 2s infinite',
+            }} />
+            <span className="card-muted" style={{ fontSize: '0.8rem' }}>
+              {submittedIds.length}/{allTeammates.length} submitted
+            </span>
+          </div>
+          <span style={{ fontSize: '1.2rem', color: 'var(--text-secondary)' }}>
+            {showTeamBoard ? '▲' : '▼'}
+          </span>
+        </div>
+
+        {/* Completion chips */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+          {allTeammates.map((t) => {
+            const done = submittedIds.includes(t.user_id);
+            const isMe = t.user_id === user.id;
+            return (
+              <span
+                key={t.user_id}
+                className={`chip ${done ? 'chip-completed' : 'chip-pending'}`}
+                style={isMe ? { fontWeight: 700, textDecoration: 'underline' } : {}}
+              >
+                {t.name}{isMe ? ' (You)' : ''} {done ? '✅' : '⏳'}
+              </span>
+            );
+          })}
+        </div>
+
+        <AnimatePresence>
+          {showTeamBoard && teamData && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              style={{ overflow: 'hidden' }}
+            >
+              {/* Per-reviewer cards */}
+              {allTeammates.map((reviewer) => {
+                const rReviews = reviewsByReviewer[reviewer.user_id] || [];
+                const chem = chemistryMap[reviewer.user_id];
+                const isMe = reviewer.user_id === user.id;
+                if (rReviews.length === 0 && !chem) return null;
+
+                return (
+                  <div
+                    key={reviewer.user_id}
+                    style={{
+                      marginTop: '16px',
+                      padding: '14px',
+                      borderRadius: '12px',
+                      background: isMe ? 'rgba(78,205,196,0.08)' : 'rgba(255,255,255,0.03)',
+                      border: `1px solid ${isMe ? 'rgba(78,205,196,0.25)' : 'rgba(255,255,255,0.06)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <strong style={{ fontSize: '0.95rem' }}>{reviewer.name}</strong>
+                      {isMe && <span className="chip chip-submitted" style={{ fontSize: '0.7rem' }}>You</span>}
+                      {chem && (
+                        <span className="chip" style={{ fontSize: '0.7rem', background: 'rgba(78,205,196,0.15)', color: '#4ecdc4' }}>
+                          Chemistry: {chem}/5
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Review rows */}
+                    {rReviews.map((rv) => (
+                      <div
+                        key={rv.reviewee_id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '8px 0',
+                          borderBottom: '1px solid rgba(255,255,255,0.05)',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ minWidth: '110px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '0.9rem' }}>{rv.reviewee_name}</span>
+                          {rv.is_self && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>(Self)</span>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '14px' }}>
+                          <ScoreBadge value={rv.technical_contributions} label="Tech" />
+                          <ScoreBadge value={rv.team_interactions} label="Inter" />
+                          <ScoreBadge value={rv.project_management} label="Mgmt" />
+                        </div>
+                        {rv.individual_comments && (
+                          <div style={{
+                            fontSize: '0.8rem',
+                            color: 'var(--text-secondary)',
+                            fontStyle: 'italic',
+                            flex: '1 1 100%',
+                            paddingLeft: '4px',
+                          }}>
+                            "{rv.individual_comments}"
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+
+              {submittedIds.length === 0 && (
+                <p className="card-muted" style={{ marginTop: '16px', textAlign: 'center' }}>
+                  No reviews submitted yet. Be the first!
+                </p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* ════════ MY REVIEW FORM ════════ */}
       <form onSubmit={handleSubmit}>
         {/* Team Chemistry */}
         <motion.div
@@ -252,6 +435,14 @@ export default function PeerReviewFormPage() {
           )}
         </div>
       </form>
+
+      {/* Pulse animation for live indicator */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
     </div>
   );
 }
