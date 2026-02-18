@@ -138,7 +138,9 @@ export default function PeerReviewSessionsPage() {
                   Created by {s.created_by_name} · {new Date(s.created_at).toLocaleDateString()}
                 </p>
                 <p className="card-meta" style={{ marginTop: '4px' }}>
-                  {s.submitted_count || 0} student{s.submitted_count !== 1 ? 's' : ''} submitted
+                  {isInstructor
+                    ? `${s.submitted_count || 0} student${s.submitted_count !== 1 ? 's' : ''} submitted`
+                    : `Your team: ${s.submitted_count || 0}/${s.team_size || '?'} submitted`}
                 </p>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>

@@ -52,19 +52,33 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
     const { user_id, role } = req.user;
 
     const sessions = await withDb(user_id, role, async (client) => {
-      const result = await client.query(
-        `SELECT s.*,
-                u.name AS created_by_name,
-                (SELECT COUNT(DISTINCT pr.reviewer_id)
-                 FROM peer_reviews pr
-                 WHERE pr.session_id = s.session_id) AS submitted_count
-         FROM peer_review_sessions s
-         JOIN users u ON u.user_id = s.created_by
-         ORDER BY s.created_at DESC`
-      );
-
-      // For students: also indicate whether they have already submitted
+      // For students: get their group_id to scope submitted_count to their team
+      let groupId: string | null = null;
       if (role === 'student') {
+        const me = await client.query('SELECT group_id FROM users WHERE user_id = $1', [user_id]);
+        groupId = me.rows[0]?.group_id || null;
+      }
+
+      if (role === 'student') {
+        // Students see sessions with team-scoped submitted_count
+        const result = await client.query(
+          `SELECT s.*,
+                  u.name AS created_by_name,
+                  (SELECT COUNT(DISTINCT pr.reviewer_id)
+                   FROM peer_reviews pr
+                   JOIN users ur ON ur.user_id = pr.reviewer_id
+                   WHERE pr.session_id = s.session_id
+                     AND ur.group_id = $1) AS submitted_count,
+                  (SELECT COUNT(DISTINCT tu.user_id)
+                   FROM users tu
+                   WHERE tu.group_id = $1 AND tu.role = 'student') AS team_size
+           FROM peer_review_sessions s
+           JOIN users u ON u.user_id = s.created_by
+           ORDER BY s.created_at DESC`,
+          [groupId]
+        );
+
+        // Also indicate whether they have already submitted
         for (const s of result.rows) {
           const myReviews = await client.query(
             `SELECT COUNT(*) AS cnt FROM peer_reviews
@@ -73,9 +87,22 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
           );
           s.my_submitted = parseInt(myReviews.rows[0].cnt) > 0;
         }
-      }
 
-      return result.rows;
+        return result.rows;
+      } else {
+        // Instructors see global submitted_count (all teams)
+        const result = await client.query(
+          `SELECT s.*,
+                  u.name AS created_by_name,
+                  (SELECT COUNT(DISTINCT pr.reviewer_id)
+                   FROM peer_reviews pr
+                   WHERE pr.session_id = s.session_id) AS submitted_count
+           FROM peer_review_sessions s
+           JOIN users u ON u.user_id = s.created_by
+           ORDER BY s.created_at DESC`
+        );
+        return result.rows;
+      }
     });
 
     res.json(sessions);
