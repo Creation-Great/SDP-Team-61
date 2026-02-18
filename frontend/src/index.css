@@ -1,28 +1,34 @@
 /* =====================================================
    Global Styles — AI Peer Review System
-   Design: Modern dark gradient + glassmorphism
+   Design: UConn-inspired light theme (white + navy)
    ===================================================== */
 :root {
-  /* Colors */
-  --primary: #4da3ff;
-  --primary-hover: #3b8de6;
-  --accent: #f8b400;
-  --danger: #ff6b6b;
-  --danger-hover: #ff8585;
-  --success: #4caf50;
-  --warning: #ff9800;
+  /* UConn-inspired palette */
+  --uconn-navy: #000e2f;
+  --uconn-blue: #000e2f;
+  --uconn-blue-hover: #000e2f;
+  --uconn-slate: #8a8f98;
+  --primary-rgb: 0, 14, 47;
 
-  /* Glass */
-  --glass-bg: rgba(255, 255, 255, 0.08);
-  --glass-bg-hover: rgba(255, 255, 255, 0.14);
-  --glass-border: rgba(255, 255, 255, 0.18);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-  --glass-blur: blur(16px);
+  --primary: var(--uconn-blue);
+  --primary-hover: var(--uconn-blue-hover);
+  --accent: #000e2f;
+  --danger: #d64545;
+  --danger-hover: #b93737;
+  --success: #2f9e62;
+  --warning: #c38b1f;
+
+  /* Surface */
+  --glass-bg: #ffffff;
+  --glass-bg-hover: #f6f8fc;
+  --glass-border: #d7e0ef;
+  --glass-shadow: 0 8px 28px rgba(0, 14, 47, 0.08);
+  --glass-blur: none;
 
   /* Text */
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.75);
-  --text-muted: rgba(255, 255, 255, 0.5);
+  --text-primary: #0d1b3d;
+  --text-secondary: #3a4d73;
+  --text-muted: #6a7894;
 
   /* Layout */
   --navbar-height: 70px;
@@ -44,8 +50,7 @@ html, body {
   width: 100%;
   min-height: 100vh;
   overflow-x: hidden;
-  background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-  background-attachment: fixed;
+  background: #f4f7fb;
   color: var(--text-primary);
 }
 

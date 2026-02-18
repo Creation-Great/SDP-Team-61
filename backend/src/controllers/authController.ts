@@ -1,15 +1,17 @@
 import { Response } from 'express';
 import jwt from 'jsonwebtoken';
+import type { SignOptions } from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { withDbNoRLS } from '../db.js';
 import { audit } from '../utils/audit.js';
+import { getUsersTableSchema, makeUserSelectClause, resolveIdentifierInput } from '../utils/userSchema.js';
 import type { AuthRequest } from '../types.js';
 
 const SALT_ROUNDS = 10;
 
 function generateToken(user: { user_id: string; email: string; role: string }): string {
   const secret = process.env.JWT_SECRET || 'dev-secret';
-  const expiresIn = process.env.JWT_EXPIRES_IN || '30d';
+  const expiresIn = (process.env.JWT_EXPIRES_IN || '30d') as SignOptions['expiresIn'];
   return jwt.sign(
     { user_id: user.user_id, email: user.email, role: user.role },
     secret,
@@ -41,6 +43,14 @@ export async function register(req: AuthRequest, res: Response): Promise<void> {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const user = await withDbNoRLS(async (client) => {
+      const schema = await getUsersTableSchema(client);
+      if (!schema.hasEmail || !schema.hasPasswordHash || !schema.hasName) {
+        throw {
+          status: 400,
+          message: 'Registration is disabled for legacy DB schema. Use an existing account.',
+        };
+      }
+
       // Check if email already exists
       const existing = await client.query('SELECT user_id FROM users WHERE email = $1', [email]);
       if (existing.rows.length > 0) {
@@ -93,33 +103,53 @@ export async function login(req: AuthRequest, res: Response): Promise<void> {
     }
 
     const result = await withDbNoRLS(async (client) => {
-      const r = await client.query(
-        'SELECT user_id, email, name, role, password_hash FROM users WHERE email = $1',
-        [email]
-      );
-      return r.rows[0] || null;
+      const schema = await getUsersTableSchema(client);
+      const selectClause = makeUserSelectClause(schema);
+      const { raw, netidGuess } = resolveIdentifierInput(email);
+
+      let query = `SELECT ${selectClause} FROM users`;
+      const params: string[] = [];
+
+      if (schema.hasEmail && schema.hasNetid) {
+        query += ' WHERE email = $1 OR netid = $2';
+        params.push(raw, netidGuess);
+      } else if (schema.hasEmail) {
+        query += ' WHERE email = $1';
+        params.push(raw);
+      } else if (schema.hasNetid) {
+        query += ' WHERE netid = $1';
+        params.push(netidGuess);
+      } else {
+        return null;
+      }
+
+      const r = await client.query(query, params);
+      const user = r.rows[0] || null;
+      return { user, schema };
     });
 
-    if (!result) {
+    if (!result?.user) {
       res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
       return;
     }
 
-    const match = await bcrypt.compare(password, result.password_hash);
-    if (!match) {
-      res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
-      return;
+    if (result.schema.hasPasswordHash) {
+      const match = await bcrypt.compare(password, result.user.password_hash);
+      if (!match) {
+        res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
+        return;
+      }
     }
 
-    const token = generateToken(result);
+    const token = generateToken(result.user);
 
     res.json({
       token,
       user: {
-        id: result.user_id,
-        name: result.name,
-        email: result.email,
-        role: result.role,
+        id: result.user.user_id,
+        name: result.user.name,
+        email: result.user.email,
+        role: result.user.role,
       },
     });
   } catch (err) {

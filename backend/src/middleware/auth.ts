@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
+import { getUsersTableSchema, makeUserSelectClause } from '../utils/userSchema.js';
 import type { AuthRequest, AuthUser } from '../types.js';
 
 /**
@@ -24,15 +25,23 @@ export async function authenticate(
 
     const decoded = jwt.verify(token, secret) as {
       user_id: string;
-      email: string;
+      email?: string;
       role: string;
     };
 
     // Fetch fresh user data from DB
-    const result = await pool.query(
-      'SELECT user_id, email, name, role, course_id, group_id FROM users WHERE user_id = $1',
-      [decoded.user_id]
-    );
+    const client = await pool.connect();
+    let result;
+    try {
+      const schema = await getUsersTableSchema(client);
+      const selectClause = makeUserSelectClause(schema);
+      result = await client.query(
+        `SELECT ${selectClause} FROM users WHERE user_id = $1`,
+        [decoded.user_id]
+      );
+    } finally {
+      client.release();
+    }
 
     if (result.rows.length === 0) {
       res.status(401).json({ error: 'unauthorized', message: 'User not found' });

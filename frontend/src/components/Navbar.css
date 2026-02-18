@@ -1,9 +1,9 @@
 .navbar {
   width: 100%;
   height: var(--navbar-height);
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(12px);
-  color: white;
+  background: #ffffff;
+  backdrop-filter: none;
+  color: #000e2f;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -12,12 +12,14 @@
   top: 0;
   left: 0;
   z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid #d7e0ef;
+  box-shadow: 0 4px 14px rgba(0, 14, 47, 0.06);
 }
 
 .navbar-brand {
   font-size: 1.4rem;
   font-weight: 700;
+  color: #000e2f;
   white-space: nowrap;
 }
 
@@ -27,7 +29,7 @@
 }
 
 .navbar-links a {
-  color: var(--text-secondary);
+  color: #3a4d73;
   text-decoration: none;
   font-size: 0.95rem;
   font-weight: 500;
@@ -37,12 +39,12 @@
 }
 
 .navbar-links a:hover {
-  color: var(--primary);
+  color: #000e2f;
 }
 
 .navbar-links a.active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
+  color: #000e2f;
+  border-bottom-color: #000e2f;
 }
 
 .navbar-user {
@@ -54,13 +56,13 @@
 
 .navbar-username {
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  color: #000e2f;
 }
 
 .chip-role {
-  background: rgba(77, 163, 255, 0.2);
-  color: var(--primary);
-  border: 1px solid rgba(77, 163, 255, 0.3);
+  background: rgba(0, 14, 47, 0.08);
+  color: #000e2f;
+  border: 1px solid rgba(0, 14, 47, 0.2);
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 0.75rem;

@@ -10,6 +10,7 @@ import authRoutes from './routes/authRoutes.js';
 import submissionRoutes from './routes/submissionRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import instructorRoutes from './routes/instructorRoutes.js';
+import checkinRoutes from './routes/checkinRoutes.js';
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use('/auth', authRoutes);
 app.use('/submissions', submissionRoutes);
 app.use('/reviews', reviewRoutes);
 app.use('/instructor', instructorRoutes);
+app.use('/checkins', checkinRoutes);
 
 // Global error handler
 app.use((err: any, _req: any, res: any, _next: any) => {

@@ -139,9 +139,9 @@
 }
 
 .chip-submitted {
-  background: rgba(77, 163, 255, 0.2);
+  background: rgba(var(--primary-rgb), 0.2);
   color: var(--primary);
-  border: 1px solid rgba(77, 163, 255, 0.3);
+  border: 1px solid rgba(var(--primary-rgb), 0.35);
 }
 
 .chip-reviewed {
@@ -170,10 +170,10 @@
   padding: 14px 18px;
   font-size: 1rem;
   border-radius: var(--border-radius-sm);
-  background: rgba(255, 255, 255, 0.12);
+  background: #ffffff;
   border: 1px solid var(--glass-border);
   outline: none;
-  color: white;
+  color: var(--text-primary);
   transition: border-color 0.2s;
 }
 
@@ -194,8 +194,8 @@
 }
 
 .form-select option {
-  background: #1a2a3a;
-  color: white;
+  background: #ffffff;
+  color: var(--text-primary);
 }
 
 /* Error text */
@@ -272,7 +272,7 @@
 .drop-zone:hover,
 .drop-zone.active {
   border-color: var(--primary);
-  background: rgba(77, 163, 255, 0.08);
+  background: rgba(var(--primary-rgb), 0.12);
   color: var(--primary);
 }
 
@@ -290,14 +290,14 @@
   font-size: 0.8rem;
   border-radius: 8px;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.2);
+  background: #edf2fb;
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   transition: background 0.2s;
 }
 
 .show-hide-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: #e2e9f7;
 }
 
 /* Auth layout */

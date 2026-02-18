@@ -11,6 +11,8 @@ import UploadAssignment from './pages/UploadAssignment';
 import AssignedReviewsPage from './pages/AssignedReviewsPage';
 import ReviewPage from './pages/ReviewPage';
 import ViewReviewPage from './pages/ViewReviewPage';
+import InstructorPeerReviewPage from './pages/InstructorPeerReviewPage';
+import StudentCheckinsPage from './pages/StudentCheckinsPage';
 import './App.css';
 
 function AppLayout({ children }) {
@@ -51,6 +53,13 @@ export default function App() {
           <AppLayout><AssignedReviewsPage /></AppLayout>
         </ProtectedRoute>
       } />
+      <Route path="/student/checkins" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><StudentCheckinsPage /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
       <Route path="/review/:id" element={
         <ProtectedRoute>
           <AppLayout><ReviewPage /></AppLayout>
@@ -67,6 +76,13 @@ export default function App() {
         <ProtectedRoute>
           <InstructorRoute>
             <AppLayout><InstructorDashboardPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/instructor/peer-review" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><InstructorPeerReviewPage /></AppLayout>
           </InstructorRoute>
         </ProtectedRoute>
       } />

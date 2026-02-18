@@ -42,12 +42,12 @@ export default function LoginPage() {
           <div className="form-group">
             <input
               className="form-input"
-              type="email"
-              placeholder="Email address"
+              type="text"
+              placeholder="Email or NetID"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              autoComplete="username"
             />
           </div>
           <div className="form-group password-container">

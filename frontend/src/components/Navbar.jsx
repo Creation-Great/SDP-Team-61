@@ -23,13 +23,21 @@ export default function Navbar() {
       <div className="navbar-brand">AI Peer Review</div>
       <div className="navbar-links">
         {isInstructor ? (
-          <NavLink to="/instructor" className={({ isActive }) => isActive ? 'active' : ''}>
-            Dashboard
-          </NavLink>
+          <>
+            <NavLink to="/instructor" className={({ isActive }) => isActive ? 'active' : ''}>
+              Dashboard
+            </NavLink>
+            <NavLink to="/instructor/peer-review" className={({ isActive }) => isActive ? 'active' : ''}>
+              Student Check-ins
+            </NavLink>
+          </>
         ) : (
           <>
             <NavLink to="/dashboard" className={({ isActive }) => isActive ? 'active' : ''}>
               My Submissions
+            </NavLink>
+            <NavLink to="/student/checkins" className={({ isActive }) => isActive ? 'active' : ''}>
+              My Check-ins
             </NavLink>
             <NavLink to="/upload" className={({ isActive }) => isActive ? 'active' : ''}>
               Upload
