@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import API from '../services/api';
 
 export default function LoginPage() {
@@ -9,6 +9,31 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchParams] = useSearchParams();
+
+  // Handle CAS callback — token comes back via query params
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (token) {
+      const user = {
+        id: searchParams.get('id'),
+        name: searchParams.get('name') || 'CAS User',
+        email: searchParams.get('email') || '',
+        role: searchParams.get('role') || 'student',
+      };
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      if (user.role === 'instructor' || user.role === 'admin') {
+        navigate('/instructor');
+      } else {
+        navigate('/dashboard');
+      }
+    }
+  }, [searchParams, navigate]);
+
+  const handleCasLogin = () => {
+    window.location.href = '/auth/cas/login';
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -73,6 +98,18 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center', margin: '16px 0', color: '#888' }}>or</div>
+
+        <button
+          type="button"
+          className="btn btn-secondary btn-block"
+          onClick={handleCasLogin}
+          style={{ marginBottom: '16px' }}
+        >
+          Sign in with University CAS
+        </button>
+
         <p className="auth-switch">
           Don't have an account? <Link to="/register">Create one</Link>
         </p>

@@ -14,6 +14,8 @@ import ViewReviewPage from './pages/ViewReviewPage';
 import PeerReviewSessionsPage from './pages/PeerReviewSessionsPage';
 import PeerReviewFormPage from './pages/PeerReviewFormPage';
 import PeerReviewResultsPage from './pages/PeerReviewResultsPage';
+import StudentCheckinsPage from './pages/StudentCheckinsPage';
+import InstructorPeerReviewPage from './pages/InstructorPeerReviewPage';
 import './App.css';
 
 function AppLayout({ children }) {
@@ -86,11 +88,27 @@ export default function App() {
         </ProtectedRoute>
       } />
 
+      {/* Student check-ins */}
+      <Route path="/student/checkins" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><StudentCheckinsPage /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
+
       {/* Instructor routes */}
       <Route path="/instructor" element={
         <ProtectedRoute>
           <InstructorRoute>
             <AppLayout><InstructorDashboardPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/instructor/peer-review" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><InstructorPeerReviewPage /></AppLayout>
           </InstructorRoute>
         </ProtectedRoute>
       } />
