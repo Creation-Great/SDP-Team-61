@@ -25,7 +25,6 @@ export default function ScoreSelector({ value, onChange, label, disabled = false
     if (next !== null) {
       e.preventDefault();
       if (!disabled) onChange(next);
-      // Move focus to the newly selected radio button
       const container = e.currentTarget.parentElement;
       const buttons = container?.querySelectorAll('[role="radio"]');
       buttons?.[next - 1]?.focus();
@@ -33,12 +32,12 @@ export default function ScoreSelector({ value, onChange, label, disabled = false
   };
 
   return (
-    <div style={{ marginBottom: '12px' }}>
-      {label && <label className="form-label">{label}</label>}
+    <div className="mb-3">
+      {label && <label className="block text-sm font-medium text-slate-700 mb-2">{label}</label>}
       <div
         role="radiogroup"
         aria-label={label || 'Score selection'}
-        style={{ display: 'flex', gap: '8px' }}
+        className="flex gap-2"
       >
         {scores.map((n) => (
           <button
@@ -51,19 +50,11 @@ export default function ScoreSelector({ value, onChange, label, disabled = false
             onClick={() => !disabled && onChange(n)}
             onKeyDown={(e) => handleKeyDown(e, n)}
             disabled={disabled}
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '10px',
-              border: value === n ? '2px solid var(--primary)' : '1px solid var(--glass-border, #ccc)',
-              background: value === n ? 'var(--primary)' : 'var(--glass-bg, #f5f5f5)',
-              color: value === n ? '#fff' : 'var(--text-secondary, #555)',
-              fontSize: '1rem',
-              fontWeight: 600,
-              cursor: disabled ? 'default' : 'pointer',
-              opacity: disabled ? 0.6 : 1,
-              transition: 'all 0.2s',
-            }}
+            className={`w-11 h-11 rounded-xl font-semibold text-base transition-all duration-200 ${
+              value === n
+                ? 'bg-indigo-600 text-white border-2 border-indigo-600 shadow-sm'
+                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+            } ${disabled ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
           >
             {n}
           </button>

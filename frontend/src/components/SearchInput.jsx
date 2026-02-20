@@ -1,3 +1,5 @@
+import { Search, X } from 'lucide-react';
+
 /**
  * Reusable search text input with debounce feel.
  *
@@ -14,11 +16,11 @@ export default function SearchInput({
   className = '',
 }) {
   return (
-    <div className={`search-input-wrapper ${className}`}>
-      <span className="search-input-icon" aria-hidden>🔍</span>
+    <div className={`relative ${className}`}>
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden />
       <input
         type="text"
-        className="form-input search-input"
+        className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -27,11 +29,11 @@ export default function SearchInput({
       {value && (
         <button
           type="button"
-          className="search-input-clear"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
           onClick={() => onChange('')}
           aria-label="Clear search"
         >
-          ×
+          <X className="w-4 h-4" />
         </button>
       )}
     </div>

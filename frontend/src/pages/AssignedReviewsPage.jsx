@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { ClipboardList, Loader2 } from 'lucide-react';
 import API from '../services/api';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
 
 export default function AssignedReviewsPage() {
   const [tasks, setTasks] = useState([]);
@@ -20,47 +23,61 @@ export default function AssignedReviewsPage() {
 
   if (loading) {
     return (
-      <div className="empty-state">
-        <p>Loading your review tasks...</p>
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <span className="ml-3 text-slate-500">Loading your review tasks...</span>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="page-title">Assigned Reviews</h1>
-      <p className="page-subtitle">Complete your pending peer review assignments.</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Assigned Peer Reviews</h1>
+        <p className="text-slate-500 mt-1">Please complete these reviews before the deadlines.</p>
+      </div>
 
       {tasks.length === 0 ? (
-        <div className="card empty-state">
-          <h3>No pending reviews</h3>
-          <p>You're all caught up! Check back later for new review assignments.</p>
-        </div>
+        <Card className="text-center px-6 py-12">
+          <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ClipboardList className="w-8 h-8 text-emerald-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">No pending reviews</h3>
+          <p className="text-slate-500">You're all caught up! Check back later for new review assignments.</p>
+        </Card>
       ) : (
-        tasks.map((task, idx) => (
-          <motion.div
-            key={task.assignment_id}
-            className="card"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.06 }}
-            whileHover={{ scale: 1.01 }}
-          >
-            <h3 className="card-title">{task.title}</h3>
-            <p className="card-meta">
-              <strong>From:</strong> {task.student_name}
-            </p>
-            <p className="card-muted">
-              Assigned: {new Date(task.assigned_at).toLocaleString()}
-            </p>
-            <button
-              className="btn btn-primary btn-md mt-12"
-              onClick={() => navigate(`/review/${task.assignment_id}`)}
-            >
-              Start Review
-            </button>
-          </motion.div>
-        ))
+        <Card className="p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                  <th className="p-4 font-medium">Target / Artifact</th>
+                  <th className="p-4 font-medium">Student</th>
+                  <th className="p-4 font-medium">Assigned</th>
+                  <th className="p-4 font-medium">Status</th>
+                  <th className="p-4 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tasks.map((task) => (
+                  <tr key={task.assignment_id} className="hover:bg-slate-50/50">
+                    <td className="p-4 font-medium text-slate-900">{task.title}</td>
+                    <td className="p-4 text-slate-500 text-sm">{task.student_name}</td>
+                    <td className="p-4 text-red-500 text-sm font-medium">
+                      {new Date(task.assigned_at).toLocaleDateString()}
+                    </td>
+                    <td className="p-4"><Badge type="warning">Pending</Badge></td>
+                    <td className="p-4">
+                      <Button size="sm" onClick={() => navigate(`/review/${task.assignment_id}`)}>
+                        Evaluate
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

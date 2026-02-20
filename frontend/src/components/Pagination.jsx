@@ -1,3 +1,5 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+
 /**
  * Reusable pagination controls.
  *
@@ -21,31 +23,35 @@ export default function Pagination({
 
   const pages = buildPageNumbers(page, totalPages);
 
+  const btnBase = 'inline-flex items-center justify-center h-9 min-w-[36px] px-2 rounded-lg text-sm font-medium transition-colors';
+  const btnActive = `${btnBase} bg-indigo-600 text-white shadow-sm`;
+  const btnInactive = `${btnBase} bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed`;
+
   return (
-    <div className="pagination-bar">
-      <span className="pagination-info">
+    <div className="flex items-center justify-between flex-wrap gap-3 mt-5 pt-4 border-t border-slate-100">
+      <span className="text-sm text-slate-500">
         {filtered === total
           ? `${total} ${noun}`
           : `${filtered} of ${total} ${noun}`}
       </span>
 
       {totalPages > 1 && (
-        <div className="pagination-controls">
+        <div className="flex items-center gap-1">
           <button
-            className="btn btn-sm btn-secondary"
+            className={btnInactive}
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
           >
-            ‹ Prev
+            <ChevronLeft className="w-4 h-4" />
           </button>
 
           {pages.map((p, i) =>
             p === '…' ? (
-              <span key={`e${i}`} className="pagination-ellipsis">…</span>
+              <span key={`e${i}`} className="px-1 text-slate-400">…</span>
             ) : (
               <button
                 key={p}
-                className={`btn btn-sm ${p === page ? 'btn-primary' : 'btn-secondary'}`}
+                className={p === page ? btnActive : btnInactive}
                 onClick={() => onPageChange(p)}
               >
                 {p}
@@ -54,11 +60,11 @@ export default function Pagination({
           )}
 
           <button
-            className="btn btn-sm btn-secondary"
+            className={btnInactive}
             disabled={page >= totalPages}
             onClick={() => onPageChange(page + 1)}
           >
-            Next ›
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       )}

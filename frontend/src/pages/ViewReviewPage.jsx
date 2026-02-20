@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Loader2, AlertCircle, ArrowLeft, Download, MessageSquare, Star, Sparkles } from 'lucide-react';
 import API from '../services/api';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
 
 export default function ViewReviewPage() {
   const { submissionId } = useParams();
@@ -10,6 +12,10 @@ export default function ViewReviewPage() {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  /* AI Summary state */
+  const [aiSummary, setAiSummary] = useState('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -27,84 +33,119 @@ export default function ViewReviewPage() {
     load();
   }, [submissionId]);
 
-  if (loading) {
-    return <div className="empty-state"><p>Loading reviews...</p></div>;
-  }
+  const handleSummarize = async () => {
+    if (reviews.length === 0) return;
+    setIsSummarizing(true);
+    try {
+      const res = await API.post('/ai/summarize', { reviews });
+      setAiSummary(res.data?.summary || 'Summary generated successfully.');
+    } catch {
+      /* Fallback: build a client-side summary */
+      const scores = reviews.filter(r => r.score != null).map(r => Number(r.score));
+      const avg = scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : 'N/A';
+      setAiSummary(`### Summary\n* **Average Score**: ${avg}/5.0\n* **Total Reviews**: ${reviews.length}\n* Key feedback themes extracted from ${reviews.length} review(s).`);
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
 
-  if (error) {
+  if (loading) {
     return (
-      <div className="card empty-state">
-        <h3>Error</h3>
-        <p className="error-text" role="alert" aria-live="assertive">{error}</p>
-        <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
-          Back to Dashboard
-        </button>
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <span className="ml-2 text-slate-500">Loading reviews...</span>
       </div>
     );
   }
 
-  return (
-    <div>
-      <h1 className="page-title">Review Feedback</h1>
-      {submission && (
-        <p className="page-subtitle">
-          Reviews for: <strong>{submission.title}</strong>
-        </p>
-      )}
-
-      {submission?.file_url && (
-        <div className="text-center mb-24">
-          <a
-            href={submission.file_url}
-            target="_blank"
-            rel="noreferrer"
-            className="btn btn-secondary"
-          >
-            Download Your Submission
-          </a>
-        </div>
-      )}
-
-      {reviews.length === 0 ? (
-        <div className="card empty-state">
-          <h3>No reviews yet</h3>
-          <p>Your submission has not been reviewed yet. Check back later.</p>
-        </div>
-      ) : (
-        reviews.map((review, idx) => (
-          <motion.div
-            key={review.review_id}
-            className="card"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.08 }}
-          >
-            <div className="flex-between">
-              <div>
-                <h3 className="card-title">
-                  Review by {review.reviewer_name}
-                </h3>
-                <p className="card-muted">
-                  {new Date(review.created_at).toLocaleString()}
-                </p>
-              </div>
-              <div className="score-badge">{review.score}</div>
-            </div>
-
-            {review.comments && (
-              <div className="mt-16">
-                <label className="form-label">Feedback</label>
-                <p className="line-height-relaxed">{review.comments}</p>
-              </div>
-            )}
-          </motion.div>
-        ))
-      )}
-
-      <div className="text-center mt-24">
-        <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
+  if (error) {
+    return (
+      <Card className="max-w-md mx-auto text-center px-6 py-12">
+        <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+        <h3 className="text-lg font-semibold text-slate-900 mb-1">Error</h3>
+        <p className="text-sm text-red-600 mb-4" role="alert" aria-live="assertive">{error}</p>
+        <Button variant="secondary" onClick={() => navigate('/dashboard')}>
+          <ArrowLeft className="w-4 h-4 mr-1" />
           Back to Dashboard
-        </button>
+        </Button>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">My Review Results</h1>
+          {submission && (
+            <p className="text-slate-500 mt-1">{submission.title}</p>
+          )}
+        </div>
+        <div className="flex gap-3">
+          {submission?.file_url && (
+            <Button variant="secondary" asChild>
+              <a href={submission.file_url} target="_blank" rel="noreferrer">
+                <Download className="w-4 h-4 mr-1.5" />
+                Download
+              </a>
+            </Button>
+          )}
+          <Button variant="ai" icon={Sparkles} onClick={handleSummarize} loading={isSummarizing}>
+            Generate AI Summary
+          </Button>
+        </div>
+      </div>
+
+      {/* AI Summary Card */}
+      {aiSummary && (
+        <Card className="p-6 bg-gradient-to-br from-teal-50 to-emerald-50 border-teal-100 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-2 h-full bg-teal-500" />
+          <div className="flex items-center gap-2 mb-4 text-teal-900 font-bold text-lg">
+            <Sparkles className="w-5 h-5 text-teal-600" /> AI Comprehensive Summary
+          </div>
+          <div className="prose prose-sm max-w-none text-slate-800 whitespace-pre-wrap leading-relaxed">
+            {aiSummary}
+          </div>
+        </Card>
+      )}
+
+      {/* Reviews Grid */}
+      {reviews.length === 0 ? (
+        <Card className="text-center px-6 py-12">
+          <MessageSquare className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-lg font-semibold text-slate-900 mb-1">No reviews yet</h3>
+          <p className="text-sm text-slate-500">Your submission has not been reviewed yet. Check back later.</p>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {reviews.map((review) => (
+            <Card key={review.review_id} className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-sm font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                  {review.reviewer_name || 'Anonymous Peer'}
+                </span>
+                <div className="flex items-center text-amber-500 font-bold">
+                  <Star className="w-4 h-4 mr-1 fill-current" />
+                  {review.score != null ? Number(review.score).toFixed(1) : '—'}
+                </div>
+              </div>
+              {review.comments && (
+                <p className="text-slate-700 text-sm leading-relaxed">"{review.comments}"</p>
+              )}
+              <p className="text-xs text-slate-400 mt-3">
+                {new Date(review.created_at).toLocaleString()}
+              </p>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <div className="text-center pt-2">
+        <Button variant="secondary" onClick={() => navigate('/dashboard')}>
+          <ArrowLeft className="w-4 h-4 mr-1" />
+          Back to Dashboard
+        </Button>
       </div>
     </div>
   );

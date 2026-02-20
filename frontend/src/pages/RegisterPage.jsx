@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { UserPlus, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import API from '../services/api';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -38,74 +41,109 @@ export default function RegisterPage() {
     }
   };
 
+  const inputClass =
+    'w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm ' +
+    'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 ' +
+    'focus:border-indigo-300 transition-all';
+
   return (
-    <div className="auth-wrapper">
-      <div className="auth-card">
-        <h2>Create Account</h2>
-        <p className="card-muted mb-24">
-          Join the AI Peer Review System
-        </p>
-        <form onSubmit={handleRegister}>
-          <div className="form-group">
-            <label className="sr-only" htmlFor="reg-name">Full name</label>
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-50">
+      {/* Gradient blobs */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-indigo-200/40 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-teal-200/40 rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
+
+      <Card className="w-full max-w-md relative z-10 !shadow-2xl !bg-white/90 backdrop-blur-sm !p-8">
+        {/* Logo */}
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <UserPlus className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-900">Create Account</h1>
+          <p className="text-slate-500 text-sm mt-1">Join the PeerReview System</p>
+        </div>
+
+        <form onSubmit={handleRegister} className="space-y-4">
+          {/* Name */}
+          <div>
+            <label htmlFor="reg-name" className="block text-sm font-medium text-slate-700 mb-1.5">
+              Full Name
+            </label>
             <input
               id="reg-name"
-              className="form-input"
+              className={inputClass}
               type="text"
-              placeholder="Full name"
+              placeholder="John Doe"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          <div className="form-group">
-            <label className="sr-only" htmlFor="reg-email">Email address</label>
+
+          {/* Email */}
+          <div>
+            <label htmlFor="reg-email" className="block text-sm font-medium text-slate-700 mb-1.5">
+              Email Address
+            </label>
             <input
               id="reg-email"
-              className="form-input"
+              className={inputClass}
               type="email"
-              placeholder="Email address"
+              placeholder="you@university.edu"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div className="form-group password-container">
-            <label className="sr-only" htmlFor="reg-password">Password</label>
-            <input
-              id="reg-password"
-              className="form-input"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Password (min 6 chars)"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button
-              type="button"
-              className="show-hide-btn"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? 'Hide' : 'Show'}
-            </button>
+
+          {/* Password */}
+          <div>
+            <label htmlFor="reg-password" className="block text-sm font-medium text-slate-700 mb-1.5">
+              Password
+            </label>
+            <div className="relative">
+              <input
+                id="reg-password"
+                className={inputClass + ' pr-12'}
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Min 6 characters"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
-          <div className="form-group password-container">
-            <label className="sr-only" htmlFor="reg-confirm-password">Confirm password</label>
+
+          {/* Confirm Password */}
+          <div>
+            <label htmlFor="reg-confirm-password" className="block text-sm font-medium text-slate-700 mb-1.5">
+              Confirm Password
+            </label>
             <input
               id="reg-confirm-password"
-              className="form-input"
+              className={inputClass}
               type={showPassword ? 'text' : 'password'}
-              placeholder="Confirm password"
+              placeholder="Re-enter your password"
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
             />
           </div>
-          <div className="form-group">
-            <label className="sr-only" htmlFor="reg-role">Role</label>
+
+          {/* Role */}
+          <div>
+            <label htmlFor="reg-role" className="block text-sm font-medium text-slate-700 mb-1.5">
+              Role
+            </label>
             <select
               id="reg-role"
-              className="form-select"
+              className={inputClass + ' appearance-none cursor-pointer'}
               value={role}
               onChange={(e) => setRole(e.target.value)}
             >
@@ -113,28 +151,44 @@ export default function RegisterPage() {
               <option value="instructor">Instructor</option>
             </select>
           </div>
+
+          {/* Team Number (students only) */}
           {role === 'student' && (
-            <div className="form-group">
-              <label className="sr-only" htmlFor="reg-team">Team Number</label>
+            <div>
+              <label htmlFor="reg-team" className="block text-sm font-medium text-slate-700 mb-1.5">
+                Team Number
+              </label>
               <input
                 id="reg-team"
-                className="form-input"
+                className={inputClass}
                 type="text"
-                placeholder="Team Number (e.g., 61)"
+                placeholder="e.g., 61"
                 value={groupId}
                 onChange={(e) => setGroupId(e.target.value)}
               />
             </div>
           )}
-          {error && <p className="error-text" role="alert" aria-live="assertive">{error}</p>}
-          <button type="submit" className="btn btn-primary btn-block" disabled={loading}>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert" aria-live="assertive">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <Button type="submit" className="w-full" loading={loading}>
             {loading ? 'Creating account...' : 'Create Account'}
-          </button>
+          </Button>
         </form>
-        <p className="auth-switch">
-          Already have an account? <Link to="/login">Sign in</Link>
+
+        <p className="text-center text-sm text-slate-500 mt-6">
+          Already have an account?{' '}
+          <Link to="/login" className="text-indigo-600 font-medium hover:text-indigo-700 transition-colors">
+            Sign in
+          </Link>
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

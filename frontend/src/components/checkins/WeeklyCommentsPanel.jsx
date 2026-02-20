@@ -1,3 +1,5 @@
+import Card from '../ui/Card';
+
 /**
  * Per-week comments section (additional + per-member).
  */
@@ -10,12 +12,12 @@ export default function WeeklyCommentsPanel({
   if (!week) return null;
 
   return (
-    <div className="card mb-16">
-      <h3 className="card-title">{week.label} Comments</h3>
-      <div className="form-group">
-        <label className="form-label">Additional Comments (Week-level)</label>
+    <Card className="p-6 mb-4">
+      <h3 className="text-lg font-semibold text-slate-900 mb-3">{week.label} Comments</h3>
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-slate-700 mb-1.5">Additional Comments (Week-level)</label>
         <textarea
-          className="form-textarea"
+          className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 resize-y"
           rows={3}
           placeholder="Overall observations for this week..."
           value={week.additional_comments || ''}
@@ -23,12 +25,12 @@ export default function WeeklyCommentsPanel({
         />
       </div>
       {filteredMembers.map((member) => (
-        <div key={`${member.id}-comment`} className="form-group">
-          <label className="form-label">
+        <div key={`${member.id}-comment`} className="mb-4">
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
             {member.team} - {member.name}
           </label>
           <textarea
-            className="form-textarea"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 resize-y"
             rows={2}
             placeholder="Week-specific comment"
             value={week.comments?.[member.id] || ''}
@@ -36,6 +38,6 @@ export default function WeeklyCommentsPanel({
           />
         </div>
       ))}
-    </div>
+    </Card>
   );
 }

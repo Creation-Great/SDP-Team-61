@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Upload, FileText, Plus, MessageSquare, Download, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
 import API from '../services/api';
 import { RESERVED_HEADERS, parseCsv, toScore, csvEscape, buildDefaultWeek } from '../utils/csvHelpers';
 import MappingPanel from '../components/checkins/MappingPanel';
@@ -7,6 +8,8 @@ import WeeklyCommentsPanel from '../components/checkins/WeeklyCommentsPanel';
 import InsightsTable from '../components/checkins/InsightsTable';
 import HandedOutTable from '../components/checkins/HandedOutTable';
 import RollingAveragesTable from '../components/checkins/RollingAveragesTable';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
 
 export default function InstructorPeerReviewPage() {
   const [error, setError] = useState('');
@@ -340,44 +343,86 @@ export default function InstructorPeerReviewPage() {
   };
 
   return (
-    <div>
-      <h1 className="page-title">Student Check-ins</h1>
-      <p className="page-subtitle">
-        Upload one template CSV, score weekly, submit weekly scores, and keep rolling per-student averages.
-      </p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Student Check-ins</h1>
+          <p className="text-slate-500 mt-1">
+            Upload one template CSV, score weekly, submit weekly scores, and keep rolling per-student averages.
+          </p>
+        </div>
+        {members.length > 0 && (
+          <Button variant="secondary" icon={Download} onClick={exportRollingCsv}>
+            Export Rolling CSV
+          </Button>
+        )}
+      </div>
 
-      <div className="card mb-16">
-        <div className="flex-center flex-wrap gap-8 mb-12">
+      <Card className="p-0 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center flex-wrap gap-2">
           <button
             type="button"
-            className={`btn btn-md ${mode === 'existing' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              mode === 'existing'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
             onClick={() => setMode('existing')}
             disabled={members.length === 0}
           >
+            <FileText className="w-4 h-4 inline mr-1.5 -mt-0.5" />
             Update Existing
           </button>
           <button
             type="button"
-            className={`btn btn-md ${mode === 'upload' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+              mode === 'upload'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
             onClick={() => setMode('upload')}
           >
+            <Upload className="w-4 h-4 inline mr-1.5 -mt-0.5" />
             Upload New CSV
           </button>
+          {fileName && <span className="ml-auto text-sm text-slate-500">Loaded: {fileName}</span>}
         </div>
-        {mode === 'upload' && (
-          <div className="form-group">
-            <label className="form-label" htmlFor="template-csv-upload">Template CSV</label>
-            <input id="template-csv-upload" type="file" accept=".csv,text/csv" onChange={loadTemplate} />
-          </div>
-        )}
-        {mode === 'existing' && members.length > 0 && (
-          <p className="card-meta">Editing stored check-ins. Use "Submit Weekly Scores" to persist updates.</p>
-        )}
-        {loadingSaved && <p className="card-meta">Loading saved data...</p>}
-        {fileName && <p className="card-meta">Loaded: {fileName}</p>}
-        {status && <p className="success-text">{status}</p>}
-        {error && <p className="error-text" role="alert" aria-live="assertive">{error}</p>}
-      </div>
+        <div className="p-6">
+          {mode === 'upload' && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="template-csv-upload">Template CSV</label>
+              <input
+                id="template-csv-upload"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={loadTemplate}
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100"
+              />
+            </div>
+          )}
+          {mode === 'existing' && members.length > 0 && (
+            <p className="text-sm text-slate-500">Editing stored check-ins. Use &quot;Submit Weekly Scores&quot; to persist updates.</p>
+          )}
+          {loadingSaved && (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading saved data...
+            </div>
+          )}
+          {status && (
+            <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm mt-2">
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              {status}
+            </div>
+          )}
+          {error && (
+            <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mt-2" role="alert" aria-live="assertive">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+        </div>
+      </Card>
 
       {members.length > 0 && showMappingPanel && (
         <MappingPanel
@@ -388,41 +433,35 @@ export default function InstructorPeerReviewPage() {
       )}
 
       {members.length > 0 && (
-        <div className="card mb-16">
-          <div className="flex-center flex-wrap gap-8">
+        <Card className="p-4">
+          <div className="flex items-center flex-wrap gap-2">
             {weeks.map((week) => (
               <button
                 key={week.id}
                 type="button"
-                className={`btn btn-md ${selectedWeekId === week.id ? 'btn-primary' : 'btn-secondary'}`}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                  selectedWeekId === week.id
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                }`}
                 onClick={() => setSelectedWeekId(week.id)}
               >
                 {week.label}
               </button>
             ))}
-            <button
-              type="button"
-              className="btn btn-md btn-secondary"
-              onClick={addWeek}
-            >
-              + Add Week
-            </button>
-            <button
-              type="button"
-              className="btn btn-md btn-secondary"
-              onClick={() => setShowComments((v) => !v)}
-            >
+            <Button variant="secondary" size="sm" onClick={addWeek}>
+              <Plus className="w-4 h-4 mr-1" />
+              Add Week
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowComments((v) => !v)}>
+              <MessageSquare className="w-4 h-4 mr-1" />
               {showComments ? 'Hide Comments' : 'Show Comments'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-md btn-secondary"
-              onClick={exportRollingCsv}
-            >
-              Export Rolling CSV
-            </button>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowMappingPanel((v) => !v)} disabled={members.length === 0}>
+              Mapping
+            </Button>
           </div>
-        </div>
+        </Card>
       )}
 
       {selectedWeek && (

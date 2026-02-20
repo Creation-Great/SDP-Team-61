@@ -1,18 +1,23 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { Home } from 'lucide-react';
+import Button from '../components/ui/Button';
 
 export default function NotFoundPage() {
   const { user, isInstructor } = useAuth();
   const home = !user ? '/login' : isInstructor ? '/instructor' : '/dashboard';
 
   return (
-    <div className="empty-state" style={{ textAlign: 'center', padding: '4rem 1rem' }}>
-      <h1 style={{ fontSize: '4rem', margin: 0 }}>404</h1>
-      <p style={{ fontSize: '1.25rem', color: 'var(--text-muted, #666)', margin: '0.5rem 0 1.5rem' }}>
+    <div className="flex flex-col items-center justify-center py-24 text-center">
+      <h1 className="text-7xl font-bold text-indigo-600">404</h1>
+      <p className="text-lg text-slate-500 mt-2 mb-8">
         The page you're looking for doesn't exist.
       </p>
-      <Link to={home} className="btn btn-primary" style={{ textDecoration: 'none' }}>
-        Go Home
+      <Link to={home}>
+        <Button>
+          <Home className="w-4 h-4 mr-2" />
+          Go Home
+        </Button>
       </Link>
     </div>
   );

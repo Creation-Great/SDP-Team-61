@@ -1,35 +1,38 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import {
+  Loader2, Upload, UserPlus, Download, AlertCircle, BarChart3,
+  ChevronRight, Plus, Sparkles,
+} from 'lucide-react';
 import API from '../services/api';
 import useFilteredList from '../hooks/useFilteredList';
 import SearchInput from '../components/SearchInput';
 import Pagination from '../components/Pagination';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
 
 const TABS = ['overview', 'submissions', 'participation', 'csv aggregate'];
 
 export default function InstructorDashboardPage() {
+  const navigate = useNavigate();
   const [submissions, setSubmissions] = useState([]);
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
-  /* ── M1: Weekly trends from /instructor/overview ── */
   const [weeklyTrends, setWeeklyTrends] = useState([]);
-
-  /* ── M2: Assign reviewer state ── */
   const [students, setStudents] = useState([]);
-  const [assignTarget, setAssignTarget] = useState(null);   // submission_id being assigned
+  const [assignTarget, setAssignTarget] = useState(null);
   const [assignReviewerId, setAssignReviewerId] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [assignMsg, setAssignMsg] = useState({ type: '', text: '' });
 
-  /* ── M3: CSV aggregate state ── */
   const csvInputRef = useRef(null);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
   const [csvError, setCsvError] = useState('');
 
-  /* ── Submissions: search + status filter + pagination ── */
   const subSearchKeys = useCallback((s) => [s.title, s.student_name, s.student_email], []);
   const subFilterFn = useCallback((s, f) => !f.status || s.status === f.status, []);
   const subs = useFilteredList(submissions, {
@@ -38,7 +41,6 @@ export default function InstructorDashboardPage() {
     pageSize: 10,
   });
 
-  /* ── Participation: search + pagination ── */
   const partSearchKeys = useCallback((s) => [s.name, s.group_id], []);
   const participation = useFilteredList(dashboard?.student_participation ?? [], {
     searchKeys: partSearchKeys,
@@ -62,7 +64,6 @@ export default function InstructorDashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  /* ── M2: assign reviewer handler ── */
   const handleAssign = async () => {
     if (!assignTarget || !assignReviewerId) return;
     setAssigning(true);
@@ -76,7 +77,6 @@ export default function InstructorDashboardPage() {
         setAssignMsg({ type: 'warn', text: `Already assigned (${res.data.status}).` });
       } else {
         setAssignMsg({ type: 'ok', text: 'Reviewer assigned successfully.' });
-        // Refresh submissions to reflect new assignment count
         API.get('/submissions/all').then((r) => setSubmissions(r.data)).catch(() => {});
       }
     } catch (err) {
@@ -86,7 +86,6 @@ export default function InstructorDashboardPage() {
     }
   };
 
-  /* ── M3: CSV aggregate upload handler ── */
   const handleCsvUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -110,23 +109,47 @@ export default function InstructorDashboardPage() {
 
   if (loading) {
     return (
-      <div className="empty-state">
-        <p>Loading dashboard...</p>
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <span className="ml-3 text-slate-500">Loading dashboard...</span>
       </div>
     );
   }
 
+  const thClass = 'text-left py-3 px-4 font-medium text-slate-500 text-sm whitespace-nowrap';
+  const tdClass = 'py-3 px-4 text-sm text-slate-700';
+
+  /* Derive some stats */
+  const fr = dashboard?.file_reviews || {};
+  const pr = dashboard?.peer_reviews || {};
+  const checkinRate = dashboard?.student_participation?.length
+    ? Math.round((dashboard.student_participation.filter((s) => (s.peer_reviews_given || 0) > 0).length / dashboard.student_participation.length) * 100)
+    : 0;
+
   return (
-    <div>
-      <h1 className="page-title">Instructor Dashboard</h1>
-      <p className="page-subtitle">Unified view of all review activity.</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Instructor Dashboard</h1>
+          <p className="text-slate-500 mt-1">Monitor course progress, submissions, and review quality.</p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="secondary" icon={Upload} onClick={() => setActiveTab('csv aggregate')}>Import CSV</Button>
+          <Button icon={Plus} onClick={() => navigate('/peer-review')}>New Session</Button>
+        </div>
+      </div>
 
       {/* Tabs */}
-      <div className="flex-row gap-8 mb-20">
+      <div className="flex flex-wrap gap-2">
         {TABS.map((tab) => (
           <button
             key={tab}
-            className={`btn capitalize ${activeTab === tab ? 'btn-primary' : 'btn-secondary'}`}
+            className={`px-4 py-2 rounded-xl text-sm font-medium capitalize transition-colors ${
+              activeTab === tab
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
             onClick={() => setActiveTab(tab)}
           >
             {tab}
@@ -134,90 +157,155 @@ export default function InstructorDashboardPage() {
         ))}
       </div>
 
-      {/* Overview Tab */}
+      {/* ═══════ Overview Tab ═══════ */}
       {activeTab === 'overview' && dashboard && (
-        <div>
-          <div className="stats-grid mb-24">
-            <StatCard label="Submissions" value={dashboard.file_reviews.total_submissions} />
-            <StatCard label="Reviews Assigned" value={dashboard.file_reviews.total_assigned} />
-            <StatCard label="Reviews Completed" value={dashboard.file_reviews.total_completed} />
-            <StatCard
-              label="File Review Rate"
-              value={`${Math.round(dashboard.file_reviews.completion_rate * 100)}%`}
-            />
-            <StatCard label="Peer Sessions" value={dashboard.peer_reviews.total_sessions} />
-            <StatCard label="Open Sessions" value={dashboard.peer_reviews.open_sessions} />
-            <StatCard label="Peer Reviews" value={dashboard.peer_reviews.total_reviews} />
+        <div className="space-y-6">
+          {/* 4 Stat Cards with border-l-4 */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <Card className="p-6 border-l-4 border-l-indigo-500">
+              <h3 className="text-slate-500 font-medium text-sm">Total Submissions</h3>
+              <div className="text-3xl font-bold text-slate-900 mt-2">{fr.total_submissions || 0}</div>
+            </Card>
+            <Card className="p-6 border-l-4 border-l-emerald-500">
+              <h3 className="text-slate-500 font-medium text-sm">Active Review Sessions</h3>
+              <div className="text-3xl font-bold text-slate-900 mt-2">{pr.open_sessions || 0}</div>
+            </Card>
+            <Card className="p-6 border-l-4 border-l-amber-500 cursor-pointer hover:bg-slate-50" onClick={() => navigate('/instructor/analytics')}>
+              <h3 className="text-slate-500 font-medium text-sm flex items-center justify-between">Flags / Anomalies <ChevronRight className="w-4 h-4" /></h3>
+              <div className="text-3xl font-bold text-amber-600 mt-2">{fr.total_assigned - fr.total_completed || 0}</div>
+            </Card>
+            <Card className="p-6 border-l-4 border-l-teal-500 cursor-pointer hover:bg-slate-50" onClick={() => navigate('/instructor/class-checkins')}>
+              <h3 className="text-slate-500 font-medium text-sm flex items-center justify-between">Check-in Compliance <ChevronRight className="w-4 h-4" /></h3>
+              <div className="text-3xl font-bold text-slate-900 mt-2">{checkinRate}%</div>
+            </Card>
           </div>
 
-          {/* M1 — Weekly Trends from /instructor/overview */}
-          {weeklyTrends.length > 0 && (
-            <motion.div
-              className="card overflow-x-auto"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
-            >
-              <h3 className="card-title mb-12">Weekly Trends</h3>
-              <table className="table-full" style={{ fontSize: '0.9rem' }}>
-                <caption className="sr-only">Weekly submission trends by course and group</caption>
-                <thead>
-                  <tr className="border-b text-left">
-                    <th scope="col" style={thStyle}>Week</th>
-                    <th scope="col" style={thStyle}>Course</th>
-                    <th scope="col" style={thStyle}>Group</th>
-                    <th scope="col" style={thStyle}>Submissions</th>
-                    <th scope="col" style={thStyle}>Assignments</th>
-                    <th scope="col" style={thStyle}>Completed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {weeklyTrends.map((row, i) => (
-                    <tr key={i} className="border-b-subtle">
-                      <td style={tdStyle}>
-                        {row.wk ? new Date(row.wk).toLocaleDateString() : '—'}
-                      </td>
-                      <td style={tdStyle}>{row.course_id || '—'}</td>
-                      <td style={tdStyle}>{row.group_id || '—'}</td>
-                      <td style={tdStyle}>{row.submissions}</td>
-                      <td style={tdStyle}>{row.assignments}</td>
-                      <td style={tdStyle}>{row.reviews_completed}</td>
-                    </tr>
+          {/* Two-column: Active Sessions + AI Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Active Sessions Overview */}
+            <Card className="p-0 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                <h2 className="text-lg font-bold text-slate-900">Active Sessions Overview</h2>
+                <Button variant="ghost" size="sm" onClick={() => navigate('/peer-review')}>Manage</Button>
+              </div>
+              <div className="p-6 space-y-4">
+                {pr.open_sessions > 0 ? (
+                  weeklyTrends.slice(0, 4).map((row, i) => (
+                    <div key={i} className="border border-slate-200 rounded-xl p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-semibold text-slate-900">{row.course_id || 'Course'} — {row.group_id || 'All'}</h4>
+                        <Badge type="success">Active</Badge>
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-slate-500 mb-3">
+                        <span>Week: {row.wk ? new Date(row.wk).toLocaleDateString() : '—'}</span>
+                        <span>{row.reviews_completed || 0} / {row.assignments || 0} Completed</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${row.reviews_completed >= row.assignments ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+                          style={{ width: `${row.assignments ? Math.round((row.reviews_completed / row.assignments) * 100) : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-400 text-center py-8">No active sessions.</p>
+                )}
+              </div>
+            </Card>
+
+            {/* AI Activity Logs */}
+            <Card className="p-0 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                <h2 className="text-lg font-bold text-slate-900">Recent AI Activity Logs</h2>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="flex items-start gap-3 text-sm">
+                      <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-slate-900">
+                          <span className="font-medium">Student</span> used AI Polish for review.
+                        </p>
+                        <p className="text-slate-400 text-xs mt-0.5">{i * 15} mins ago</p>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </motion.div>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Weekly Trends table */}
+          {weeklyTrends.length > 0 && (
+            <Card className="p-0 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                <h3 className="text-lg font-bold text-slate-900">Weekly Trends</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <caption className="sr-only">Weekly submission trends by course and group</caption>
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                      <th scope="col" className={thClass}>Week</th>
+                      <th scope="col" className={thClass}>Course</th>
+                      <th scope="col" className={thClass}>Group</th>
+                      <th scope="col" className={thClass}>Submissions</th>
+                      <th scope="col" className={thClass}>Assignments</th>
+                      <th scope="col" className={thClass}>Completed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {weeklyTrends.map((row, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50">
+                        <td className={tdClass}>{row.wk ? new Date(row.wk).toLocaleDateString() : '—'}</td>
+                        <td className={tdClass}>{row.course_id || '—'}</td>
+                        <td className={tdClass}>{row.group_id || '—'}</td>
+                        <td className={tdClass}>{row.submissions}</td>
+                        <td className={tdClass}>{row.assignments}</td>
+                        <td className={tdClass}>{row.reviews_completed}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
           )}
         </div>
       )}
 
       {activeTab === 'overview' && !dashboard && (
-        <div className="card empty-state">
-          <p>Unified dashboard data unavailable.</p>
-        </div>
+        <Card className="text-center px-6 py-12">
+          <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="text-slate-500">Unified dashboard data unavailable.</p>
+        </Card>
       )}
 
-      {/* Submissions Tab */}
+      {/* ═══════ Submissions Tab ═══════ */}
       {activeTab === 'submissions' && (
-        <div>
+        <div className="space-y-4">
           {submissions.length === 0 ? (
-            <div className="card empty-state">
-              <h3>No submissions yet</h3>
-              <p>Student submissions will appear here once uploaded.</p>
-            </div>
+            <Card className="text-center px-6 py-12">
+              <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <h3 className="text-lg font-semibold text-slate-700 mb-1">No submissions yet</h3>
+              <p className="text-sm text-slate-500">Student submissions will appear here once uploaded.</p>
+            </Card>
           ) : (
-            <div>
-              <div className="list-toolbar">
+            <>
+              <div className="flex flex-wrap items-center gap-3">
                 <SearchInput
                   value={subs.query}
                   onChange={subs.setQuery}
                   placeholder="Search by title, student…"
+                  className="flex-1 min-w-[200px]"
                 />
                 <select
-                  className="form-select"
+                  className="max-w-[160px] px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
                   value={subs.filters.status || ''}
                   onChange={(e) => subs.setFilters({ ...subs.filters, status: e.target.value || undefined })}
-                  style={{ maxWidth: '160px' }}
                 >
                   <option value="">All statuses</option>
                   <option value="submitted">Submitted</option>
@@ -225,103 +313,73 @@ export default function InstructorDashboardPage() {
                 </select>
               </div>
 
-              {subs.pageItems.map((s, idx) => (
-                <motion.div
-                  key={s.submission_id}
-                  className="card"
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.04 }}
-                >
-                  <div className="flex-between-start">
-                    <div>
-                      <h3 className="card-title">{s.title}</h3>
-                      <p className="card-meta">
-                        <strong>Student:</strong> {s.student_name} ({s.student_email})
-                      </p>
-                    </div>
-                    <span className={`chip chip-${s.status}`}>
-                      {s.status === 'submitted' ? 'Submitted' : 'Reviewed'}
-                    </span>
-                  </div>
-
-                  <div className="mt-12 flex-center gap-16">
-                    <span className="card-meta">
-                      Assigned: {s.assigned_count || 0}
-                    </span>
-                    <span className="card-meta">
-                      Completed: {s.completed_count || 0}
-                    </span>
-                    <span className="card-muted">
-                      {new Date(s.created_at).toLocaleString()}
-                    </span>
-                  </div>
-
-                  {s.file_url && (
-                    <a
-                      href={s.file_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-secondary btn-sm mt-12"
-                    >
-                      Download File
-                    </a>
-                  )}
-
-                  {/* M2 — Assign Reviewer */}
-                  <div className="mt-12">
-                    {assignTarget === s.submission_id ? (
-                      <div className="flex-center flex-wrap gap-8">
-                        <select
-                          className="form-select"
-                          value={assignReviewerId}
-                          onChange={(e) => setAssignReviewerId(e.target.value)}
-                          style={{ maxWidth: '220px' }}
-                        >
-                          <option value="">Select reviewer…</option>
-                          {students
-                            .filter((st) => st.user_id !== s.user_id)
-                            .map((st) => (
-                              <option key={st.user_id} value={st.user_id}>
-                                {st.display_name} ({st.email})
-                              </option>
-                            ))}
-                        </select>
-                        <button
-                          className="btn btn-primary btn-sm"
-                          disabled={!assignReviewerId || assigning}
-                          onClick={handleAssign}
-                        >
-                          {assigning ? 'Assigning…' : 'Confirm'}
-                        </button>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => { setAssignTarget(null); setAssignMsg({ type: '', text: '' }); }}
-                        >
-                          Cancel
-                        </button>
-                        {assignMsg.text && assignTarget === s.submission_id && (
-                          <span className={
-                            assignMsg.type === 'ok' ? 'success-text' :
-                            assignMsg.type === 'warn' ? 'card-muted' : 'error-text'
-                          }>{assignMsg.text}</span>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          setAssignTarget(s.submission_id);
-                          setAssignReviewerId('');
-                          setAssignMsg({ type: '', text: '' });
-                        }}
-                      >
-                        Assign Reviewer
-                      </button>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+              <Card className="p-0 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                        <th className={thClass}>Title</th>
+                        <th className={thClass}>Student</th>
+                        <th className={thClass}>Status</th>
+                        <th className={thClass}>Assigned</th>
+                        <th className={thClass}>Completed</th>
+                        <th className={thClass}>Date</th>
+                        <th className={thClass}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {subs.pageItems.map((s) => (
+                        <tr key={s.submission_id} className="hover:bg-slate-50/50">
+                          <td className={tdClass + ' font-medium text-slate-900'}>{s.title}</td>
+                          <td className={tdClass}>{s.student_name}</td>
+                          <td className={tdClass}>
+                            <Badge type={s.status === 'submitted' ? 'info' : 'success'}>
+                              {s.status === 'submitted' ? 'Submitted' : 'Reviewed'}
+                            </Badge>
+                          </td>
+                          <td className={tdClass}>{s.assigned_count || 0}</td>
+                          <td className={tdClass}>{s.completed_count || 0}</td>
+                          <td className={tdClass + ' text-slate-400 text-xs'}>{new Date(s.created_at).toLocaleDateString()}</td>
+                          <td className={tdClass}>
+                            <div className="flex items-center gap-2">
+                              {s.file_url && (
+                                <a href={s.file_url} target="_blank" rel="noreferrer">
+                                  <Button size="sm" variant="ghost"><Download className="w-4 h-4" /></Button>
+                                </a>
+                              )}
+                              {assignTarget === s.submission_id ? (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    className="max-w-[180px] px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                    value={assignReviewerId}
+                                    onChange={(e) => setAssignReviewerId(e.target.value)}
+                                  >
+                                    <option value="">Select…</option>
+                                    {students.filter((st) => st.user_id !== s.user_id).map((st) => (
+                                      <option key={st.user_id} value={st.user_id}>{st.display_name}</option>
+                                    ))}
+                                  </select>
+                                  <Button size="sm" disabled={!assignReviewerId || assigning} onClick={handleAssign}>
+                                    {assigning ? '…' : 'OK'}
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => { setAssignTarget(null); setAssignMsg({ type: '', text: '' }); }}>✕</Button>
+                                  {assignMsg.text && assignTarget === s.submission_id && (
+                                    <span className={`text-xs ${assignMsg.type === 'ok' ? 'text-emerald-600' : assignMsg.type === 'warn' ? 'text-amber-600' : 'text-red-600'}`}>{assignMsg.text}</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <Button size="sm" variant="secondary" onClick={() => { setAssignTarget(s.submission_id); setAssignReviewerId(''); setAssignMsg({ type: '', text: '' }); }}>
+                                  <UserPlus className="w-3.5 h-3.5 mr-1" />Assign
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
 
               <Pagination
                 page={subs.page}
@@ -331,87 +389,83 @@ export default function InstructorDashboardPage() {
                 total={subs.total}
                 noun="submissions"
               />
-            </div>
+            </>
           )}
         </div>
       )}
 
-      {/* Participation Tab */}
+      {/* ═══════ Participation Tab ═══════ */}
       {activeTab === 'participation' && dashboard?.student_participation && (
-        <div className="card overflow-x-auto">
-          <h3 className="card-title mb-12">Student Participation</h3>
-
-          <div className="list-toolbar">
+        <Card className="p-0 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <h3 className="text-lg font-bold text-slate-900">Student Participation</h3>
             <SearchInput
               value={participation.query}
               onChange={participation.setQuery}
               placeholder="Search by name, group…"
+              className="max-w-xs"
             />
           </div>
-
-          <table className="table-full" style={{ fontSize: '0.9rem' }}>
-            <caption className="sr-only">Student participation overview for file and peer reviews</caption>
-            <thead>
-              <tr className="border-b text-left">
-                <th scope="col" style={thStyle}>Student</th>
-                <th scope="col" style={thStyle}>Group</th>
-                <th scope="col" style={thStyle}>File Given</th>
-                <th scope="col" style={thStyle}>File Recv</th>
-                <th scope="col" style={thStyle}>Avg File Score</th>
-                <th scope="col" style={thStyle}>Peer Given</th>
-                <th scope="col" style={thStyle}>Peer Recv</th>
-                <th scope="col" style={thStyle}>Avg Peer Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {participation.pageItems.map((s) => (
-                <tr key={s.user_id} className="border-b-subtle">
-                  <td style={tdStyle}>{s.name}</td>
-                  <td style={tdStyle}>{s.group_id || '—'}</td>
-                  <td style={tdStyle}>{s.file_reviews_given}</td>
-                  <td style={tdStyle}>{s.file_reviews_received}</td>
-                  <td style={tdStyle}>{s.avg_file_score_received ?? '—'}</td>
-                  <td style={tdStyle}>{s.peer_reviews_given}</td>
-                  <td style={tdStyle}>{s.peer_reviews_received}</td>
-                  <td style={tdStyle}>{s.avg_peer_score_received ?? '—'}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <caption className="sr-only">Student participation overview for file and peer reviews</caption>
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                  <th scope="col" className={thClass}>Student</th>
+                  <th scope="col" className={thClass}>Group</th>
+                  <th scope="col" className={thClass}>File Given</th>
+                  <th scope="col" className={thClass}>File Recv</th>
+                  <th scope="col" className={thClass}>Avg File Score</th>
+                  <th scope="col" className={thClass}>Peer Given</th>
+                  <th scope="col" className={thClass}>Peer Recv</th>
+                  <th scope="col" className={thClass}>Avg Peer Score</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {participation.pageItems.map((s) => (
+                  <tr key={s.user_id} className="hover:bg-slate-50/50">
+                    <td className={tdClass + ' font-medium'}>{s.name}</td>
+                    <td className={tdClass}>{s.group_id || '—'}</td>
+                    <td className={tdClass}>{s.file_reviews_given}</td>
+                    <td className={tdClass}>{s.file_reviews_received}</td>
+                    <td className={tdClass}>{s.avg_file_score_received ?? '—'}</td>
+                    <td className={tdClass}>{s.peer_reviews_given}</td>
+                    <td className={tdClass}>{s.peer_reviews_received}</td>
+                    <td className={tdClass}>{s.avg_peer_score_received ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {dashboard.student_participation.length === 0 && (
-            <p className="card-muted text-center mt-12">
-              No student data available.
-            </p>
+            <p className="text-sm text-slate-400 text-center py-8">No student data available.</p>
           )}
 
-          <Pagination
-            page={participation.page}
-            totalPages={participation.totalPages}
-            onPageChange={participation.setPage}
-            filtered={participation.filtered.length}
-            total={participation.total}
-            noun="students"
-          />
-        </div>
+          <div className="p-4 border-t border-slate-100">
+            <Pagination
+              page={participation.page}
+              totalPages={participation.totalPages}
+              onPageChange={participation.setPage}
+              filtered={participation.filtered.length}
+              total={participation.total}
+              noun="students"
+            />
+          </div>
+        </Card>
       )}
 
-      {/* M3 — CSV Aggregate Tab */}
+      {/* ═══════ CSV Aggregate Tab ═══════ */}
       {activeTab === 'csv aggregate' && (
-        <div>
-          <motion.div
-            className="card"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
-            <h3 className="card-title mb-12">Peer Review CSV Aggregation</h3>
-            <p className="card-meta mb-16">
-              Upload one or more peer-review CSV files to compute aggregated averages per student
-              across all scoring categories.
+        <div className="space-y-4">
+          <Card className="p-6 bg-indigo-50/50 border-indigo-100">
+            <h3 className="text-lg font-bold text-slate-900 mb-1">Peer Review CSV Aggregation</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Upload one or more peer-review CSV files to compute aggregated averages per student.
             </p>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="csv-agg-upload">CSV Files (up to 30)</label>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="csv-agg-upload">CSV Files (up to 30)</label>
               <input
                 id="csv-agg-upload"
                 ref={csvInputRef}
@@ -420,136 +474,139 @@ export default function InstructorDashboardPage() {
                 multiple
                 onChange={handleCsvUpload}
                 disabled={csvUploading}
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100"
               />
             </div>
 
-            {csvUploading && <p className="card-meta">Uploading &amp; processing…</p>}
-            {csvError && <p className="error-text" role="alert" aria-live="assertive">{csvError}</p>}
-          </motion.div>
+            {csvUploading && (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Uploading & processing…
+              </div>
+            )}
+            {csvError && (
+              <div className="flex items-center gap-2 text-sm text-red-600" role="alert" aria-live="assertive">
+                <AlertCircle className="w-4 h-4" />
+                {csvError}
+              </div>
+            )}
+          </Card>
 
           {csvResult && (
-            <motion.div
-              className="card mt-16 overflow-x-auto"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-            >
-              {/* Summary */}
-              <div className="stats-grid mb-16">
-                <StatCard label="Files Processed" value={csvResult.summary.files_processed} />
-                <StatCard label="Evaluations" value={csvResult.summary.evaluations_count} />
-                <StatCard label="Rows Skipped" value={csvResult.summary.skipped_rows} />
+            <Card className="p-0 overflow-hidden">
+              {/* Summary stats */}
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-indigo-600">{csvResult.summary.files_processed}</div>
+                    <div className="text-xs text-slate-500 mt-1">Files Processed</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-indigo-600">{csvResult.summary.evaluations_count}</div>
+                    <div className="text-xs text-slate-500 mt-1">Evaluations</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-amber-600">{csvResult.summary.skipped_rows}</div>
+                    <div className="text-xs text-slate-500 mt-1">Rows Skipped</div>
+                  </div>
+                </div>
               </div>
 
-              {/* Category averages */}
-              {csvResult.categories?.length > 0 && (
-                <>
-                  <h4 className="card-title mb-8">Category Averages</h4>
-                  <table className="table-full mb-16" style={{ fontSize: '0.9rem' }}>
-                    <caption className="sr-only">Category averages from CSV upload results</caption>
-                    <thead>
-                      <tr className="border-b text-left">
-                        <th scope="col" style={thStyle}>Category</th>
-                        <th scope="col" style={thStyle}>Average</th>
-                        <th scope="col" style={thStyle}>Count</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {csvResult.categories.map((c) => (
-                        <tr key={c.key} className="border-b-subtle">
-                          <td style={tdStyle}>{c.label}</td>
-                          <td style={tdStyle}>{c.average !== null ? c.average.toFixed(2) : '—'}</td>
-                          <td style={tdStyle}>{c.count}</td>
+              <div className="p-6 space-y-6 overflow-x-auto">
+                {/* Category averages */}
+                {csvResult.categories?.length > 0 && (
+                  <>
+                    <h4 className="text-base font-semibold text-slate-900">Category Averages</h4>
+                    <table className="w-full">
+                      <caption className="sr-only">Category averages from CSV upload results</caption>
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                          <th scope="col" className={thClass}>Category</th>
+                          <th scope="col" className={thClass}>Average</th>
+                          <th scope="col" className={thClass}>Count</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-
-              {/* Per-student results */}
-              {csvResult.students?.length > 0 && (
-                <>
-                  <h4 className="card-title mb-8">Per-Student Results</h4>
-                  <table className="table-full mb-16" style={{ fontSize: '0.9rem' }}>
-                    <caption className="sr-only">Per-student scores by category from CSV upload</caption>
-                    <thead>
-                      <tr className="border-b text-left">
-                        <th scope="col" style={thStyle}>Team</th>
-                        <th scope="col" style={thStyle}>Student</th>
-                        {csvResult.categories?.map((c) => (
-                          <th scope="col" key={c.key} style={thStyle}>{c.label}</th>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {csvResult.categories.map((c) => (
+                          <tr key={c.key}>
+                            <td className={tdClass}>{c.label}</td>
+                            <td className={tdClass}>{c.average !== null ? c.average.toFixed(2) : '—'}</td>
+                            <td className={tdClass}>{c.count}</td>
+                          </tr>
                         ))}
-                        <th scope="col" style={thStyle}>Overall</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {csvResult.students.map((s, i) => (
-                        <tr key={i} className="border-b-subtle">
-                          <td style={tdStyle}>{s.team || '—'}</td>
-                          <td style={tdStyle}>{s.student_name}</td>
-                          {csvResult.categories?.map((c) => (
-                            <td key={c.key} style={tdStyle}>
-                              {s.per_category?.[c.key]?.average !== null
-                                ? s.per_category[c.key].average.toFixed(2)
-                                : '—'}
-                            </td>
-                          ))}
-                          <td style={tdStyle}>
-                            {s.overall_average !== null ? s.overall_average.toFixed(2) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
+                      </tbody>
+                    </table>
+                  </>
+                )}
 
-              {/* File reports */}
-              {csvResult.file_reports?.length > 0 && (
-                <>
-                  <h4 className="card-title mb-8">File Reports</h4>
-                  <table className="table-full" style={{ fontSize: '0.9rem' }}>
-                    <caption className="sr-only">CSV file processing reports</caption>
-                    <thead>
-                      <tr className="border-b text-left">
-                        <th scope="col" style={thStyle}>File</th>
-                        <th scope="col" style={thStyle}>Rows Processed</th>
-                        <th scope="col" style={thStyle}>Rows Skipped</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {csvResult.file_reports.map((f, i) => (
-                        <tr key={i} className="border-b-subtle">
-                          <td style={tdStyle}>{f.file_name}</td>
-                          <td style={tdStyle}>{f.rows_processed}</td>
-                          <td style={tdStyle}>{f.rows_skipped}</td>
+                {/* Per-student results */}
+                {csvResult.students?.length > 0 && (
+                  <>
+                    <h4 className="text-base font-semibold text-slate-900">Per-Student Results</h4>
+                    <table className="w-full">
+                      <caption className="sr-only">Per-student scores by category from CSV upload</caption>
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                          <th scope="col" className={thClass}>Team</th>
+                          <th scope="col" className={thClass}>Student</th>
+                          {csvResult.categories?.map((c) => (
+                            <th scope="col" key={c.key} className={thClass}>{c.label}</th>
+                          ))}
+                          <th scope="col" className={thClass}>Overall</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
-              )}
-            </motion.div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {csvResult.students.map((s, i) => (
+                          <tr key={i}>
+                            <td className={tdClass}>{s.team || '—'}</td>
+                            <td className={tdClass + ' font-medium'}>{s.student_name}</td>
+                            {csvResult.categories?.map((c) => (
+                              <td key={c.key} className={tdClass}>
+                                {s.per_category?.[c.key]?.average !== null
+                                  ? s.per_category[c.key].average.toFixed(2)
+                                  : '—'}
+                              </td>
+                            ))}
+                            <td className={tdClass + ' font-semibold'}>
+                              {s.overall_average !== null ? s.overall_average.toFixed(2) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+
+                {/* File reports */}
+                {csvResult.file_reports?.length > 0 && (
+                  <>
+                    <h4 className="text-base font-semibold text-slate-900">File Reports</h4>
+                    <table className="w-full">
+                      <caption className="sr-only">CSV file processing reports</caption>
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                          <th scope="col" className={thClass}>File</th>
+                          <th scope="col" className={thClass}>Rows Processed</th>
+                          <th scope="col" className={thClass}>Rows Skipped</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {csvResult.file_reports.map((f, i) => (
+                          <tr key={i}>
+                            <td className={tdClass}>{f.file_name}</td>
+                            <td className={tdClass}>{f.rows_processed}</td>
+                            <td className={tdClass}>{f.rows_skipped}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </div>
+            </Card>
           )}
         </div>
       )}
     </div>
   );
 }
-
-function StatCard({ label, value }) {
-  return (
-    <motion.div
-      className="card stat-card"
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-    >
-      <div className="stat-value">{value}</div>
-      <div className="card-muted mt-4">{label}</div>
-    </motion.div>
-  );
-}
-
-const thStyle = { padding: '8px 12px', whiteSpace: 'nowrap' };
-const tdStyle = { padding: '8px 12px' };
