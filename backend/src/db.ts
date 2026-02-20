@@ -1,9 +1,18 @@
 import { Pool, PoolClient } from 'pg';
 import dotenv from 'dotenv';
+import { logger } from './utils/logger.js';
 dotenv.config();
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: parseInt(process.env.PG_POOL_MAX || '20', 10),
+  idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT_MS || '30000', 10),
+  connectionTimeoutMillis: parseInt(process.env.PG_CONN_TIMEOUT_MS || '5000', 10),
+});
+
+// Surface unexpected backend errors so the process doesn't crash silently.
+pool.on('error', (err) => {
+  logger.error({ err }, 'Unexpected idle-client error in pg Pool');
 });
 
 /**

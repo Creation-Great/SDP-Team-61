@@ -149,25 +149,24 @@ export default function StudentCheckinsPage() {
         Rate yourself and your teammates each week.
       </p>
 
-      <div className="card" style={{ marginBottom: '16px' }}>
+      <div className="card mb-16">
         <p className="card-meta">
           Linked row:{' '}
           {linkedMember ? `Team ${linkedMember.team} - ${linkedMember.name}` : 'Not linked yet'}
         </p>
-        {error && <p className="error-text">{error}</p>}
+        {error && <p className="error-text" role="alert" aria-live="assertive">{error}</p>}
         {status && <p className="success-text">{status}</p>}
       </div>
 
       {selfWeeks.length > 0 && (
-        <div className="card" style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="card mb-16">
+          <div className="flex-row flex-wrap gap-8">
             {selfWeeks.map((week) => (
               <button
                 key={week.id}
                 type="button"
-                className={`btn ${selectedWeekId === week.id ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn btn-md ${selectedWeekId === week.id ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setSelectedWeekId(week.id)}
-                style={{ padding: '8px 12px', fontSize: '0.9rem' }}
               >
                 {week.label}
               </button>
@@ -177,7 +176,7 @@ export default function StudentCheckinsPage() {
       )}
 
       {selectedWeek && (
-        <div className="card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
+        <div className="card mb-16 overflow-x-auto">
           <h3 className="card-title">{selectedWeek.label} Ratings</h3>
 
           <div className="form-group" style={{ maxWidth: '220px' }}>
@@ -196,25 +195,26 @@ export default function StudentCheckinsPage() {
             </select>
           </div>
 
-          <h4 style={{ marginBottom: '8px' }}>Teammate Ratings</h4>
+          <h4 className="mb-8">Teammate Ratings</h4>
           {teamPeers.length === 0 ? (
             <p className="card-meta">No teammates found in your linked team.</p>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table className="table-full">
+              <caption className="sr-only">Teammate ratings by topic for the selected week</caption>
               <thead>
                 <tr>
-                  <th style={{ textAlign: 'left', padding: '8px 4px' }}>Name</th>
+                  <th scope="col">Name</th>
                   {topics.map((topic) => (
-                    <th key={topic} style={{ textAlign: 'left', padding: '8px 4px' }}>{topic}</th>
+                    <th scope="col" key={topic}>{topic}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {teamPeers.map((peer) => (
                   <tr key={peer.id}>
-                    <td style={{ padding: '8px 4px' }}>{peer.name}</td>
+                    <td>{peer.name}</td>
                     {topics.map((topic) => (
-                      <td key={`${peer.id}-${topic}`} style={{ padding: '8px 4px' }}>
+                      <td key={`${peer.id}-${topic}`}>
                         <select
                           className="form-select"
                           value={selectedWeek.peer_scores?.[peer.id]?.[topic] || ''}
@@ -236,7 +236,7 @@ export default function StudentCheckinsPage() {
             </table>
           )}
 
-          <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end' }}>
+          <div className="mt-12 flex-end">
             <button
               type="button"
               className="btn btn-primary"

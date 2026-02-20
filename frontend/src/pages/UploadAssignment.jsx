@@ -112,13 +112,13 @@ export default function UploadAssignment() {
               onClick={() => document.getElementById('file-input').click()}
             >
               {file ? (
-                <p style={{ color: 'var(--success)' }}>
+                <p className="text-success">
                   Selected: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
                 </p>
               ) : (
                 <>
                   <p>Drag & drop your file here, or click to browse</p>
-                  <p style={{ fontSize: '0.85rem', marginTop: '8px' }}>
+                  <p className="text-sm mt-8">
                     Supported: PDF, DOC, DOCX, TXT (max 10MB)
                   </p>
                 </>
@@ -133,7 +133,7 @@ export default function UploadAssignment() {
             />
           </div>
 
-          {error && <p className="error-text">{error}</p>}
+          {error && <p className="error-text" role="alert" aria-live="assertive">{error}</p>}
           {message && <p className="success-text">{message}</p>}
 
           <button

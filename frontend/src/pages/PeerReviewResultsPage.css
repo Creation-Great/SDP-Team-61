@@ -1,0 +1,63 @@
+/* PeerReviewResultsPage — extracted from inline styles */
+
+/* Table cell base */
+.results-th {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.results-td {
+  padding: 10px 12px;
+  color: var(--text-primary);
+}
+
+.results-td--center {
+  text-align: center;
+}
+
+.results-td--ellipsis {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Progress bar */
+.progress-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.progress-fill--complete {
+  background: var(--success);
+}
+
+.progress-fill--partial {
+  background: var(--primary);
+}
+
+/* Toggle header */
+.details-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.details-toggle__arrow {
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+}

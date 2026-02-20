@@ -1,4 +1,5 @@
 services:
+  # ── PostgreSQL ────────────────────────────────────────────
   db:
     image: postgres:16
     environment:
@@ -17,5 +18,71 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Express Backend ───────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      NODE_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@db:5432/peerreview
+      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-secret-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
+      FRONTEND_URL: http://localhost
+      CORS_ORIGINS: http://localhost,http://localhost:5173
+      AI_SERVICE_URL: http://ai-service:5001
+      AI_API_KEY: ${AI_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── AI Service (Flask / OpenAI) ───────────────────────────
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/peerreview
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_PORT: "5001"
+      FLASK_DEBUG: "0"
+      FRONTEND_URL: http://localhost
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5001/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── React Frontend (nginx) ───────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   dbdata: {}
+  backend_uploads: {}

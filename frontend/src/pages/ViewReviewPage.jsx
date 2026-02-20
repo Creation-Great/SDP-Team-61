@@ -35,7 +35,7 @@ export default function ViewReviewPage() {
     return (
       <div className="card empty-state">
         <h3>Error</h3>
-        <p className="error-text">{error}</p>
+        <p className="error-text" role="alert" aria-live="assertive">{error}</p>
         <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
           Back to Dashboard
         </button>
@@ -53,7 +53,7 @@ export default function ViewReviewPage() {
       )}
 
       {submission?.file_url && (
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <div className="text-center mb-24">
           <a
             href={submission.file_url}
             target="_blank"
@@ -79,7 +79,7 @@ export default function ViewReviewPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.08 }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="flex-between">
               <div>
                 <h3 className="card-title">
                   Review by {review.reviewer_name}
@@ -92,16 +92,16 @@ export default function ViewReviewPage() {
             </div>
 
             {review.comments && (
-              <div style={{ marginTop: '16px' }}>
+              <div className="mt-16">
                 <label className="form-label">Feedback</label>
-                <p style={{ lineHeight: '1.6' }}>{review.comments}</p>
+                <p className="line-height-relaxed">{review.comments}</p>
               </div>
             )}
           </motion.div>
         ))
       )}
 
-      <div style={{ textAlign: 'center', marginTop: '24px' }}>
+      <div className="text-center mt-24">
         <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
           Back to Dashboard
         </button>

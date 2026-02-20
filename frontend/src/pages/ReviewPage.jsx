@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import API from '../services/api';
+import ScoreSelector from '../components/ScoreSelector';
 
 export default function ReviewPage() {
   const { id } = useParams(); // assignment_id
@@ -49,7 +50,7 @@ export default function ReviewPage() {
     return (
       <div className="card empty-state">
         <h3>Error</h3>
-        <p className="error-text">{error}</p>
+        <p className="error-text" role="alert" aria-live="assertive">{error}</p>
         <button className="btn btn-secondary" onClick={() => navigate('/reviews')}>
           Back to Reviews
         </button>
@@ -87,14 +88,13 @@ export default function ReviewPage() {
                 }}
               />
             ) : (
-              <div style={{ marginTop: '12px' }}>
+              <div className="mt-12">
                 <p className="card-meta">This file type cannot be previewed inline.</p>
                 <a
                   href={review.file_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="btn btn-secondary"
-                  style={{ marginTop: '12px' }}
+                  className="btn btn-secondary mt-12"
                 >
                   Download File
                 </a>
@@ -116,36 +116,27 @@ export default function ReviewPage() {
           {review?.review_id ? (
             // Already reviewed
             <div>
-              <p className="success-text" style={{ marginBottom: '16px' }}>
+              <p className="success-text mb-16">
                 This review has already been submitted.
               </p>
-              <div style={{ marginBottom: '12px' }}>
+              <div className="mb-12">
                 <span className="card-meta">Score: </span>
                 <span className="score-badge">{review.score}</span>
               </div>
               <div>
                 <span className="card-meta">Comments:</span>
-                <p style={{ marginTop: '8px' }}>{review.comments}</p>
+                <p className="mt-8">{review.comments}</p>
               </div>
             </div>
           ) : (
             // Review form
             <div>
               <div className="form-group">
-                <label className="form-label">Score (1-5)</label>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={`btn ${score === n ? 'btn-primary' : 'btn-secondary'}`}
-                      style={{ padding: '10px 18px', fontSize: '1rem' }}
-                      onClick={() => setScore(n)}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
+                <ScoreSelector
+                  label="Score (1-5)"
+                  value={score}
+                  onChange={setScore}
+                />
               </div>
 
               <div className="form-group">
@@ -160,9 +151,9 @@ export default function ReviewPage() {
                 />
               </div>
 
-              {error && <p className="error-text">{error}</p>}
+              {error && <p className="error-text" role="alert" aria-live="assertive">{error}</p>}
 
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="flex-row gap-12">
                 <button
                   className="btn btn-primary"
                   onClick={handleSubmit}

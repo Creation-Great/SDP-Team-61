@@ -8,22 +8,6 @@ function toScore(value: any): number | null {
   return n;
 }
 
-async function ensureStudentSelfCheckinsTable(client: any): Promise<void> {
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS student_self_checkins (
-      self_checkin_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      student_id UUID NOT NULL REFERENCES users(user_id),
-      course_id TEXT NOT NULL DEFAULT '',
-      group_id TEXT NOT NULL DEFAULT '',
-      selected_member_id TEXT,
-      weeks JSONB NOT NULL DEFAULT '[]'::jsonb,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (student_id, course_id, group_id)
-    );
-  `);
-}
-
 function buildComparison(topics: any[], instructorWeeks: any[], selectedMemberId: string, selfWeeks: any[]) {
   return topics.map((topic: string) => {
     let selfSum = 0;
@@ -135,13 +119,11 @@ function buildInstructorAggregates(members: any[], topics: any[], instructorWeek
  * Student loads instructor check-in structure + current self ratings + comparison.
  */
 export async function getStudentCheckinContext(req: AuthRequest, res: Response): Promise<void> {
-  try {
-    const { user_id, role, course_id, group_id } = req.user;
+  const { user_id, role, course_id, group_id } = req.user;
 
-    const payload = await withDb(user_id, role, async (client) => {
-      await ensureStudentSelfCheckinsTable(client);
+  const payload = await withDb(user_id, role, async (client) => {
 
-      const instructorData = await client.query(
+    const instructorData = await client.query(
         `SELECT checkin_id, file_name, topics, members, weeks, updated_at
          FROM student_checkins
          WHERE course_id = $1 AND group_id = $2
@@ -195,10 +177,6 @@ export async function getStudentCheckinContext(req: AuthRequest, res: Response):
     });
 
     res.json(payload);
-  } catch (err) {
-    console.error('Error loading student check-in context:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Failed to load student check-ins' });
-  }
 }
 
 /**
@@ -206,17 +184,10 @@ export async function getStudentCheckinContext(req: AuthRequest, res: Response):
  * Save student self-ratings and return updated comparison with instructor ratings.
  */
 export async function saveStudentSelfCheckins(req: AuthRequest, res: Response): Promise<void> {
-  try {
-    const { user_id, role, course_id, group_id } = req.user;
-    const { selected_member_id, weeks } = req.body || {};
+  const { user_id, role, course_id, group_id } = req.user;
+  const { selected_member_id, weeks } = req.body;
 
-    if (!selected_member_id || !Array.isArray(weeks)) {
-      res.status(400).json({ error: 'validation', message: 'selected_member_id and weeks are required' });
-      return;
-    }
-
-    const payload = await withDb(user_id, role, async (client) => {
-      await ensureStudentSelfCheckinsTable(client);
+  const payload = await withDb(user_id, role, async (client) => {
 
       await client.query(
         `INSERT INTO student_self_checkins (student_id, course_id, group_id, selected_member_id, weeks, updated_at)
@@ -246,10 +217,6 @@ export async function saveStudentSelfCheckins(req: AuthRequest, res: Response): 
     });
 
     res.json({ message: 'Self check-ins saved', ...payload });
-  } catch (err) {
-    console.error('Error saving student self check-ins:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Failed to save self check-ins' });
-  }
 }
 
 /**
@@ -257,11 +224,9 @@ export async function saveStudentSelfCheckins(req: AuthRequest, res: Response): 
  * Instructor-only aggregated comparison (instructor vs student self vs peer).
  */
 export async function getInstructorCheckinInsights(req: AuthRequest, res: Response): Promise<void> {
-  try {
-    const { user_id, role, course_id, group_id } = req.user;
+  const { user_id, role, course_id, group_id } = req.user;
 
-    const payload = await withDb(user_id, role, async (client) => {
-      await ensureStudentSelfCheckinsTable(client);
+  const payload = await withDb(user_id, role, async (client) => {
 
       const instructorData = await client.query(
         `SELECT topics, members, weeks
@@ -306,8 +271,4 @@ export async function getInstructorCheckinInsights(req: AuthRequest, res: Respon
     });
 
     res.json(payload);
-  } catch (err) {
-    console.error('Error loading instructor check-in insights:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Failed to load check-in insights' });
-  }
 }

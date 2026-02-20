@@ -3,6 +3,7 @@ import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 import InstructorRoute from './components/InstructorRoute';
 import StudentRoute from './components/StudentRoute';
+import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import StudentDashboardPage from './pages/StudentDashboardPage';
 import InstructorDashboardPage from './pages/InstructorDashboardPage';
@@ -15,7 +16,19 @@ import PeerReviewFormPage from './pages/PeerReviewFormPage';
 import PeerReviewResultsPage from './pages/PeerReviewResultsPage';
 import StudentCheckinsPage from './pages/StudentCheckinsPage';
 import InstructorPeerReviewPage from './pages/InstructorPeerReviewPage';
+import RegisterPage from './pages/RegisterPage';
+import NotFoundPage from './pages/NotFoundPage';
 import './App.css';
+
+/** Redirect root "/" based on auth state */
+function HomeRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  return (user.role === 'instructor' || user.role === 'admin')
+    ? <Navigate to="/instructor" replace />
+    : <Navigate to="/dashboard" replace />;
+}
 
 function AppLayout({ children }) {
   return (
@@ -31,8 +44,12 @@ function AppLayout({ children }) {
 export default function App() {
   return (
     <Routes>
+      {/* Root redirect */}
+      <Route path="/" element={<HomeRedirect />} />
+
       {/* Public routes */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* Student routes */}
       <Route path="/dashboard" element={
@@ -111,8 +128,8 @@ export default function App() {
         </ProtectedRoute>
       } />
 
-      {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      {/* 404 */}
+      <Route path="*" element={<AppLayout><NotFoundPage /></AppLayout>} />
     </Routes>
   );
 }

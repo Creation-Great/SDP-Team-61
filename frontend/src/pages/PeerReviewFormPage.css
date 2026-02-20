@@ -1,0 +1,88 @@
+/* =====================================================
+   PeerReviewFormPage-specific styles
+   ===================================================== */
+
+/* ── Score badge (read-only mini display) ── */
+.score-badge-mini {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 auto 4px;
+}
+
+/* ── Session-closed banner ── */
+.session-closed-banner {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: rgba(255, 107, 107, 0.3);
+}
+
+/* ── Team board card ── */
+.team-board-card {
+  border: 1px solid rgba(78, 205, 196, 0.3);
+}
+
+/* ── Reviewer block (per-user card inside team board) ── */
+.reviewer-block {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.reviewer-block--self {
+  background: rgba(78, 205, 196, 0.08);
+  border-color: rgba(78, 205, 196, 0.25);
+}
+
+/* ── Chemistry chip ── */
+.chip-chemistry {
+  font-size: 0.7rem;
+  background: rgba(78, 205, 196, 0.15);
+  color: #4ecdc4;
+}
+
+/* ── Review row inside team board ── */
+.review-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-wrap: wrap;
+}
+
+.review-row__name {
+  min-width: 110px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review-row__comment {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  flex: 1 1 100%;
+  padding-left: 4px;
+}
+
+/* ── Form bottom actions ── */
+.form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+/* ── Comment textarea ── */
+.review-comment-textarea {
+  min-height: 80px;
+}

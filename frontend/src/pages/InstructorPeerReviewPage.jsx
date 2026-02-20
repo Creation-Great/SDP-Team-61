@@ -1,71 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import API from '../services/api';
-
-const RESERVED_HEADERS = new Set(['team', 'name', 'self', 'individual comments']);
-
-function parseCsvLine(line) {
-  const out = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-    if (ch === ',' && !inQuotes) {
-      out.push(current.trim());
-      current = '';
-      continue;
-    }
-    current += ch;
-  }
-  out.push(current.trim());
-  return out;
-}
-
-function parseCsv(text) {
-  const lines = text
-    .replace(/^\uFEFF/, '')
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0);
-  if (lines.length === 0) return { headers: [], rows: [] };
-  return {
-    headers: parseCsvLine(lines[0]),
-    rows: lines.slice(1).map(parseCsvLine),
-  };
-}
-
-function toScore(value) {
-  const n = Number(value);
-  if (Number.isNaN(n) || n < 1 || n > 5) return null;
-  return n;
-}
-
-function csvEscape(value) {
-  const str = String(value ?? '');
-  if (!str.includes(',') && !str.includes('"') && !str.includes('\n')) return str;
-  return `"${str.replace(/"/g, '""')}"`;
-}
-
-function buildDefaultWeek(id, label, members, topics) {
-  const scores = {};
-  const comments = {};
-  members.forEach((m) => {
-    scores[m.id] = {};
-    comments[m.id] = '';
-    topics.forEach((t) => {
-      scores[m.id][t] = '';
-    });
-  });
-  return { id, label, scores, comments, additional_comments: '' };
-}
+import { RESERVED_HEADERS, parseCsv, toScore, csvEscape, buildDefaultWeek } from '../utils/csvHelpers';
+import MappingPanel from '../components/checkins/MappingPanel';
+import WeeklyScoresTable from '../components/checkins/WeeklyScoresTable';
+import WeeklyCommentsPanel from '../components/checkins/WeeklyCommentsPanel';
+import InsightsTable from '../components/checkins/InsightsTable';
+import HandedOutTable from '../components/checkins/HandedOutTable';
+import RollingAveragesTable from '../components/checkins/RollingAveragesTable';
 
 export default function InstructorPeerReviewPage() {
   const [error, setError] = useState('');
@@ -405,22 +346,20 @@ export default function InstructorPeerReviewPage() {
         Upload one template CSV, score weekly, submit weekly scores, and keep rolling per-student averages.
       </p>
 
-      <div className="card" style={{ marginBottom: '16px' }}>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
+      <div className="card mb-16">
+        <div className="flex-center flex-wrap gap-8 mb-12">
           <button
             type="button"
-            className={`btn ${mode === 'existing' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn btn-md ${mode === 'existing' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setMode('existing')}
             disabled={members.length === 0}
-            style={{ padding: '8px 12px', fontSize: '0.9rem' }}
           >
             Update Existing
           </button>
           <button
             type="button"
-            className={`btn ${mode === 'upload' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn btn-md ${mode === 'upload' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setMode('upload')}
-            style={{ padding: '8px 12px', fontSize: '0.9rem' }}
           >
             Upload New CSV
           </button>
@@ -437,82 +376,48 @@ export default function InstructorPeerReviewPage() {
         {loadingSaved && <p className="card-meta">Loading saved data...</p>}
         {fileName && <p className="card-meta">Loaded: {fileName}</p>}
         {status && <p className="success-text">{status}</p>}
-        {error && <p className="error-text">{error}</p>}
+        {error && <p className="error-text" role="alert" aria-live="assertive">{error}</p>}
       </div>
 
       {members.length > 0 && showMappingPanel && (
-        <div className="card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
-          <h3 className="card-title">Verify Template Name To User Mapping</h3>
-          <p className="card-meta">Map each template row to a real student account so student check-ins auto-link correctly.</p>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Team</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Template Name</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Mapped User</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr key={`${member.id}-map`}>
-                  <td style={{ padding: '8px 4px' }}>{member.team}</td>
-                  <td style={{ padding: '8px 4px' }}>{member.name}</td>
-                  <td style={{ padding: '8px 4px', minWidth: '260px' }}>
-                    <select
-                      className="form-select"
-                      value={member.mapped_user_id || ''}
-                      onChange={(e) => setMemberMapping(member.id, e.target.value)}
-                    >
-                      <option value="">Unmapped</option>
-                      {studentOptions.map((student) => (
-                        <option key={student.user_id} value={student.user_id}>
-                          {student.display_name} ({student.email || 'no-email'})
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MappingPanel
+          members={members}
+          studentOptions={studentOptions}
+          onMapMember={setMemberMapping}
+        />
       )}
 
       {members.length > 0 && (
-        <div className="card" style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="card mb-16">
+          <div className="flex-center flex-wrap gap-8">
             {weeks.map((week) => (
               <button
                 key={week.id}
                 type="button"
-                className={`btn ${selectedWeekId === week.id ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn btn-md ${selectedWeekId === week.id ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setSelectedWeekId(week.id)}
-                style={{ padding: '8px 12px', fontSize: '0.9rem' }}
               >
                 {week.label}
               </button>
             ))}
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-md btn-secondary"
               onClick={addWeek}
-              style={{ padding: '8px 12px', fontSize: '0.9rem' }}
             >
               + Add Week
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-md btn-secondary"
               onClick={() => setShowComments((v) => !v)}
-              style={{ padding: '8px 12px', fontSize: '0.9rem' }}
             >
               {showComments ? 'Hide Comments' : 'Show Comments'}
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-md btn-secondary"
               onClick={exportRollingCsv}
-              style={{ padding: '8px 12px', fontSize: '0.9rem' }}
             >
               Export Rolling CSV
             </button>
@@ -521,203 +426,52 @@ export default function InstructorPeerReviewPage() {
       )}
 
       {selectedWeek && (
-        <div className="card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
-          <h3 className="card-title">{selectedWeek.label} Scores</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Team</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Name</th>
-                {topics.map((topic) => (
-                  <th key={topic} style={{ textAlign: 'left', padding: '8px 4px' }}>{topic}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMembers.map((member) => (
-                <tr key={member.id}>
-                  <td style={{ padding: '8px 4px' }}>{member.team}</td>
-                  <td style={{ padding: '8px 4px' }}>{member.name}</td>
-                  {topics.map((topic) => (
-                    <td key={`${member.id}-${topic}`} style={{ padding: '8px 4px' }}>
-                      <select
-                        className="form-select"
-                        value={selectedWeek.scores?.[member.id]?.[topic] || ''}
-                        onChange={(e) => setWeeklyScore(selectedWeek.id, member.id, topic, e.target.value)}
-                        style={{ minWidth: '90px', padding: '8px 10px' }}
-                      >
-                        <option value="">-</option>
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3">3</option>
-                        <option value="4">4</option>
-                        <option value="5">5</option>
-                      </select>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={submitCurrentWeek}
-              disabled={submitting || !selectedWeek}
-              style={{ padding: '10px 14px' }}
-            >
-              {submitting ? 'Submitting...' : 'Submit Weekly Scores'}
-            </button>
-          </div>
-        </div>
+        <WeeklyScoresTable
+          week={selectedWeek}
+          topics={topics}
+          filteredMembers={filteredMembers}
+          onSetScore={setWeeklyScore}
+          onSubmit={submitCurrentWeek}
+          submitting={submitting}
+        />
       )}
 
       {showComments && selectedWeek && (
-        <div className="card" style={{ marginBottom: '16px' }}>
-          <h3 className="card-title">{selectedWeek.label} Comments</h3>
-          <div className="form-group">
-            <label className="form-label">Additional Comments (Week-level)</label>
-            <textarea
-              className="form-textarea"
-              rows={3}
-              placeholder="Overall observations for this week..."
-              value={selectedWeek.additional_comments || ''}
-              onChange={(e) => setWeeklyAdditionalComments(selectedWeek.id, e.target.value)}
-            />
-          </div>
-          {filteredMembers.map((member) => (
-            <div key={`${member.id}-comment`} className="form-group">
-              <label className="form-label">
-                {member.team} - {member.name}
-              </label>
-              <textarea
-                className="form-textarea"
-                rows={2}
-                placeholder="Week-specific comment"
-                value={selectedWeek.comments?.[member.id] || ''}
-                onChange={(e) => setWeeklyComment(selectedWeek.id, member.id, e.target.value)}
-              />
-            </div>
-          ))}
-        </div>
+        <WeeklyCommentsPanel
+          week={selectedWeek}
+          filteredMembers={filteredMembers}
+          onSetComment={setWeeklyComment}
+          onSetAdditionalComments={setWeeklyAdditionalComments}
+        />
       )}
 
       {members.length > 0 && (
-        <div className="card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
-          <h3 className="card-title">Student Submission Aggregates</h3>
-          <p className="card-meta">Self is one aggregated score from student self-ratings. Click a student to see scores they handed out for the selected week.</p>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Team</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Name</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Self (Agg)</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Peer (Agg)</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Instructor (Agg)</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {insights.map((row) => (
-                <tr key={`insight-${row.member_id}`}>
-                  <td style={{ padding: '8px 4px' }}>{row.team}</td>
-                  <td style={{ padding: '8px 4px' }}>{row.name}</td>
-                  <td style={{ padding: '8px 4px' }}>{row.self_average ?? 'N/A'}</td>
-                  <td style={{ padding: '8px 4px' }}>{row.peer_average ?? 'N/A'}</td>
-                  <td style={{ padding: '8px 4px' }}>{row.instructor_average ?? 'N/A'}</td>
-                  <td style={{ padding: '8px 4px' }}>
-                    <button
-                      type="button"
-                      className={`btn ${selectedRaterMemberId === row.member_id ? 'btn-primary' : 'btn-secondary'}`}
-                      onClick={() => setSelectedRaterMemberId(row.member_id)}
-                      style={{ padding: '6px 10px', fontSize: '0.85rem' }}
-                    >
-                      View Week Scores
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <InsightsTable
+          insights={insights}
+          selectedRaterMemberId={selectedRaterMemberId}
+          onSelectRater={setSelectedRaterMemberId}
+        />
       )}
 
       {selectedRaterWeekData && (
-        <div className="card" style={{ marginBottom: '16px', overflowX: 'auto' }}>
-          <h3 className="card-title">
-            {memberLabelById.get(selectedRaterMemberId) || selectedRaterMemberId} - Scores Handed Out ({selectedWeek?.label || selectedWeekId})
-          </h3>
-          <p className="card-meta">Self score submitted this week: {selectedRaterWeekData.self_score || 'N/A'}</p>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Rated Student</th>
-                {topics.map((topic) => (
-                  <th key={`handed-topic-${topic}`} style={{ textAlign: 'left', padding: '8px 4px' }}>{topic}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(selectedRaterWeekData.peer_scores || {}).map(([targetId, topicScores]) => (
-                <tr key={`handed-row-${targetId}`}>
-                  <td style={{ padding: '8px 4px' }}>{memberLabelById.get(targetId) || targetId}</td>
-                  {topics.map((topic) => (
-                    <td key={`handed-cell-${targetId}-${topic}`} style={{ padding: '8px 4px' }}>
-                      {topicScores?.[topic] || 'N/A'}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <HandedOutTable
+          raterLabel={memberLabelById.get(selectedRaterMemberId) || selectedRaterMemberId}
+          weekLabel={selectedWeek?.label || selectedWeekId}
+          weekData={selectedRaterWeekData}
+          topics={topics}
+          memberLabelById={memberLabelById}
+        />
       )}
 
       {members.length > 0 && (
-        <div className="card" style={{ overflowX: 'auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 className="card-title" style={{ margin: 0 }}>Rolling Per-User Averages</h3>
-            <div style={{ minWidth: '180px' }}>
-              <select
-                className="form-select"
-                value={teamFilter}
-                onChange={(e) => setTeamFilter(e.target.value)}
-                style={{ padding: '8px 10px' }}
-              >
-                {teams.map((team) => (
-                  <option key={team} value={team}>
-                    {team === 'ALL' ? 'All Teams' : `Team ${team}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Team</th>
-                <th style={{ textAlign: 'left', padding: '8px 4px' }}>Name</th>
-                {topics.map((topic) => (
-                  <th key={topic} style={{ textAlign: 'left', padding: '8px 4px' }}>{topic}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredMembers.map((m) => (
-                <tr key={m.id}>
-                  <td style={{ padding: '8px 4px' }}>{m.team}</td>
-                  <td style={{ padding: '8px 4px' }}>{m.name}</td>
-                  {topics.map((topic) => (
-                    <td key={`${m.id}-roll-${topic}`} style={{ padding: '8px 4px' }}>
-                      {rollingByMember?.[m.id]?.[topic] ?? 'N/A'}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <RollingAveragesTable
+          filteredMembers={filteredMembers}
+          topics={topics}
+          rollingByMember={rollingByMember}
+          teams={teams}
+          teamFilter={teamFilter}
+          onTeamFilterChange={setTeamFilter}
+        />
       )}
     </div>
   );

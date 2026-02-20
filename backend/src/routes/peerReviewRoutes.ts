@@ -11,22 +11,25 @@ import {
   getSessionResults,
   exportCsv,
 } from '../controllers/peerReviewController.js';
+import { h } from '../utils/asyncHandler.js';
+import { validate } from '../middleware/validate.js';
+import { createSessionSchema, toggleSessionSchema, submitPeerReviewsSchema } from '../schemas.js';
 
 const router = Router();
-router.use(authenticate as any);
+router.use(h(authenticate));
 
 // Both roles can see sessions
-router.get('/sessions', getSessions as any);
+router.get('/sessions', h(getSessions));
 
 // Student endpoints
-router.get('/sessions/:sessionId/my-team', getMyTeam as any);
-router.post('/sessions/:sessionId/submit', submitPeerReviews as any);
-router.get('/sessions/:sessionId/team-reviews', getTeamReviews as any);
+router.get('/sessions/:sessionId/my-team', h(getMyTeam));
+router.post('/sessions/:sessionId/submit', validate(submitPeerReviewsSchema), h(submitPeerReviews));
+router.get('/sessions/:sessionId/team-reviews', h(getTeamReviews));
 
 // Instructor-only endpoints
-router.post('/sessions', requireRole('instructor') as any, createSession as any);
-router.patch('/sessions/:sessionId', requireRole('instructor') as any, toggleSession as any);
-router.get('/sessions/:sessionId/results', requireRole('instructor') as any, getSessionResults as any);
-router.get('/sessions/:sessionId/export-csv', requireRole('instructor') as any, exportCsv as any);
+router.post('/sessions', h(requireRole('instructor')), validate(createSessionSchema), h(createSession));
+router.patch('/sessions/:sessionId', h(requireRole('instructor')), validate(toggleSessionSchema), h(toggleSession));
+router.get('/sessions/:sessionId/results', h(requireRole('instructor')), h(getSessionResults));
+router.get('/sessions/:sessionId/export-csv', h(requireRole('instructor')), h(exportCsv));
 
 export default router;

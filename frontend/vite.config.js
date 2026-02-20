@@ -14,6 +14,8 @@ export default defineConfig({
       '/uploads': 'http://localhost:8080',
       '/healthz': 'http://localhost:8080',
       '/checkins': 'http://localhost:8080',
+      '/enrollments': 'http://localhost:8080',
+      '/api/ai': 'http://localhost:8080',
     },
   },
 });

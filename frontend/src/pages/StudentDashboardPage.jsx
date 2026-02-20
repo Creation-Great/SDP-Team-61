@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
+import useFilteredList from '../hooks/useFilteredList';
+import SearchInput from '../components/SearchInput';
+import Pagination from '../components/Pagination';
 
 export default function StudentDashboardPage() {
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  const searchKeys = useCallback((s) => [s.title, s.description], []);
+  const subList = useFilteredList(submissions, { searchKeys, pageSize: 10 });
 
   useEffect(() => {
     API.get('/submissions/mine')
@@ -44,7 +50,15 @@ export default function StudentDashboardPage() {
           </button>
         </motion.div>
       ) : (
-        submissions.map((s, idx) => {
+        <>
+          <div className="list-toolbar">
+            <SearchInput
+              value={subList.query}
+              onChange={subList.setQuery}
+              placeholder="Search submissions…"
+            />
+          </div>
+          {subList.pageItems.map((s, idx) => {
           const hasCompletedReview = s.reviews && Array.isArray(s.reviews) &&
             s.reviews.some((r) => r.review_id !== null);
 
@@ -54,14 +68,14 @@ export default function StudentDashboardPage() {
               className="card"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.06 }}
+              transition={{ delay: Math.min(idx * 0.06, 0.3) }}
               whileHover={{ scale: 1.01 }}
             >
               <h3 className="card-title">{s.title}</h3>
               {s.description && (
                 <p className="card-meta">{s.description}</p>
               )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+              <div className="flex-center gap-12 mt-8">
                 <span className={`chip chip-${s.status}`}>
                   {s.status === 'submitted' ? 'Submitted' : 'Reviewed'}
                 </span>
@@ -71,29 +85,27 @@ export default function StudentDashboardPage() {
               </div>
 
               {s.reviews && s.reviews.length > 0 && (
-                <div style={{ marginTop: '12px' }}>
+                <div className="mt-12">
                   <span className="card-meta">
                     Reviews: {s.reviews.filter(r => r.review_id).length} / {s.reviews.length} completed
                   </span>
                 </div>
               )}
 
-              <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
+              <div className="mt-16 flex-row gap-10">
                 {s.file_url && (
                   <a
                     href={s.file_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="btn btn-secondary"
-                    style={{ fontSize: '0.9rem', padding: '8px 16px' }}
+                    className="btn btn-secondary btn-md"
                   >
                     Download File
                   </a>
                 )}
                 {hasCompletedReview && (
                   <button
-                    className="btn btn-primary"
-                    style={{ fontSize: '0.9rem', padding: '8px 16px' }}
+                    className="btn btn-primary btn-md"
                     onClick={() => navigate(`/view-review/${s.submission_id}`)}
                   >
                     View Reviews
@@ -102,7 +114,16 @@ export default function StudentDashboardPage() {
               </div>
             </motion.div>
           );
-        })
+        })}
+          <Pagination
+            page={subList.page}
+            totalPages={subList.totalPages}
+            onPageChange={subList.setPage}
+            filtered={subList.filtered.length}
+            total={subList.total}
+            noun="submissions"
+          />
+        </>
       )}
     </div>
   );

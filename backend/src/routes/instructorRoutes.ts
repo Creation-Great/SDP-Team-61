@@ -8,22 +8,27 @@ import {
   getCurrentCheckins,
   saveCurrentCheckins,
   getCheckinStudents,
+  getUnifiedDashboard,
 } from '../controllers/instructorController.js';
 import { csvUpload } from '../middleware/csvUpload.js';
 import { getInstructorCheckinInsights } from '../controllers/checkinController.js';
+import { h } from '../utils/asyncHandler.js';
+import { validate } from '../middleware/validate.js';
+import { assignReviewerSchema, saveCurrentCheckinsSchema } from '../schemas.js';
 
 const router = Router();
 
 // All routes require authentication + instructor role
-router.use(authenticate as any);
-router.use(requireRole('instructor') as any);
+router.use(h(authenticate));
+router.use(h(requireRole('instructor')));
 
-router.get('/overview', getOverview as any);
-router.post('/assign', assignReviewer as any);
-router.post('/peer-review/aggregate', csvUpload.array('files', 30), aggregatePeerReviewCsv as any);
-router.get('/checkins/current', getCurrentCheckins as any);
-router.post('/checkins/current', saveCurrentCheckins as any);
-router.get('/checkins/students', getCheckinStudents as any);
-router.get('/checkins/insights', getInstructorCheckinInsights as any);
+router.get('/overview', h(getOverview));
+router.get('/unified-dashboard', h(getUnifiedDashboard));
+router.post('/assign', validate(assignReviewerSchema), h(assignReviewer));
+router.post('/peer-review/aggregate', csvUpload.array('files', 30), h(aggregatePeerReviewCsv));
+router.get('/checkins/current', h(getCurrentCheckins));
+router.post('/checkins/current', validate(saveCurrentCheckinsSchema), h(saveCurrentCheckins));
+router.get('/checkins/students', h(getCheckinStudents));
+router.get('/checkins/insights', h(getInstructorCheckinInsights));
 
 export default router;

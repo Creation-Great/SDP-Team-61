@@ -1,21 +1,22 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import type { SignOptions } from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import { withDbNoRLS } from '../db.js';
 import type { AuthRequest } from '../types.js';
+import { JWT_SECRET, JWT_EXPIRES_IN } from '../utils/jwtConfig.js';
+import { setTokenCookie, clearTokenCookie } from '../utils/cookieHelper.js';
+import { blacklistToken } from '../utils/tokenBlacklist.js';
 
 const SALT_ROUNDS = 10;
 const DEFAULT_COURSE_ID = process.env.DEFAULT_COURSE_ID || 'CSE4939W';
 const DEFAULT_GROUP_ID = process.env.DEFAULT_GROUP_ID || 'G1';
 
 function generateToken(user: { user_id: string; email: string; role: string }): string {
-  const secret = process.env.JWT_SECRET || 'dev-secret';
-  const expiresIn = (process.env.JWT_EXPIRES_IN || '30d') as SignOptions['expiresIn'];
   return jwt.sign(
     { user_id: user.user_id, email: user.email, role: user.role },
-    secret,
-    { expiresIn }
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN, jwtid: crypto.randomUUID() }
   );
 }
 
@@ -23,8 +24,11 @@ function generateToken(user: { user_id: string; email: string; role: string }): 
 // CAS (UConn SSO) Authentication
 // =====================================================
 function buildCasServiceUrl(): string {
-  const backendUrl = (process.env.BACKEND_URL || 'http://localhost:8080').replace(/\/$/, '');
-  return `${backendUrl}/auth/cas/callback`;
+  // Route CAS callback through the frontend origin so the httpOnly cookie
+  // is set on the same origin the browser uses (Vite proxy in dev,
+  // reverse-proxy in production).  This is critical for cookie delivery.
+  const base = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  return `${base}/auth/cas/callback`;
 }
 
 function getCasBaseUrl(): string {
@@ -89,34 +93,30 @@ export async function casLogin(_req: Request, res: Response): Promise<void> {
  * Validate CAS ticket and create/login local user, then redirect to frontend.
  */
 export async function casCallback(req: Request, res: Response): Promise<void> {
-  try {
-    const ticket = String(req.query.ticket || '');
-    if (!ticket) {
-      res.status(400).json({ error: 'validation', message: 'Missing CAS ticket' });
-      return;
-    }
-
-    const service = buildCasServiceUrl();
-    const validateUrl = `${getCasBaseUrl()}/serviceValidate?service=${encodeURIComponent(service)}&ticket=${encodeURIComponent(ticket)}`;
-    const response = await fetch(validateUrl);
-    const xml = await response.text();
-    const { netid, name, email } = parseCasProfile(xml);
-
-    if (!response.ok || !netid) {
-      res.status(401).json({ error: 'unauthorized', message: 'CAS validation failed' });
-      return;
-    }
-
-    const user = await findOrCreateCasUser(netid, name, email);
-    const token = generateToken(user);
-
-    const frontend = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-    const redirectUrl = `${frontend}/login?token=${encodeURIComponent(token)}&id=${encodeURIComponent(user.user_id)}&name=${encodeURIComponent(user.name || name || netid)}&email=${encodeURIComponent(user.email || email || `${netid}@uconn.edu`)}&role=${encodeURIComponent(user.role || 'student')}`;
-    res.redirect(redirectUrl);
-  } catch (err) {
-    console.error('CAS callback error:', err);
-    res.status(500).json({ error: 'internal_error', message: 'CAS login failed' });
+  const ticket = String(req.query.ticket || '');
+  if (!ticket) {
+    res.status(400).json({ error: 'validation', message: 'Missing CAS ticket' });
+    return;
   }
+
+  const service = buildCasServiceUrl();
+  const validateUrl = `${getCasBaseUrl()}/serviceValidate?service=${encodeURIComponent(service)}&ticket=${encodeURIComponent(ticket)}`;
+  const response = await fetch(validateUrl);
+  const xml = await response.text();
+  const { netid, name, email } = parseCasProfile(xml);
+
+  if (!response.ok || !netid) {
+    res.status(401).json({ error: 'unauthorized', message: 'CAS validation failed' });
+    return;
+  }
+
+  const user = await findOrCreateCasUser(netid, name, email);
+  const token = generateToken(user);
+
+  // Set JWT in httpOnly cookie (not in URL) to prevent XSS token theft
+  setTokenCookie(res, token);
+  const frontend = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  res.redirect(`${frontend}/login?cas=success`);
 }
 
 /**
@@ -131,5 +131,133 @@ export async function getMe(req: AuthRequest, res: Response): Promise<void> {
     role: req.user.role,
     course_id: req.user.course_id,
     group_id: req.user.group_id,
+    enrollments: req.user.enrollments ?? [],
   });
+}
+
+// =====================================================
+// Local email/password auth (development only)
+// =====================================================
+
+function isDevMode(): boolean {
+  return process.env.NODE_ENV !== 'production';
+}
+
+/**
+ * POST /auth/register
+ * Register a new user with email & password.  Dev-only.
+ */
+export async function register(req: Request, res: Response): Promise<void> {
+  if (!isDevMode()) {
+    res.status(403).json({ error: 'forbidden', message: 'Local registration is disabled in production. Use CAS login.' });
+    return;
+  }
+
+  const { name, email, password, role, group_id } = req.body;
+
+  const userRole = (role === 'instructor' || role === 'admin') ? role : 'student';
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+  const user = await withDbNoRLS(async (client) => {
+    // Check duplicate
+    const dup = await client.query('SELECT user_id FROM users WHERE email = $1', [email]);
+    if (dup.rows.length > 0) {
+      return null; // duplicate
+    }
+
+    const ins = await client.query(
+      `INSERT INTO users (email, password_hash, name, role, course_id, group_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING user_id, email, name, role, course_id, group_id`,
+      [email, passwordHash, name, userRole, DEFAULT_COURSE_ID, group_id || DEFAULT_GROUP_ID]
+    );
+    return ins.rows[0];
+  });
+
+  if (!user) {
+    res.status(409).json({ error: 'conflict', message: 'Email already registered' });
+    return;
+  }
+
+  res.status(201).json({ message: 'Registration successful', user_id: user.user_id });
+}
+
+/**
+ * POST /auth/login
+ * Authenticate with email & password.  Dev-only.
+ */
+export async function login(req: Request, res: Response): Promise<void> {
+  if (!isDevMode()) {
+    res.status(403).json({ error: 'forbidden', message: 'Local login is disabled in production. Use CAS login.' });
+    return;
+  }
+
+  const { email, password } = req.body;
+
+  const user = await withDbNoRLS(async (client) => {
+    const result = await client.query(
+      'SELECT user_id, email, password_hash, name, role, course_id, group_id FROM users WHERE email = $1',
+      [email]
+    );
+    return result.rows[0] || null;
+  });
+
+  if (!user) {
+    res.status(401).json({ error: 'unauthorized', message: 'Invalid email or password' });
+    return;
+  }
+
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) {
+    res.status(401).json({ error: 'unauthorized', message: 'Invalid email or password' });
+    return;
+  }
+
+  const token = generateToken(user);
+
+  // Set JWT in httpOnly cookie — never expose token to JavaScript
+  setTokenCookie(res, token);
+
+  // Fetch enrollments for the logged-in user
+  const enrollments = await withDbNoRLS(async (client) => {
+    const r = await client.query(
+      `SELECT enrollment_id, course_id, group_id, role, is_primary, enrolled_at
+       FROM user_enrollments WHERE user_id = $1 ORDER BY is_primary DESC`,
+      [user.user_id]
+    );
+    return r.rows;
+  });
+
+  res.json({
+    user: {
+      id: user.user_id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      course_id: user.course_id,
+      group_id: user.group_id,
+      enrollments,
+    },
+  });
+}
+
+/**
+ * POST /auth/logout
+ * Blacklist the current JWT and clear the httpOnly cookie.
+ */
+export async function logout(req: AuthRequest, res: Response): Promise<void> {
+  // Try to read the current token so we can blacklist it
+  try {
+    const cookieHeader = req.headers.cookie || '';
+    const match = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
+    if (match) {
+      const decoded = jwt.verify(match[1], JWT_SECRET) as any;
+      if (decoded.jti && decoded.exp) {
+        blacklistToken(decoded.jti, decoded.exp);
+      }
+    }
+  } catch { /* token already invalid — nothing to blacklist */ }
+
+  clearTokenCookie(res);
+  res.json({ message: 'Logged out' });
 }

@@ -54,8 +54,7 @@ export default function AssignedReviewsPage() {
               Assigned: {new Date(task.assigned_at).toLocaleString()}
             </p>
             <button
-              className="btn btn-primary"
-              style={{ marginTop: '14px', fontSize: '0.9rem', padding: '10px 20px' }}
+              className="btn btn-primary btn-md mt-12"
               onClick={() => navigate(`/review/${task.assignment_id}`)}
             >
               Start Review

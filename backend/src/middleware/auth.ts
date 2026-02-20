@@ -2,10 +2,16 @@ import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
 import type { AuthRequest, AuthUser } from '../types.js';
+import { JWT_SECRET } from '../utils/jwtConfig.js';
+import { getTokenFromCookieHeader } from '../utils/cookieHelper.js';
+import { isBlacklisted } from '../utils/tokenBlacklist.js';
 
 /**
  * JWT authentication middleware.
- * Verifies the Bearer token and attaches user info to req.user.
+ *
+ * Token resolution order:
+ *   1. httpOnly cookie "token"  (browser sessions — XSS-safe)
+ *   2. Authorization: Bearer … header (API clients / scripts)
  */
 export async function authenticate(
   req: AuthRequest,
@@ -13,20 +19,34 @@ export async function authenticate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
+    // 1. Try httpOnly cookie first (preferred — immune to XSS)
+    let token = getTokenFromCookieHeader(req.headers.cookie);
+
+    // 2. Fallback to Authorization header (for API clients)
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+      }
+    }
+
+    if (!token) {
       res.status(401).json({ error: 'unauthorized', message: 'No token provided' });
       return;
     }
 
-    const token = authHeader.split(' ')[1];
-    const secret = process.env.JWT_SECRET || 'dev-secret';
-
-    const decoded = jwt.verify(token, secret) as {
+    const decoded = jwt.verify(token, JWT_SECRET) as {
       user_id: string;
       email: string;
       role: string;
+      jti?: string;
     };
+
+    // Reject blacklisted (logged-out) tokens
+    if (decoded.jti && isBlacklisted(decoded.jti)) {
+      res.status(401).json({ error: 'token_revoked', message: 'Token has been revoked' });
+      return;
+    }
 
     // Fetch fresh user data from DB
     const result = await pool.query(
@@ -39,7 +59,19 @@ export async function authenticate(
       return;
     }
 
-    req.user = result.rows[0] as AuthUser;
+    // Load all enrollments for this user
+    const enrollResult = await pool.query(
+      `SELECT enrollment_id, course_id, group_id, role, is_primary, enrolled_at
+       FROM user_enrollments
+       WHERE user_id = $1
+       ORDER BY is_primary DESC, enrolled_at ASC`,
+      [decoded.user_id]
+    );
+
+    req.user = {
+      ...result.rows[0],
+      enrollments: enrollResult.rows,
+    } as AuthUser;
     next();
   } catch (err: any) {
     if (err.name === 'TokenExpiredError') {

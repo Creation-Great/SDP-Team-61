@@ -7,10 +7,16 @@ export interface UsersTableSchema {
   hasNetid: boolean;
 }
 
+/** How long the schema introspection result is cached (ms). */
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 let cachedSchema: UsersTableSchema | null = null;
+let cachedAt = 0;
 
 export async function getUsersTableSchema(client: PoolClient): Promise<UsersTableSchema> {
-  if (cachedSchema) return cachedSchema;
+  if (cachedSchema && Date.now() - cachedAt < CACHE_TTL_MS) {
+    return cachedSchema;
+  }
 
   const result = await client.query<{ column_name: string }>(
     `SELECT column_name
@@ -25,6 +31,7 @@ export async function getUsersTableSchema(client: PoolClient): Promise<UsersTabl
     hasName: cols.has('name'),
     hasNetid: cols.has('netid'),
   };
+  cachedAt = Date.now();
   return cachedSchema;
 }
 
