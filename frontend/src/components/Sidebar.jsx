@@ -42,14 +42,15 @@ export default function Sidebar() {
     navigate('/login');
   };
 
-  const isActive = (to) => {
-    if (to === '/instructor' && location.pathname === '/instructor') return true;
-    if (to === '/dashboard' && location.pathname === '/dashboard') return true;
-    if (to !== '/instructor' && to !== '/dashboard') {
-      return location.pathname.startsWith(to);
-    }
-    return false;
-  };
+  const linkClass = ({ isActive }) =>
+    `w-full flex items-center px-4 py-3 rounded-xl transition-all no-underline text-sm ${
+      isActive
+        ? 'bg-indigo-50 text-indigo-700 font-semibold'
+        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+    }`;
+
+  const iconClass = (isActive) =>
+    `w-5 h-5 mr-3 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`;
 
   const sidebarContent = (
     <>
@@ -65,27 +66,22 @@ export default function Sidebar() {
 
       {/* Nav items */}
       <div className="p-4 flex-1 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const active = isActive(item.to);
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/instructor' || item.to === '/dashboard'}
-              onClick={() => setMobileOpen(false)}
-              className={`w-full flex items-center px-4 py-3 rounded-xl transition-all no-underline ${
-                active
-                  ? 'bg-indigo-50 text-indigo-700 font-semibold'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <item.icon
-                className={`w-5 h-5 mr-3 ${active ? 'text-indigo-600' : 'text-slate-400'}`}
-              />
-              {item.label}
-            </NavLink>
-          );
-        })}
+        {navItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === '/instructor' || item.to === '/dashboard'}
+            onClick={() => setMobileOpen(false)}
+            className={linkClass}
+          >
+            {({ isActive }) => (
+              <>
+                <item.icon className={iconClass(isActive)} />
+                {item.label}
+              </>
+            )}
+          </NavLink>
+        ))}
       </div>
 
       {/* User area */}
@@ -137,7 +133,7 @@ export default function Sidebar() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 z-40 bg-black/30"
+          className="md:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
           onClick={() => setMobileOpen(false)}
         />
       )}

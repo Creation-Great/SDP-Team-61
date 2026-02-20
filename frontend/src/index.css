@@ -48,6 +48,15 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
   ::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
+
+  /* Prevent ugly browser autofill backgrounds (Chrome yellow / blue) */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-text-fill-color: #0f172a;
+    -webkit-box-shadow: 0 0 0px 1000px white inset;
+    transition: background-color 5000s ease-in-out 0s;
+  }
 }
 
 /* ── Animations (tailwindcss-animate compatible) ── */
