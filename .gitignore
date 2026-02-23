@@ -4,3 +4,21 @@ dist/
 uploads/*
 !uploads/.gitkeep
 *.log
+
+# Temporary screenshots (Claude screenshot workflow)
+temporary screenshots/
+temporary\ screenshots/
+
+# Reference/scratch PNG and image files in project root only
+/*.png
+/*.jpg
+/*.jpeg
+
+# Claude tooling scripts (not part of the app)
+screenshot.mjs
+serve.mjs
+
+# Root-level scratch HTML (not the frontend app)
+/index.html
+
+brand_assets
