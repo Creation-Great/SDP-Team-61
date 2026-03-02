@@ -1,164 +1,106 @@
-// ─── User & Auth ──────────────────────────────────────────────────────────────
 export type UserRole = 'student' | 'instructor' | 'admin';
 
 export interface User {
   id: string;
-  name: string;
+  netid: string | null;
+  name: string | null;
   email: string;
   role: UserRole;
 }
 
-// ─── Submissions ──────────────────────────────────────────────────────────────
-export type SubmissionStatus = 'submitted' | 'reviewed';
-
-export interface ReviewSummary {
-  review_id: string | null;
-  reviewer_name?: string;
-}
-
-export interface Submission {
-  submission_id: string;
-  title: string;
-  description?: string;
-  status: SubmissionStatus;
+export interface Course {
+  course_id: string;
+  name: string;
+  term: string | null;
   created_at: string;
-  file_url?: string;
-  reviews?: ReviewSummary[];
-  // instructor-only fields
-  student_name?: string;
-  student_email?: string;
-  assigned_count?: number;
-  completed_count?: number;
 }
 
-// ─── Reviews ──────────────────────────────────────────────────────────────────
-export interface Review {
-  review_id?: string;
-  title: string;
-  student_name: string;
-  file_url?: string;
-  score?: number;
-  comments?: string;
+export interface DefinitionStudent {
+  id: string;
+  team_key: string;
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  netid_guess: string;
 }
 
-export interface ReviewTask {
+export interface DefinitionTeam {
+  key: string;
+  students: DefinitionStudent[];
+}
+
+export interface CourseDefinition {
+  definition_id: string;
+  teams: DefinitionTeam[];
+  categories: string[];
+  uploaded_at: string;
+}
+
+// New per-team definition format returned by GET /courses/:courseId/definition/current
+export interface CourseDefinitionCurrent {
+  teams: Array<{
+    teamKey: string;
+    members: Array<{ fullName: string; netidGuess: string; userId: string | null }>;
+  }>;
+  categories: string[];
+  uploadedAt: string | null;
+}
+
+export interface Week {
+  week_id: string;
+  course_id: string;
+  week_number: number;
+  opens_at: string;
+  closes_at: string;
+  scope_type: 'ALL' | 'TEAM';
+  scope_team_key: string | null;
+  team_keys: string[];  // from week_teams junction table
+  is_open: boolean;
+  definition_id_at_creation?: string;
+}
+
+export interface WeekStatusRow {
+  id: string;
+  full_name: string;
+  team_key: string;
+  netid_guess: string;
+  total_assignments: number;
+  submitted_assignments: number;
+}
+
+export interface AssignedReview {
   assignment_id: string;
-  title: string;
-  student_name: string;
-  assigned_at: string;
+  status: 'PENDING' | 'SUBMITTED';
+  reviewee_name: string;
+  team_key: string;
+  week_id: string;
+  week_number: number;
+  closes_at: string;
+  course_id: string;
+  course_name: string;
+  week_is_open: boolean;
 }
 
-export interface ReceivedReview {
-  review_id: string;
-  reviewer_name: string;
-  score: number;
-  comments: string;
-  created_at: string;
+export interface AssignmentForm {
+  assignment_id: string;
+  status: 'PENDING' | 'SUBMITTED';
+  reviewee_name: string;
+  team_key: string;
+  categories: string[];
 }
 
-export interface ViewReviewData {
-  submission: {
-    title: string;
-    file_url?: string;
-  };
-  reviews: ReceivedReview[];
+export interface StudentAggregate {
+  reviewee_week_student_id: string;
+  full_name: string;
+  team_key: string;
+  avg_overall: number | null;
+  per_category_json: Record<string, number>;
+  n_reviews: number;
 }
 
-// ─── Check-ins ────────────────────────────────────────────────────────────────
-export interface CheckinMember {
-  id: string;
-  team: string;
-  name: string;
-  self?: string;
-  base_comment?: string;
-  mapped_user_id?: string | null;
-}
-
-export interface WeekScores {
-  [memberId: string]: {
-    [topic: string]: string | number;
-  };
-}
-
-export interface WeekComments {
-  [memberId: string]: string;
-}
-
-export interface CheckinWeek {
-  id: string;
-  label: string;
-  scores: WeekScores;
-  comments: WeekComments;
-  additional_comments: string;
-}
-
-export interface StudentCheckinWeek {
-  id: string;
-  label: string;
-  self_score: string;
-  peer_scores: {
-    [memberId: string]: {
-      [topic: string]: string;
-    };
-  };
-}
-
-export interface StudentCheckinContext {
-  instructor: {
-    topics: string[];
-    members: CheckinMember[];
-    weeks: { id: string; label: string }[];
-  };
-  self?: {
-    selected_member_id: string;
-    weeks: StudentCheckinWeek[];
-  };
-}
-
-// ─── Instructor Insights ─────────────────────────────────────────────────────
-export interface InsightRow {
-  member_id: string;
-  team: string;
-  name: string;
-  self_average: number | null;
-  peer_average: number | null;
-  instructor_average: number | null;
-}
-
-export interface HandedOutWeek {
-  id: string;
-  self_score?: string;
-  peer_scores?: {
-    [targetId: string]: {
-      [topic: string]: string;
-    };
-  };
-}
-
-export interface HandedOutEntry {
-  rater_member_id: string;
-  weeks: HandedOutWeek[];
-}
-
-export interface StudentOption {
-  user_id: string;
-  display_name: string;
-  email?: string;
-}
-
-// ─── Weekly Feedback ─────────────────────────────────────────────────────────
-export type LikertValue =
-  | 'extremely_disagree'
-  | 'somewhat_disagree'
-  | 'neutral'
-  | 'somewhat_agree'
-  | 'extremely_agree';
-
-export interface WeeklyFeedbackForm {
-  week: string;
-  morale: string;
-  blockers: string;
-  wins: string;
-  helpNeeded: string;
-  peerRatings: Record<string, LikertValue>;
+export interface TeamAggregate {
+  team_key: string;
+  avg_overall: number | null;
+  per_category_json: Record<string, number>;
+  n_reviews: number;
 }

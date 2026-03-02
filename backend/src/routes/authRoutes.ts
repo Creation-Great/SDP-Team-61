@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, getMe, casLogin, casCallback } from '../controllers/authController.js';
+import { register, login, casLogin, casCallback, getMe } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();

@@ -3,13 +3,10 @@ import jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { withDbNoRLS } from '../db.js';
-import { audit } from '../utils/audit.js';
-import { getUsersTableSchema, makeUserSelectClause, resolveIdentifierInput } from '../utils/userSchema.js';
+import { autoEnroll } from '../utils/autoEnroll.js';
 import type { AuthRequest } from '../types.js';
 
 const SALT_ROUNDS = 10;
-const DEFAULT_COURSE_ID = process.env.DEFAULT_COURSE_ID || 'CSE4939W';
-const DEFAULT_GROUP_ID = process.env.DEFAULT_GROUP_ID || 'G1';
 
 function generateToken(user: { user_id: string; email: string; role: string }): string {
   const secret = process.env.JWT_SECRET || 'dev-secret';
@@ -42,77 +39,161 @@ function extractCasValue(xml: string, tags: string[]): string | null {
 
 function parseCasProfile(xml: string): { netid: string | null; name: string | null; email: string | null } {
   const netid = extractCasValue(xml, ['cas:user', 'user']);
-  const name = extractCasValue(xml, [
-    'cas:displayName',
-    'cas:cn',
-    'cas:name',
-    'cas:givenName',
-  ]);
+  const name = extractCasValue(xml, ['cas:displayName', 'cas:cn', 'cas:name', 'cas:givenName']);
   const email = extractCasValue(xml, ['cas:mail', 'cas:email', 'mail', 'email']);
   return { netid, name, email };
 }
 
-async function findOrCreateCasUser(netidRaw: string, casName: string | null, casEmail: string | null): Promise<any> {
+async function findOrCreateCasUser(
+  netidRaw: string,
+  casName: string | null,
+  casEmail: string | null
+): Promise<any> {
   const netid = netidRaw.trim();
   const email = casEmail?.trim() || `${netid}@uconn.edu`;
   const displayName = casName?.trim() || netid;
-  const randomPassword = `cas-${netid}-${Date.now()}`;
-  const randomPasswordHash = await bcrypt.hash(randomPassword, SALT_ROUNDS);
 
   return withDbNoRLS(async (client) => {
-    const schema = await getUsersTableSchema(client);
-    const selectClause = makeUserSelectClause(schema);
+    // Try to find existing user by netid or email
+    const findResult = await client.query(
+      `SELECT user_id, email, name, role, netid FROM users WHERE netid = $1 OR email = $2 LIMIT 1`,
+      [netid, email]
+    );
 
-    let existing = null;
-    if (schema.hasNetid && schema.hasEmail) {
-      const r = await client.query(
-        `SELECT ${selectClause} FROM users WHERE netid = $1 OR email = $2 LIMIT 1`,
-        [netid, email]
-      );
-      existing = r.rows[0] || null;
-    } else if (schema.hasNetid) {
-      const r = await client.query(
-        `SELECT ${selectClause} FROM users WHERE netid = $1 LIMIT 1`,
-        [netid]
-      );
-      existing = r.rows[0] || null;
-    } else if (schema.hasEmail) {
-      const r = await client.query(
-        `SELECT ${selectClause} FROM users WHERE email = $1 LIMIT 1`,
-        [email]
-      );
-      existing = r.rows[0] || null;
+    if (findResult.rows.length > 0) {
+      const existing = findResult.rows[0];
+      // Update netid if not already set
+      if (!existing.netid) {
+        await client.query(
+          `UPDATE users SET netid = $1 WHERE user_id = $2`,
+          [netid, existing.user_id]
+        );
+        existing.netid = netid;
+      }
+      return existing;
     }
 
-    if (existing) return existing;
-
-    if (schema.hasEmail && schema.hasPasswordHash && schema.hasName) {
-      const ins = await client.query(
-        `INSERT INTO users (email, password_hash, name, role, course_id, group_id)
-         VALUES ($1, $2, $3, 'student', $4, $5)
-         RETURNING user_id, email, name, role, course_id, group_id`,
-        [email, randomPasswordHash, displayName, DEFAULT_COURSE_ID, DEFAULT_GROUP_ID]
-      );
-      return ins.rows[0];
-    }
-
-    if (schema.hasNetid) {
-      const ins = await client.query(
-        `INSERT INTO users (netid, role, course_id, group_id)
-         VALUES ($1, 'student', $2, $3)
-         RETURNING user_id, netid AS email, netid AS name, role, course_id, group_id`,
-        [netid, DEFAULT_COURSE_ID, DEFAULT_GROUP_ID]
-      );
-      return ins.rows[0];
-    }
-
-    throw new Error('Unsupported users schema for CAS sign-in');
+    // Create new user
+    const insertResult = await client.query(
+      `INSERT INTO users (email, password_hash, name, role, netid)
+       VALUES ($1, 'cas-nologin', $2, 'student', $3)
+       RETURNING user_id, email, name, role, netid`,
+      [email, displayName, netid]
+    );
+    return insertResult.rows[0];
   });
 }
 
 /**
+ * POST /auth/register
+ * Register a new user with name, email, password, and optional role.
+ */
+export async function register(req: Request, res: Response): Promise<void> {
+  try {
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email || !password) {
+      res.status(400).json({ error: 'validation', message: 'Name, email, and password are required' });
+      return;
+    }
+
+    if (password.length < 6) {
+      res.status(400).json({ error: 'validation', message: 'Password must be at least 6 characters' });
+      return;
+    }
+
+    const validRoles = ['student', 'instructor'];
+    const userRole = validRoles.includes(role) ? role : 'student';
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    const user = await withDbNoRLS(async (client) => {
+      const existing = await client.query('SELECT user_id FROM users WHERE email = $1', [email]);
+      if (existing.rows.length > 0) {
+        throw { status: 400, message: 'Email already registered' };
+      }
+
+      const result = await client.query(
+        `INSERT INTO users (email, password_hash, name, role)
+         VALUES ($1, $2, $3, $4)
+         RETURNING user_id, email, name, role, netid`,
+        [email, passwordHash, name, userRole]
+      );
+      return result.rows[0];
+    });
+
+    // Auto-enroll if this user has a netid set
+    if (user.netid) {
+      await autoEnroll(user.user_id, user.netid.slice(0, 3));
+    }
+
+    const token = generateToken(user);
+    res.status(201).json({
+      token,
+      user: { id: user.user_id, name: user.name, email: user.email, role: user.role, netid: user.netid ?? null },
+    });
+  } catch (err: any) {
+    if (err.status) {
+      res.status(err.status).json({ error: 'validation', message: err.message });
+      return;
+    }
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Registration failed' });
+  }
+}
+
+/**
+ * POST /auth/login
+ * Authenticate user with email/netid and password.
+ */
+export async function login(req: Request, res: Response): Promise<void> {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      res.status(400).json({ error: 'validation', message: 'Email and password are required' });
+      return;
+    }
+
+    const user = await withDbNoRLS(async (client) => {
+      // Support login by email or netid
+      const r = await client.query(
+        `SELECT user_id, email, name, role, netid, password_hash FROM users
+         WHERE email = $1 OR netid = $1 LIMIT 1`,
+        [email]
+      );
+      return r.rows[0] || null;
+    });
+
+    if (!user) {
+      res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
+      return;
+    }
+
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) {
+      res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
+      return;
+    }
+
+    // Auto-enroll if user has a netid
+    if (user.netid) {
+      await autoEnroll(user.user_id, user.netid.slice(0, 3));
+    }
+
+    const token = generateToken(user);
+    res.json({
+      token,
+      user: { id: user.user_id, name: user.name, email: user.email, role: user.role, netid: user.netid ?? null },
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Login failed' });
+  }
+}
+
+/**
  * GET /auth/cas/login
- * Redirect to UConn CAS login with service callback URL.
+ * Redirect to UConn CAS login.
  */
 export async function casLogin(_req: Request, res: Response): Promise<void> {
   const service = buildCasServiceUrl();
@@ -122,7 +203,7 @@ export async function casLogin(_req: Request, res: Response): Promise<void> {
 
 /**
  * GET /auth/cas/callback
- * Validate CAS ticket and create/login local user, then redirect to frontend.
+ * Validate CAS ticket, find/create user, trigger auto-enroll, redirect to frontend.
  */
 export async function casCallback(req: Request, res: Response): Promise<void> {
   try {
@@ -144,10 +225,13 @@ export async function casCallback(req: Request, res: Response): Promise<void> {
     }
 
     const user = await findOrCreateCasUser(netid, name, email);
-    const token = generateToken(user);
 
+    // Auto-enroll using 3-char prefix
+    await autoEnroll(user.user_id, netid.slice(0, 3));
+
+    const token = generateToken(user);
     const frontend = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-    const redirectUrl = `${frontend}/login?token=${encodeURIComponent(token)}&id=${encodeURIComponent(user.user_id)}&name=${encodeURIComponent(user.name || name || netid)}&email=${encodeURIComponent(user.email || email || `${netid}@uconn.edu`)}&role=${encodeURIComponent(user.role || 'student')}`;
+    const redirectUrl = `${frontend}/login?token=${encodeURIComponent(token)}&id=${encodeURIComponent(user.user_id)}&name=${encodeURIComponent(user.name || name || netid)}&email=${encodeURIComponent(user.email || email || `${netid}@uconn.edu`)}&role=${encodeURIComponent(user.role || 'student')}&netid=${encodeURIComponent(netid)}`;
     res.redirect(redirectUrl);
   } catch (err) {
     console.error('CAS callback error:', err);
@@ -156,155 +240,43 @@ export async function casCallback(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * POST /auth/register
- * Register a new user with email and password.
- */
-export async function register(req: AuthRequest, res: Response): Promise<void> {
-  try {
-    const { name, email, password, role } = req.body;
-
-    if (!name || !email || !password) {
-      res.status(400).json({ error: 'validation', message: 'Name, email, and password are required' });
-      return;
-    }
-
-    if (password.length < 6) {
-      res.status(400).json({ error: 'validation', message: 'Password must be at least 6 characters' });
-      return;
-    }
-
-    const validRoles = ['student', 'instructor'];
-    const userRole = validRoles.includes(role) ? role : 'student';
-
-    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
-    const user = await withDbNoRLS(async (client) => {
-      const schema = await getUsersTableSchema(client);
-      if (!schema.hasEmail || !schema.hasPasswordHash || !schema.hasName) {
-        throw {
-          status: 400,
-          message: 'Registration is disabled for legacy DB schema. Use an existing account.',
-        };
-      }
-
-      // Check if email already exists
-      const existing = await client.query('SELECT user_id FROM users WHERE email = $1', [email]);
-      if (existing.rows.length > 0) {
-        throw { status: 400, message: 'Email already registered' };
-      }
-
-      const result = await client.query(
-        `INSERT INTO users (email, password_hash, name, role)
-         VALUES ($1, $2, $3, $4)
-         RETURNING user_id, email, name, role, created_at`,
-        [email, passwordHash, name, userRole]
-      );
-
-      await audit(client, result.rows[0].user_id, 'REGISTER', 'user', result.rows[0].user_id, { email });
-      return result.rows[0];
-    });
-
-    const token = generateToken(user);
-
-    res.status(201).json({
-      token,
-      user: {
-        id: user.user_id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
-  } catch (err: any) {
-    if (err.status) {
-      res.status(err.status).json({ error: 'validation', message: err.message });
-      return;
-    }
-    console.error('Register error:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Registration failed' });
-  }
-}
-
-/**
- * POST /auth/login
- * Authenticate user with email and password.
- */
-export async function login(req: AuthRequest, res: Response): Promise<void> {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      res.status(400).json({ error: 'validation', message: 'Email and password are required' });
-      return;
-    }
-
-    const result = await withDbNoRLS(async (client) => {
-      const schema = await getUsersTableSchema(client);
-      const selectClause = makeUserSelectClause(schema);
-      const { raw, netidGuess } = resolveIdentifierInput(email);
-
-      let query = `SELECT ${selectClause} FROM users`;
-      const params: string[] = [];
-
-      if (schema.hasEmail && schema.hasNetid) {
-        query += ' WHERE email = $1 OR netid = $2';
-        params.push(raw, netidGuess);
-      } else if (schema.hasEmail) {
-        query += ' WHERE email = $1';
-        params.push(raw);
-      } else if (schema.hasNetid) {
-        query += ' WHERE netid = $1';
-        params.push(netidGuess);
-      } else {
-        return null;
-      }
-
-      const r = await client.query(query, params);
-      const user = r.rows[0] || null;
-      return { user, schema };
-    });
-
-    if (!result?.user) {
-      res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
-      return;
-    }
-
-    if (result.schema.hasPasswordHash) {
-      const match = await bcrypt.compare(password, result.user.password_hash);
-      if (!match) {
-        res.status(401).json({ error: 'unauthorized', message: 'Invalid credentials' });
-        return;
-      }
-    }
-
-    const token = generateToken(result.user);
-
-    res.json({
-      token,
-      user: {
-        id: result.user.user_id,
-        name: result.user.name,
-        email: result.user.email,
-        role: result.user.role,
-      },
-    });
-  } catch (err) {
-    console.error('Login error:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Login failed' });
-  }
-}
-
-/**
  * GET /auth/me
- * Get current user's profile.
+ * Return current user info plus their enrolled courses.
  */
 export async function getMe(req: AuthRequest, res: Response): Promise<void> {
-  res.json({
-    id: req.user.user_id,
-    name: req.user.name,
-    email: req.user.email,
-    role: req.user.role,
-    course_id: req.user.course_id,
-    group_id: req.user.group_id,
-  });
+  try {
+    const { user_id, role } = req.user;
+
+    const courses = await withDbNoRLS(async (client) => {
+      if (role === 'instructor' || role === 'admin') {
+        const r = await client.query(
+          `SELECT course_id, name, term, created_at FROM courses WHERE instructor_user_id = $1 ORDER BY created_at DESC`,
+          [user_id]
+        );
+        return r.rows;
+      } else {
+        const r = await client.query(
+          `SELECT c.course_id, c.name, c.term, c.created_at
+           FROM courses c
+           JOIN course_members cm ON cm.course_id = c.course_id
+           WHERE cm.user_id = $1
+           ORDER BY c.created_at DESC`,
+          [user_id]
+        );
+        return r.rows;
+      }
+    });
+
+    res.json({
+      user_id: req.user.user_id,
+      name: req.user.name,
+      email: req.user.email,
+      netid: req.user.netid,
+      role: req.user.role,
+      courses,
+    });
+  } catch (err) {
+    console.error('getMe error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch user info' });
+  }
 }

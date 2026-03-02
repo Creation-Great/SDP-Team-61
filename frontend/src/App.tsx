@@ -6,15 +6,13 @@ import InstructorRoute from './components/InstructorRoute';
 import StudentRoute from './components/StudentRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import StudentDashboardPage from './pages/StudentDashboardPage';
-import InstructorDashboardPage from './pages/InstructorDashboardPage';
-import UploadAssignment from './pages/UploadAssignment';
-import AssignedReviewsPage from './pages/AssignedReviewsPage';
-import ReviewPage from './pages/ReviewPage';
-import ViewReviewPage from './pages/ViewReviewPage';
-import InstructorPeerReviewPage from './pages/InstructorPeerReviewPage';
-import StudentCheckinsPage from './pages/StudentCheckinsPage';
-import WeeklyFeedback from './WeeklyFeedback';
+import InstructorCoursesPage from './pages/InstructorCoursesPage';
+import InstructorCourseDetailPage from './pages/InstructorCourseDetailPage';
+import InstructorWeekDetailPage from './pages/InstructorWeekDetailPage';
+import StudentReviewsPage from './pages/StudentReviewsPage';
+import StudentWeekPage from './pages/StudentWeekPage';
+import StudentReviewFormPage from './pages/StudentReviewFormPage';
+import type { UserRole } from './types';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -45,6 +43,25 @@ function AppLayout({ children }: AppLayoutProps) {
   );
 }
 
+/**
+ * RootRedirect: routes users to the correct home page based on their role.
+ */
+function RootRedirect() {
+  const token = localStorage.getItem('token');
+  if (!token) return <Navigate to="/login" replace />;
+
+  let role: UserRole | null = null;
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    role = user.role || null;
+  } catch { }
+
+  if (role === 'instructor' || role === 'admin') {
+    return <Navigate to="/instructor/courses" replace />;
+  }
+  return <Navigate to="/student/reviews" replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -52,108 +69,81 @@ export default function App() {
       <Route path="/login"    element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* Student routes */}
-      <Route
-        path="/dashboard"
-        element={
-          <ProtectedRoute>
-            <StudentRoute>
-              <AppLayout>
-                <StudentDashboardPage />
-              </AppLayout>
-            </StudentRoute>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/upload"
-        element={
-          <ProtectedRoute>
-            <StudentRoute>
-              <AppLayout>
-                <UploadAssignment />
-              </AppLayout>
-            </StudentRoute>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/student/checkins"
-        element={
-          <ProtectedRoute>
-            <StudentRoute>
-              <AppLayout>
-                <StudentCheckinsPage />
-              </AppLayout>
-            </StudentRoute>
-          </ProtectedRoute>
-        }
-      />
-
-      {/* Shared protected routes */}
-      <Route
-        path="/reviews"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <AssignedReviewsPage />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/review/:id"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <ReviewPage />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/view-review/:submissionId"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <ViewReviewPage />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/weekly-feedback"
-        element={
-          <ProtectedRoute>
-            <AppLayout>
-              <WeeklyFeedback />
-            </AppLayout>
-          </ProtectedRoute>
-        }
-      />
+      {/* Root redirect */}
+      <Route path="/" element={<RootRedirect />} />
 
       {/* Instructor routes */}
       <Route
-        path="/instructor"
+        path="/instructor/courses"
         element={
           <ProtectedRoute>
             <InstructorRoute>
               <AppLayout>
-                <InstructorDashboardPage />
+                <InstructorCoursesPage />
               </AppLayout>
             </InstructorRoute>
           </ProtectedRoute>
         }
       />
       <Route
-        path="/instructor/peer-review"
+        path="/instructor/courses/:courseId"
         element={
           <ProtectedRoute>
             <InstructorRoute>
               <AppLayout>
-                <InstructorPeerReviewPage />
+                <InstructorCourseDetailPage />
               </AppLayout>
             </InstructorRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/instructor/courses/:courseId/weeks/:weekId"
+        element={
+          <ProtectedRoute>
+            <InstructorRoute>
+              <AppLayout>
+                <InstructorWeekDetailPage />
+              </AppLayout>
+            </InstructorRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Student routes */}
+      <Route
+        path="/student/reviews"
+        element={
+          <ProtectedRoute>
+            <StudentRoute>
+              <AppLayout>
+                <StudentReviewsPage />
+              </AppLayout>
+            </StudentRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/weeks/:weekId"
+        element={
+          <ProtectedRoute>
+            <StudentRoute>
+              <AppLayout>
+                <StudentWeekPage />
+              </AppLayout>
+            </StudentRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/student/assignments/:assignmentId"
+        element={
+          <ProtectedRoute>
+            <StudentRoute>
+              <AppLayout>
+                <StudentReviewFormPage />
+              </AppLayout>
+            </StudentRoute>
           </ProtectedRoute>
         }
       />

@@ -4,9 +4,6 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   ClipboardList,
-  Upload,
-  MessageSquare,
-  Users,
   LogOut,
   Menu,
   X,
@@ -123,16 +120,11 @@ export default function AppSidebar() {
   const iconStyle = { width: 18, height: 18, strokeWidth: 1.8 };
 
   const studentLinks = [
-    { to: '/dashboard',       icon: <LayoutDashboard  {...iconStyle} />, label: 'Dashboard' },
-    { to: '/student/checkins',icon: <ClipboardList    {...iconStyle} />, label: 'My Check-ins' },
-    { to: '/upload',          icon: <Upload           {...iconStyle} />, label: 'Upload' },
-    { to: '/reviews',         icon: <MessageSquare    {...iconStyle} />, label: 'Reviews' },
+    { to: '/student/reviews', icon: <ClipboardList {...iconStyle} />, label: 'My Reviews' },
   ];
 
   const instructorLinks = [
-    { to: '/instructor',             icon: <LayoutDashboard {...iconStyle} />, label: 'Dashboard' },
-    { to: '/instructor/peer-review', icon: <Users           {...iconStyle} />, label: 'Student Check-ins' },
-    { to: '/reviews',                icon: <MessageSquare   {...iconStyle} />, label: 'Reviews' },
+    { to: '/instructor/courses', icon: <LayoutDashboard {...iconStyle} />, label: 'Courses' },
   ];
 
   const links = isInstructor ? instructorLinks : studentLinks;
@@ -191,11 +183,11 @@ export default function AppSidebar() {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '0.7rem', fontWeight: 700, color: '#fff', fontFamily: 'Montserrat, sans-serif',
           }}>
-            {getInitials(user.name)}
+            {getInitials(user.name ?? undefined)}
           </div>
           <motion.div animate={{ opacity: open ? 1 : 0, display: open ? 'block' : 'none' }} style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'Montserrat, sans-serif' }}>
-              {user.name ?? 'User'}
+              {user.name ?? user.email ?? 'User'}
             </div>
             <div style={{ fontSize: '0.65rem', color: 'var(--tech-blue)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {user.role ?? 'student'}
@@ -296,10 +288,10 @@ export default function AppSidebar() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '0.8rem', fontWeight: 700, color: '#fff',
               }}>
-                {getInitials(user.name)}
+                {getInitials(user.name ?? undefined)}
               </div>
               <div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{user.name}</div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{user.name ?? user.email ?? 'User'}</div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--tech-blue)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{user.role}</div>
               </div>
             </div>

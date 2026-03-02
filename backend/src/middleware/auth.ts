@@ -1,12 +1,12 @@
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../db.js';
-import { getUsersTableSchema, makeUserSelectClause } from '../utils/userSchema.js';
 import type { AuthRequest, AuthUser } from '../types.js';
 
 /**
  * JWT authentication middleware.
  * Verifies the Bearer token and attaches user info to req.user.
+ * Supports ?token= query param as fallback for SSE EventSource connections.
  */
 export async function authenticate(
   req: AuthRequest,
@@ -15,12 +15,15 @@ export async function authenticate(
 ): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
+    const token: string | undefined = authHeader?.startsWith('Bearer ')
+      ? authHeader.split(' ')[1]
+      : (req.query?.token as string | undefined);
+
+    if (!token) {
       res.status(401).json({ error: 'unauthorized', message: 'No token provided' });
       return;
     }
 
-    const token = authHeader.split(' ')[1];
     const secret = process.env.JWT_SECRET || 'dev-secret';
 
     const decoded = jwt.verify(token, secret) as {
@@ -33,10 +36,8 @@ export async function authenticate(
     const client = await pool.connect();
     let result;
     try {
-      const schema = await getUsersTableSchema(client);
-      const selectClause = makeUserSelectClause(schema);
       result = await client.query(
-        `SELECT ${selectClause} FROM users WHERE user_id = $1`,
+        `SELECT user_id, email, name, role, netid FROM users WHERE user_id = $1`,
         [decoded.user_id]
       );
     } finally {

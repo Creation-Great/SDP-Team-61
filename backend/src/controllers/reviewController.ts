@@ -1,184 +1,245 @@
 import { Response } from 'express';
-import { withDb } from '../db.js';
-import { audit } from '../utils/audit.js';
+import { withDb, withDbNoRLS } from '../db.js';
+import { recomputeAggregates } from '../utils/aggregates.js';
+import { emitSseEvent } from '../utils/sse.js';
 import type { AuthRequest } from '../types.js';
 
 /**
- * GET /reviews/:id
- * Get a specific review/assignment details for the reviewer.
+ * GET /me/assigned-reviews
+ * All review assignments for the current user across all open weeks.
  */
-export async function getReviewById(req: AuthRequest, res: Response): Promise<void> {
+export async function getAssignedReviews(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { user_id, role } = req.user;
-    const { id } = req.params; // assignment_id
+    const { user_id } = req.user;
 
-    const row = await withDb(user_id, role, async (client) => {
-      const result = await client.query(
-        `SELECT a.assignment_id, a.submission_id, a.status AS assignment_status,
-                s.title, s.filename, s.file_url, s.description,
-                u.name AS student_name,
-                r.review_id, r.score, r.comments, r.created_at AS review_date
-         FROM assignments a
-         JOIN submissions s ON s.submission_id = a.submission_id
-         JOIN users u ON u.user_id = s.user_id
-         LEFT JOIN reviews r ON r.submission_id = a.submission_id AND r.reviewer_id = a.reviewer_id
-         WHERE a.assignment_id = $1`,
-        [id]
+    const assignments = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT
+           ra.assignment_id,
+           ra.status,
+           ws.full_name AS reviewee_name,
+           ws.team_key,
+           ra.week_id,
+           w.week_number,
+           w.closes_at,
+           w.course_id,
+           c.name AS course_name,
+           (w.closes_at > now()) AS week_is_open
+         FROM review_assignments ra
+         JOIN week_students ws ON ws.id = ra.reviewee_week_student_id
+         JOIN weeks w ON w.week_id = ra.week_id
+         JOIN courses c ON c.course_id = w.course_id
+         WHERE ra.reviewer_user_id = $1
+         ORDER BY w.closes_at ASC, ws.full_name`,
+        [user_id]
       );
-      return result.rows[0] || null;
+      return r.rows;
     });
 
-    if (!row) {
-      res.status(404).json({ error: 'not_found', message: 'Review assignment not found' });
-      return;
-    }
-
-    res.json(row);
+    res.json(assignments);
   } catch (err) {
-    console.error('Error fetching review:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Failed to load review' });
+    console.error('getAssignedReviews error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch reviews' });
   }
 }
 
 /**
- * POST /reviews/:id/submit
- * Submit a review for an assignment.
+ * GET /me/weeks/:weekId/assignments
+ * All review assignments for current user in a specific week.
  */
-export async function submitReview(req: AuthRequest, res: Response): Promise<void> {
+export async function getWeekAssignments(req: AuthRequest, res: Response): Promise<void> {
   try {
-    const { user_id, role } = req.user;
-    const { id } = req.params; // assignment_id
-    const { score, comments } = req.body;
+    const { user_id } = req.user;
+    const { weekId } = req.params;
 
-    if (score === undefined || score === null) {
-      res.status(400).json({ error: 'validation', message: 'Score is required' });
-      return;
-    }
+    const assignments = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT
+           ra.assignment_id,
+           ra.status,
+           ws.full_name AS reviewee_name,
+           ws.team_key,
+           ra.week_id
+         FROM review_assignments ra
+         JOIN week_students ws ON ws.id = ra.reviewee_week_student_id
+         WHERE ra.reviewer_user_id = $1 AND ra.week_id = $2
+         ORDER BY ws.full_name`,
+        [user_id, weekId]
+      );
+      return r.rows;
+    });
 
-    const numScore = Number(score);
-    if (isNaN(numScore) || numScore < 1 || numScore > 5) {
-      res.status(400).json({ error: 'validation', message: 'Score must be between 1 and 5' });
-      return;
-    }
+    res.json(assignments);
+  } catch (err) {
+    console.error('getWeekAssignments error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch assignments' });
+  }
+}
 
-    const result = await withDb(user_id, role, async (client) => {
-      // Verify the assignment belongs to this reviewer
-      const assignment = await client.query(
-        `SELECT assignment_id, submission_id, reviewer_id, status
-         FROM assignments WHERE assignment_id = $1`,
-        [id]
+/**
+ * GET /assignments/:assignmentId/form
+ * Get the review form for a specific assignment.
+ */
+export async function getAssignmentForm(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { assignmentId } = req.params;
+    const { user_id } = req.user;
+
+    const result = await withDbNoRLS(async (client) => {
+      // Get assignment details
+      const raResult = await client.query(
+        `SELECT ra.assignment_id, ra.status, ra.reviewer_user_id, ra.week_id,
+                ra.reviewee_week_student_id,
+                ws.full_name AS reviewee_name, ws.team_key
+         FROM review_assignments ra
+         JOIN week_students ws ON ws.id = ra.reviewee_week_student_id
+         WHERE ra.assignment_id = $1`,
+        [assignmentId]
       );
 
-      if (assignment.rows.length === 0) {
+      if (raResult.rows.length === 0) return null;
+      const ra = raResult.rows[0];
+
+      // Verify ownership
+      if (ra.reviewer_user_id !== user_id) return { forbidden: true };
+
+      // Get categories for this week
+      const catResult = await client.query(
+        `SELECT label FROM week_categories WHERE week_id = $1 ORDER BY sort_order`,
+        [ra.week_id]
+      );
+
+      return {
+        assignment_id: ra.assignment_id,
+        status: ra.status,
+        reviewee_name: ra.reviewee_name,
+        team_key: ra.team_key,
+        categories: catResult.rows.map((r: any) => r.label),
+      };
+    });
+
+    if (!result) {
+      res.status(404).json({ error: 'not_found', message: 'Assignment not found' });
+      return;
+    }
+    if ((result as any).forbidden) {
+      res.status(403).json({ error: 'forbidden', message: 'Not your assignment' });
+      return;
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('getAssignmentForm error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch assignment form' });
+  }
+}
+
+/**
+ * POST /assignments/:assignmentId/submit
+ * Submit a review for a specific assignment.
+ * Body: { scores: { [categoryLabel]: number }, comment: string }
+ */
+export async function submitAssignment(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { assignmentId } = req.params;
+    const { scores, comment } = req.body;
+    const { user_id } = req.user;
+
+    if (!scores || typeof scores !== 'object') {
+      res.status(400).json({ error: 'validation', message: 'scores object is required' });
+      return;
+    }
+
+    // Validate scores 1-5
+    for (const [label, score] of Object.entries(scores)) {
+      const s = Number(score);
+      if (!Number.isInteger(s) || s < 1 || s > 5) {
+        res.status(400).json({ error: 'validation', message: `Score for "${label}" must be 1-5` });
+        return;
+      }
+    }
+
+    const result = await withDb(user_id, req.user.role, async (client) => {
+      // Verify assignment and ownership
+      const raResult = await client.query(
+        `SELECT ra.assignment_id, ra.status, ra.reviewer_user_id, ra.week_id,
+                ra.reviewee_week_student_id,
+                ws.full_name AS reviewee_name
+         FROM review_assignments ra
+         JOIN week_students ws ON ws.id = ra.reviewee_week_student_id
+         WHERE ra.assignment_id = $1`,
+        [assignmentId]
+      );
+
+      if (raResult.rows.length === 0) {
         throw { status: 404, message: 'Assignment not found' };
       }
+      const ra = raResult.rows[0];
 
-      const assign = assignment.rows[0];
-      if (assign.reviewer_id !== user_id) {
-        throw { status: 403, message: 'You are not the assigned reviewer' };
+      if (ra.reviewer_user_id !== user_id) {
+        throw { status: 403, message: 'Not your assignment' };
+      }
+      if (ra.status === 'SUBMITTED') {
+        throw { status: 400, message: 'Assignment already submitted' };
       }
 
-      if (assign.status === 'completed') {
-        throw { status: 400, message: 'Review already submitted' };
+      // Get category IDs for this week
+      const catResult = await client.query(
+        `SELECT id, label FROM week_categories WHERE week_id = $1`,
+        [ra.week_id]
+      );
+      const categoryMap = new Map<string, string>(catResult.rows.map((r: any) => [r.label, r.id]));
+
+      // Validate all provided scores match known categories
+      for (const label of Object.keys(scores)) {
+        if (!categoryMap.has(label)) {
+          throw { status: 400, message: `Unknown category: "${label}"` };
+        }
       }
 
-      // Insert review
-      const review = await client.query(
-        `INSERT INTO reviews (submission_id, reviewer_id, score, comments)
-         VALUES ($1, $2, $3, $4)
-         RETURNING review_id, created_at`,
-        [assign.submission_id, user_id, numScore, comments || '']
+      // Insert review_submission
+      const subResult = await client.query(
+        `INSERT INTO review_submissions (assignment_id, comment_text)
+         VALUES ($1, $2)
+         RETURNING submission_id`,
+        [assignmentId, comment || '']
       );
+      const submission_id = subResult.rows[0].submission_id;
 
-      // Update assignment status
-      await client.query(
-        `UPDATE assignments SET status = 'completed' WHERE assignment_id = $1`,
-        [id]
-      );
-
-      // Update submission status if all assignments are completed
-      const pending = await client.query(
-        `SELECT COUNT(*) AS cnt FROM assignments
-         WHERE submission_id = $1 AND status = 'pending'`,
-        [assign.submission_id]
-      );
-
-      if (parseInt(pending.rows[0].cnt) === 0) {
+      // Insert review_scores
+      for (const [label, score] of Object.entries(scores)) {
+        const categoryId = categoryMap.get(label)!;
         await client.query(
-          `UPDATE submissions SET status = 'reviewed' WHERE submission_id = $1`,
-          [assign.submission_id]
+          `INSERT INTO review_scores (submission_id, week_category_id, score_int) VALUES ($1, $2, $3)`,
+          [submission_id, categoryId, Number(score)]
         );
       }
 
-      await audit(client, user_id, 'REVIEW', 'review', review.rows[0].review_id, {
-        assignment_id: id,
-        submission_id: assign.submission_id,
-        score: numScore,
-      });
+      // Update assignment status
+      await client.query(
+        `UPDATE review_assignments SET status = 'SUBMITTED' WHERE assignment_id = $1`,
+        [assignmentId]
+      );
 
-      return review.rows[0];
+      // Recompute aggregates inside this transaction
+      await recomputeAggregates(client, ra.week_id, ra.reviewee_week_student_id);
+
+      return { submission_id, week_id: ra.week_id, reviewee_name: ra.reviewee_name };
     });
 
-    res.status(201).json({ message: 'Review submitted successfully', review: result });
+    // Emit SSE event
+    emitSseEvent(result.week_id, 'submission_received', {
+      assignment_id: assignmentId,
+      reviewee_name: result.reviewee_name,
+    });
+
+    res.json({ message: 'Review submitted', submission_id: result.submission_id });
   } catch (err: any) {
     if (err.status) {
       res.status(err.status).json({ error: 'validation', message: err.message });
       return;
     }
-    console.error('Submit review error:', err);
+    console.error('submitAssignment error:', err);
     res.status(500).json({ error: 'internal_error', message: 'Failed to submit review' });
-  }
-}
-
-/**
- * GET /reviews/by-submission/:submissionId
- * Get all reviews for a specific submission (for the submission owner).
- */
-export async function getReviewsBySubmission(req: AuthRequest, res: Response): Promise<void> {
-  try {
-    const { user_id, role } = req.user;
-    const { submissionId } = req.params;
-
-    const data = await withDb(user_id, role, async (client) => {
-      // Verify ownership
-      const sub = await client.query(
-        `SELECT submission_id, title, filename, file_url, status, created_at
-         FROM submissions WHERE submission_id = $1`,
-        [submissionId]
-      );
-
-      if (sub.rows.length === 0) {
-        throw { status: 404, message: 'Submission not found' };
-      }
-
-      const submission = sub.rows[0];
-
-      // Check if user owns this submission or is instructor/admin
-      if (submission.user_id !== user_id && role !== 'instructor' && role !== 'admin') {
-        // Additional check not strictly needed due to RLS, but good for clarity
-      }
-
-      // Get reviews
-      const reviews = await client.query(
-        `SELECT r.review_id, r.score, r.comments, r.created_at,
-                u.name AS reviewer_name
-         FROM reviews r
-         JOIN users u ON u.user_id = r.reviewer_id
-         WHERE r.submission_id = $1
-         ORDER BY r.created_at DESC`,
-        [submissionId]
-      );
-
-      return { submission, reviews: reviews.rows };
-    });
-
-    res.json(data);
-  } catch (err: any) {
-    if (err.status) {
-      res.status(err.status).json({ error: 'validation', message: err.message });
-      return;
-    }
-    console.error('Error fetching reviews:', err);
-    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch reviews' });
   }
 }

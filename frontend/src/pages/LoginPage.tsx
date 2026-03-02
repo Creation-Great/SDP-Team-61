@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import type { UserRole } from '../types';
 
 function LogoMark({ size = 36 }: { size?: number }) {
@@ -25,6 +25,40 @@ function LogoMark({ size = 36 }: { size?: number }) {
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  async function handleEmailLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || 'Login failed');
+        return;
+      }
+      const { token, user } = data as { token: string; user: { id: string; name: string; email: string; role: UserRole; netid?: string | null } };
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify({ id: user.id, name: user.name, email: user.email, role: user.role, netid: user.netid ?? null }));
+      if (user.role === 'instructor' || user.role === 'admin') {
+        navigate('/instructor/courses', { replace: true });
+      } else {
+        navigate('/student/reviews', { replace: true });
+      }
+    } catch {
+      setError('Network error — please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -33,17 +67,18 @@ export default function LoginPage() {
     const name  = params.get('name');
     const email = params.get('email');
     const role  = params.get('role') as UserRole | null;
+    const netid = params.get('netid');
 
     if (!token || !id || !role) return;
 
     localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify({ id, name: name ?? id, email: email ?? '', role }));
+    localStorage.setItem('user', JSON.stringify({ id, name: name ?? id, email: email ?? '', role, netid: netid ?? null }));
 
     window.history.replaceState({}, '', `${window.location.origin}/login`);
     if (role === 'instructor' || role === 'admin') {
-      navigate('/instructor', { replace: true });
+      navigate('/instructor/courses', { replace: true });
     } else {
-      navigate('/dashboard', { replace: true });
+      navigate('/student/reviews', { replace: true });
     }
   }, [navigate]);
 
@@ -95,7 +130,43 @@ export default function LoginPage() {
               Sign in with UConn NetID
             </a>
 
+            <div className="login-or-divider">
+              <span className="login-or-line" />
+              <span className="login-or-text">or</span>
+              <span className="login-or-line" />
+            </div>
+
+            <form onSubmit={handleEmailLogin} className="login-email-form">
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="login-input"
+                required
+                autoComplete="email"
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="login-input"
+                required
+                autoComplete="current-password"
+              />
+              {error && <p className="login-error">{error}</p>}
+              <button type="submit" className="login-email-btn" disabled={loading}>
+                {loading ? 'Signing in…' : 'Sign in with Email'}
+              </button>
+            </form>
+
             <p className="login-card-security">Secured via UConn CAS single sign-on</p>
+
+            <p className="login-create-account">
+              No account?{' '}
+              <Link to="/register" className="login-create-link">Create one</Link>
+            </p>
           </div>
         </div>
 

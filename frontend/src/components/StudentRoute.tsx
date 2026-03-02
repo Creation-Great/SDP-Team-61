@@ -16,7 +16,7 @@ export default function StudentRoute({ children }: StudentRouteProps) {
 
   if (!token) return <Navigate to="/login" replace />;
   if (user.role === 'instructor' || user.role === 'admin') {
-    return <Navigate to="/instructor" replace />;
+    return <Navigate to="/instructor/courses" replace />;
   }
   return <>{children}</>;
 }
