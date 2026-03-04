@@ -27,9 +27,9 @@ services:
       - "8080:8080"
     environment:
       PORT: "8080"
-      NODE_ENV: production
+      NODE_ENV: development
       DATABASE_URL: postgres://postgres:postgres@db:5432/peerreview
-      JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-secret-in-production}
+      JWT_SECRET: ${JWT_SECRET:-db1998037902163adba7f7d4744a667ea8755d1a646ca46e7288498073cd96a32e4fa131f098298505bb7bf3a40749eb1ab35b635148816cf1069b1647499d4e}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
       FRONTEND_URL: ${FRONTEND_URL:-https://www.peer.review.uconn.edu}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://www.peer.review.uconn.edu,http://localhost:5173}
@@ -42,7 +42,7 @@ services:
     volumes:
       - backend_uploads:/app/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -79,6 +79,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - backend
     restart: unless-stopped

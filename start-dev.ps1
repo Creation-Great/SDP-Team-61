@@ -1,9 +1,11 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AI Peer Review System — 一键本地开发启动脚本
+    AI Peer Review System — 一键启动脚本
 .DESCRIPTION
-    自动完成：
+    支持两种模式：
+
+    【本地开发模式】（默认）
       1. 检查前置依赖 (Node.js, Docker, Python)
       2. 启动 PostgreSQL 容器并等待 healthy
       3. 生成 .env（如不存在）
@@ -11,10 +13,17 @@
       5. 启动后端 (Express :8080)
       6. 启动前端 (Vite :5173)
       7. (可选) 启动 AI 服务 (Flask :5001)
-    所有子进程会在脚本退出时自动清理。
+
+    【Docker 全容器模式】（-Docker）
+      一键 docker compose up 启动全部 4 个服务：
+        db + backend + ai-service + frontend (nginx + HTTPS)
+      访问地址：https://www.peer.review.uconn.edu
+
 .NOTES
-    用法：  .\start-dev.ps1              # 启动数据库 + 后端 + 前端
-            .\start-dev.ps1 -WithAI      # 额外启动 AI 服务
+    用法：  .\start-dev.ps1              # 本地开发模式（数据库 + 后端 + 前端）
+            .\start-dev.ps1 -WithAI      # 本地模式 + AI 服务
+            .\start-dev.ps1 -Docker      # Docker 全容器模式（含 HTTPS）
+            .\start-dev.ps1 -Docker -Build  # 全容器模式 + 强制重新构建镜像
             .\start-dev.ps1 -SkipInstall # 跳过 npm install（加速重启）
             .\start-dev.ps1 -StopAll     # 停止所有服务并清理
 #>
@@ -22,7 +31,9 @@
 param(
     [switch]$WithAI,
     [switch]$SkipInstall,
-    [switch]$StopAll
+    [switch]$StopAll,
+    [switch]$Docker,
+    [switch]$Build
 )
 
 Set-StrictMode -Version Latest
@@ -39,6 +50,100 @@ function Write-Step  { param($msg) Write-Host "`n▶ $msg" -ForegroundColor Cyan
 function Write-Ok    { param($msg) Write-Host "  ✓ $msg" -ForegroundColor Green }
 function Write-Warn  { param($msg) Write-Host "  ⚠ $msg" -ForegroundColor Yellow }
 function Write-Err   { param($msg) Write-Host "  ✗ $msg" -ForegroundColor Red }
+
+# ── Docker 全容器模式 ────────────────────────────────────
+if ($Docker) {
+    Write-Step "检查 Docker 环境..."
+    try {
+        docker info 2>$null | Out-Null
+        Write-Ok "Docker 守护进程运行中"
+    } catch {
+        Write-Err "Docker 守护进程未运行，请启动 Docker Desktop"
+        exit 1
+    }
+
+    Write-Step "启动全部 Docker 容器 (db + backend + ai-service + frontend)..."
+    Push-Location $ProjectRoot
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    if ($Build) {
+        Write-Host "  强制重新构建镜像..." -ForegroundColor Gray
+        docker compose up -d --build 2>&1 | Out-Host
+    } else {
+        docker compose up -d 2>&1 | Out-Host
+    }
+    $dcExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP
+    Pop-Location
+    if ($dcExit -ne 0) {
+        Write-Err "docker compose up 失败 (exit code $dcExit)"
+        exit 1
+    }
+
+    # 等待各服务就绪
+    Write-Host "  等待服务就绪" -NoNewline
+    $maxWait = 90
+    $waited = 0
+    $allReady = $false
+    while ($waited -lt $maxWait) {
+        try {
+            $dbHealth = (docker inspect --format '{{.State.Health.Status}}' sdp-team-61-integrated-db-1 2>$null) | Out-String
+            $beHealth = (docker inspect --format '{{.State.Health.Status}}' sdp-team-61-integrated-backend-1 2>$null) | Out-String
+            $aiHealth = (docker inspect --format '{{.State.Health.Status}}' sdp-team-61-integrated-ai-service-1 2>$null) | Out-String
+            if ($dbHealth.Trim() -eq 'healthy' -and $beHealth.Trim() -eq 'healthy' -and $aiHealth.Trim() -eq 'healthy') {
+                $allReady = $true
+                break
+            }
+        } catch { }
+        Start-Sleep -Seconds 3
+        $waited += 3
+        Write-Host "." -NoNewline
+    }
+    Write-Host ""
+
+    if ($allReady) {
+        Write-Ok "所有服务已就绪 (healthy)"
+    } else {
+        Write-Warn "部分服务可能尚未完全就绪，请运行 docker compose ps 检查"
+    }
+
+    # 显示容器状态
+    Write-Step "容器状态"
+    docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>$null | Out-Host
+
+    Write-Host ""
+    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Green
+    Write-Host "  AI Peer Review System 已启动（Docker 全容器模式）" -ForegroundColor Green
+    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  HTTPS 地址： " -NoNewline; Write-Host "https://www.peer.review.uconn.edu" -ForegroundColor Cyan
+    Write-Host "  HTTP  地址： " -NoNewline; Write-Host "http://www.peer.review.uconn.edu  (自动跳转 HTTPS)" -ForegroundColor Gray
+    Write-Host "  后端 API：   " -NoNewline; Write-Host "http://localhost:8080  (通过 nginx 代理)" -ForegroundColor Gray
+    Write-Host "  AI 服务：    " -NoNewline; Write-Host "http://localhost:5001" -ForegroundColor Gray
+    Write-Host "  数据库：     " -NoNewline; Write-Host "localhost:5432" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  测试账号：" -ForegroundColor White
+    Write-Host "    instructor@example.com / password123  (Instructor)"
+    Write-Host "    alice@example.com      / password123  (Student)"
+    Write-Host "    bob@example.com        / password123  (Student)"
+    Write-Host "    carol@example.com      / password123  (Student)"
+    Write-Host ""
+    Write-Host "  查看日志：" -ForegroundColor White
+    Write-Host "    docker compose logs -f              # 全部日志"
+    Write-Host "    docker compose logs backend -f      # 后端日志"
+    Write-Host "    docker compose logs frontend -f     # 前端日志"
+    Write-Host "    docker compose logs ai-service -f   # AI 服务日志"
+    Write-Host ""
+    Write-Host "  停止所有：" -ForegroundColor White
+    Write-Host "    .\start-dev.ps1 -StopAll"
+    Write-Host "    docker compose down                 # 保留数据"
+    Write-Host "    docker compose down -v              # 清除数据"
+    Write-Host ""
+    Write-Host "  注意：首次访问 HTTPS 时浏览器会提示「不安全」（自签名证书），" -ForegroundColor Yellow
+    Write-Host "  点击「高级」→「继续前往」即可。" -ForegroundColor Yellow
+    Write-Host ""
+    exit 0
+}
 
 # ── 停止模式 ──────────────────────────────────────────────
 if ($StopAll) {
@@ -340,9 +445,10 @@ if ($WithAI) {
 Write-Host "  数据库：    " -NoNewline; Write-Host "localhost:5432" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  测试账号：" -ForegroundColor White
-Write-Host "    alice@example.com / password123  (Admin)"
-Write-Host "    bob@example.com   / password123  (Instructor)"
-Write-Host "    carol@example.com / password123  (Student)"
+Write-Host "    instructor@example.com / password123  (Instructor)"
+Write-Host "    alice@example.com      / password123  (Student)"
+Write-Host "    bob@example.com        / password123  (Student)"
+Write-Host "    carol@example.com      / password123  (Student)"
 Write-Host ""
 Write-Host "  查看日志：" -ForegroundColor White
 Write-Host "    Receive-Job $($backendJob.Id)      # 后端日志"

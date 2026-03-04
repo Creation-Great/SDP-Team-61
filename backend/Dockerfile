@@ -18,6 +18,7 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY sql/ ./sql/
+COPY migrations/ ./migrations/
 
 # Create uploads directory
 RUN mkdir -p uploads
