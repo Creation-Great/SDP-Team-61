@@ -5,4 +5,4 @@ uploads/*
 !uploads/.gitkeep
 *.log
 
-__pycache__/
+cookies*.txt

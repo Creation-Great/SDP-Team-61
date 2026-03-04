@@ -109,7 +109,12 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
                 u.name AS created_by_name,
                 (SELECT COUNT(DISTINCT pr.reviewer_id)
                  FROM peer_reviews pr
-                 WHERE pr.session_id = s.session_id) AS submitted_count
+                 WHERE pr.session_id = s.session_id) AS submitted_count,
+                (SELECT COUNT(DISTINCT tu.user_id)
+                 FROM users tu
+                 LEFT JOIN user_enrollments ue ON ue.user_id = tu.user_id AND ue.course_id = s.course_id
+                 WHERE tu.role = 'student'
+                   AND (s.course_id IS NULL OR ue.enrollment_id IS NOT NULL)) AS team_size
          FROM peer_review_sessions s
          LEFT JOIN users u ON u.user_id = s.created_by
          ORDER BY s.created_at DESC`
@@ -164,7 +169,7 @@ export async function getMyTeam(req: AuthRequest, res: Response): Promise<void> 
   const data = await withDb(user_id, role, async (client) => {
     // Check session exists and is open
     const session = await client.query(
-      'SELECT session_id, title, is_open, course_id FROM peer_review_sessions WHERE session_id = $1',
+      'SELECT session_id, title, is_open, course_id, deadline FROM peer_review_sessions WHERE session_id = $1',
       [sessionId]
     );
     if (session.rows.length === 0) {

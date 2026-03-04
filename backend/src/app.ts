@@ -38,16 +38,23 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 // CORS — supports comma-separated CORS_ORIGINS env var for multiple front-end domains.
 // Falls back to FRONTEND_URL (single origin) or localhost dev default.
+// In dev mode, also accepts any private-network origin (localhost, 192.168.x.x, etc.)
 const allowedOrigins: string[] = (
   process.env.CORS_ORIGINS
   || process.env.FRONTEND_URL
   || 'http://localhost:5173'
 ).split(',').map((o) => o.trim()).filter(Boolean);
 
+const isDevMode = process.env.NODE_ENV !== 'production';
+const privateNetRe = /^https?:\/\/(localhost|127\.0\.0\.1|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/;
+
 app.use(cors({
   origin(origin, cb) {
     // Allow requests with no origin (e.g. server-to-server, curl, mobile apps)
     if (!origin || allowedOrigins.includes(origin)) {
+      cb(null, true);
+    } else if (isDevMode && privateNetRe.test(origin)) {
+      // In dev mode, allow any private-network origin (phone on LAN, etc.)
       cb(null, true);
     } else {
       cb(new Error(`CORS: origin ${origin} not allowed`));

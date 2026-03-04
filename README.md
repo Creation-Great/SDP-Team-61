@@ -25,7 +25,8 @@
          │                       ┌───────▼────────┐
          │  Notifications        │  AI Service    │
          │  Search               │  Flask + OpenAI│
-         │  Polish / Summarize   │  :5001         │
+         │  Feedback / Rewrite   │  :5001         │
+         │  Polish / Summarize   │                │
          └───────proxy─────────▶└────────────────┘
 ```
 
@@ -44,7 +45,7 @@
 - **AI Feedback & Rewrite**: OpenAI-powered review quality analysis (toxicity, politeness, sentiment) and rewrite suggestions
 - **AI Polish**: One-click grammar, clarity, and tone improvements for peer review comments
 - **AI Summarize**: Automatic summarization of multiple reviews per submission with theme extraction
-- **AI Activity Logs**: Instructor dashboard tracks all AI usage (polish/summarize calls) with real-time display
+- **AI Activity Logs**: Instructor dashboard tracks all AI usage (feedback/rewrite/polish/summarize) with user names and real-time display
 - **Global Search**: Full-text search across submissions and users via the header search bar
 
 ### Notification System
@@ -144,7 +145,7 @@ npm run install:all             # installs backend + frontend
 npm run dev                     # runs backend + frontend concurrently
 ```
 
-## API Routes (45 endpoints)
+## API Routes (50 endpoints)
 
 ### Auth (`/auth`)
 
@@ -155,6 +156,7 @@ npm run dev                     # runs backend + frontend concurrently
 | POST | `/auth/register` | — | Local registration (dev) |
 | POST | `/auth/login` | — | Local login (dev) |
 | GET | `/auth/me` | ✓ | Current user info |
+| PATCH | `/auth/profile` | ✓ | Update display name |
 | POST | `/auth/logout` | — | Logout / clear cookie |
 
 ### Submissions (`/submissions`)
@@ -287,7 +289,7 @@ SDP-Team-61-integrated/
 │   │   │   ├── peerReviewController.ts
 │   │   │   ├── checkinController.ts
 │   │   │   ├── enrollmentController.ts
-│   │   │   └── aiController.ts          # Proxy to AI service (polish, summarize, logs, search)
+│   │   │   └── aiController.ts          # Proxy to AI service (feedback, rewrite, polish, summarize, logs, search)
 │   │   ├── routes/
 │   │   │   ├── authRoutes.ts
 │   │   │   ├── submissionRoutes.ts
@@ -330,7 +332,7 @@ SDP-Team-61-integrated/
 │
 ├── frontend/
 │   ├── package.json
-│   ├── vite.config.js            # Dev proxy to backend (12 proxy rules)
+│   ├── vite.config.js            # Dev proxy to backend (11 proxy rules)
 │   ├── eslint.config.js          # ESLint 9 flat config (React)
 │   ├── Dockerfile
 │   ├── nginx.conf                # Production reverse-proxy config
@@ -387,12 +389,13 @@ SDP-Team-61-integrated/
 │           ├── ClassCheckinsPage.jsx         # 3-tab: Insights / Scores / Students
 │           ├── UploadAssignment.jsx
 │           ├── AssignedReviewsPage.jsx
-│           ├── ReviewPage.jsx
-│           ├── ViewReviewPage.jsx            # AI Summarize integration
+│           ├── ReviewPage.jsx                # AI Feedback + AI Rewrite integration
+│           ├── ViewReviewPage.jsx            # AI Summarize + AI Feedback integration
 │           ├── PeerReviewSessionsPage.jsx
 │           ├── PeerReviewFormPage.jsx        # AI Polish integration
 │           ├── PeerReviewResultsPage.jsx
 │           ├── StudentCheckinsPage.jsx
+│           ├── EnrollmentManagementPage.jsx  # Instructor enrollment CRUD
 │           └── NotFoundPage.jsx
 │
 └── ai-service/
@@ -459,7 +462,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | `JWT_SECRET` | — | JWT signing secret (required) |
 | `JWT_EXPIRES_IN` | `30d` | Token expiry |
 | `NODE_ENV` | `development` | Environment |
-| `FRONTEND_URL` | `http://localhost:5173` | CORS + CAS redirect |
+| `FRONTEND_URL` | `http://localhost:5173` | CORS + CAS redirect (production: `https://www.peer.review.uconn.edu`) |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated origins |
 | `AI_SERVICE_URL` | `http://localhost:5001` | AI service endpoint |
 | `AI_API_KEY` | — | Internal API key for AI service |
@@ -474,7 +477,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | `AI_API_KEY` | — | Internal API key (must match backend) |
 | `AI_PORT` | `5001` | Flask port |
 | `DATABASE_URL` | — | PostgreSQL connection string (for logs + search) |
-| `FRONTEND_URL` | `http://localhost:5173` | CORS origin |
+| `FRONTEND_URL` | `http://localhost:5173` | CORS origin (production: `https://www.peer.review.uconn.edu`) |
 
 ## Default Accounts (from seed.sql)
 
@@ -501,7 +504,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | Zod schema validation | Enhanced | Runtime type safety for all endpoints |
 | Pino structured logging | Enhanced | Production-grade observability |
 | Tailwind CSS + UConn theme | Enhanced | Utility-first styling with brand colors |
-| Vite dev proxy | New | No hardcoded API URLs (12 proxy rules) |
+| Vite dev proxy | New | No hardcoded API URLs (11 proxy rules) |
 | Framer Motion animations | New | Smooth transitions |
 | Smart reviewer auto-assignment | Old | Fair distribution algorithm |
 | OpenAI AI integration | Enhanced | Feedback + rewrite + polish + summarize |

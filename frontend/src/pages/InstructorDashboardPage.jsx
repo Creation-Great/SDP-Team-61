@@ -255,9 +255,9 @@ export default function InstructorDashboardPage() {
                         </div>
                         <div>
                           <p className="text-slate-900">
-                            <span className="font-medium">{log.user_id || 'A user'}</span>{' '}
+                            <span className="font-medium">{log.user_name || log.user_id || 'A user'}</span>{' '}
                             used AI <span className="capitalize font-medium">{log.action}</span>
-                            {log.detail?.input_length ? ` (${log.detail.input_length} chars)` : ''}
+                            {log.detail?.input_length ? ` (${log.detail.input_length} ${log.action === 'summarize' ? 'reviews' : 'chars'})` : ''}
                           </p>
                           <p className="text-slate-400 text-xs mt-0.5">{timeStr}</p>
                         </div>

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import API from '../services/api';
 import {
-  BookOpen, Upload, Users, BarChart3, CheckSquare,
-  LogOut, Sparkles, Menu, X,
+  BookOpen, Upload, Users, BarChart3, CheckSquare, ClipboardList, UserPlus,
+  LogOut, Sparkles, Menu, X, Pencil, Check, XCircle,
 } from 'lucide-react';
 
 const studentNav = [
@@ -17,15 +18,21 @@ const studentNav = [
 const instructorNav = [
   { to: '/instructor', label: 'Overview', icon: BookOpen },
   { to: '/peer-review', label: 'Manage Sessions', icon: Users },
+  { to: '/instructor/peer-review', label: 'Weekly Scoring', icon: ClipboardList },
   { to: '/instructor/analytics', label: 'Review Analytics', icon: BarChart3 },
   { to: '/instructor/class-checkins', label: 'Student Check-ins', icon: CheckSquare },
+  { to: '/instructor/enrollments', label: 'Enrollments', icon: UserPlus },
 ];
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout, isInstructor } = useAuth();
+  const { user, logout, isInstructor, updateUserName } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const nameInputRef = useRef(null);
 
   const navItems = isInstructor ? instructorNav : studentNav;
 
@@ -35,6 +42,38 @@ export default function Sidebar() {
     document.body.style.overflow = mobileOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [mobileOpen]);
+
+  useEffect(() => {
+    if (editingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [editingName]);
+
+  const handleStartEdit = () => {
+    setNewName(user?.name || '');
+    setEditingName(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingName(false);
+    setNewName('');
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === user?.name) { handleCancelEdit(); return; }
+    setSavingName(true);
+    try {
+      await API.patch('/auth/profile', { name: trimmed });
+      updateUserName(trimmed);
+      setEditingName(false);
+    } catch {
+      /* ignore */
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const handleLogout = async () => {
     setMobileOpen(false);
@@ -87,13 +126,42 @@ export default function Sidebar() {
       {/* User area */}
       <div className="p-4 border-t border-slate-100 shrink-0">
         <div className="flex items-center px-4 py-3 bg-slate-50 rounded-xl mb-3">
-          <div className="w-8 h-8 bg-[#000E2F]/10 text-[#000E2F] rounded-full flex items-center justify-center font-bold mr-3">
+          <div className="w-8 h-8 bg-[#000E2F]/10 text-[#000E2F] rounded-full flex items-center justify-center font-bold mr-3 shrink-0">
             {(user?.name || 'U').charAt(0).toUpperCase()}
           </div>
           <div className="flex-1 overflow-hidden">
-            <div className="text-sm font-semibold text-slate-900 truncate">
-              {user?.name || 'User'}
-            </div>
+            {editingName ? (
+              <div className="flex items-center gap-1">
+                <input
+                  ref={nameInputRef}
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') handleCancelEdit(); }}
+                  className="w-full text-sm font-semibold text-slate-900 bg-white border border-slate-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#000E2F]"
+                  disabled={savingName}
+                  placeholder="Enter your full name"
+                />
+                <button onClick={handleSaveName} disabled={savingName} className="text-emerald-600 hover:text-emerald-700 p-0.5" title="Save">
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-600 p-0.5" title="Cancel">
+                  <XCircle className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 group">
+                <div className="text-sm font-semibold text-slate-900 truncate">
+                  {user?.name || 'User'}
+                </div>
+                <button
+                  onClick={handleStartEdit}
+                  className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-[#000E2F] transition-opacity p-0.5"
+                  title="Edit display name"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
+            )}
             <div className="text-xs text-slate-500 truncate capitalize">
               {user?.role || 'student'}
             </div>

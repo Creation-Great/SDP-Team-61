@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMe, casLogin, casCallback, register, login, logout } from '../controllers/authController.js';
+import { getMe, updateProfile, casLogin, casCallback, register, login, logout } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 import { h } from '../utils/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
@@ -15,8 +15,9 @@ router.get('/cas/callback', h(casCallback));
 router.post('/register', validate(registerSchema), h(register));
 router.post('/login', validate(loginSchema), h(login));
 
-// Session
+// Session & profile
 router.get('/me', h(authenticate), h(getMe));
+router.patch('/profile', h(authenticate), h(updateProfile));
 router.post('/logout', h(logout));
 
 export default router;

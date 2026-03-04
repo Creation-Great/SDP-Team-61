@@ -31,8 +31,8 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/peerreview
       JWT_SECRET: ${JWT_SECRET:-change-this-to-a-random-secret-in-production}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
-      FRONTEND_URL: http://localhost
-      CORS_ORIGINS: http://localhost,http://localhost:5173
+      FRONTEND_URL: ${FRONTEND_URL:-https://www.peer.review.uconn.edu}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://www.peer.review.uconn.edu,http://localhost:5173}
       AI_SERVICE_URL: http://ai-service:5001
       AI_API_KEY: ${AI_API_KEY:-}
     depends_on:
@@ -61,7 +61,7 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_PORT: "5001"
       FLASK_DEBUG: "0"
-      FRONTEND_URL: http://localhost
+      FRONTEND_URL: ${FRONTEND_URL:-https://www.peer.review.uconn.edu}
     depends_on:
       db:
         condition: service_healthy

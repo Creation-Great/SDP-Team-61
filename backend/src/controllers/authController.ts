@@ -23,12 +23,24 @@ function generateToken(user: { user_id: string; email: string; role: string }): 
 // =====================================================
 // CAS (UConn SSO) Authentication
 // =====================================================
-function buildCasServiceUrl(): string {
-  // Route CAS callback through the frontend origin so the httpOnly cookie
-  // is set on the same origin the browser uses (Vite proxy in dev,
-  // reverse-proxy in production).  This is critical for cookie delivery.
-  const base = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
-  return `${base}/auth/cas/callback`;
+
+/** Resolve frontend base URL: prefer the Origin/Referer from the request so
+ *  the redirect works from any device (PC localhost, phone LAN IP, etc.).
+ *  Falls back to FRONTEND_URL env var, then http://localhost:5173. */
+function resolveFrontendBase(req?: Request): string {
+  if (req) {
+    const origin = req.get('Origin');
+    if (origin) return origin.replace(/\/$/, '');
+    const referer = req.get('Referer');
+    if (referer) {
+      try { const u = new URL(referer); return `${u.protocol}//${u.host}`; } catch { /* ignore */ }
+    }
+  }
+  return (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+}
+
+function buildCasServiceUrl(req?: Request): string {
+  return `${resolveFrontendBase(req)}/auth/cas/callback`;
 }
 
 function getCasBaseUrl(): string {
@@ -47,7 +59,23 @@ function extractCasValue(xml: string, tags: string[]): string | null {
 
 function parseCasProfile(xml: string): { netid: string | null; name: string | null; email: string | null } {
   const netid = extractCasValue(xml, ['cas:user', 'user']);
-  const name = extractCasValue(xml, ['cas:displayName', 'cas:cn', 'cas:name', 'cas:givenName']);
+
+  // Try full-name attributes first
+  let name = extractCasValue(xml, ['cas:displayName', 'cas:cn', 'cas:name']);
+
+  // If no full name, try to build from givenName + sn (surname)
+  if (!name) {
+    const firstName = extractCasValue(xml, ['cas:givenName', 'cas:firstName', 'givenName']);
+    const lastName = extractCasValue(xml, ['cas:sn', 'cas:surname', 'cas:lastName', 'sn']);
+    if (firstName && lastName) {
+      name = `${firstName} ${lastName}`;
+    } else if (firstName) {
+      name = firstName;
+    } else if (lastName) {
+      name = lastName;
+    }
+  }
+
   const email = extractCasValue(xml, ['cas:mail', 'cas:email', 'mail', 'email']);
   return { netid, name, email };
 }
@@ -65,7 +93,16 @@ async function findOrCreateCasUser(netidRaw: string, casName: string | null, cas
       'SELECT user_id, email, name, role, course_id, group_id FROM users WHERE email = $1 LIMIT 1',
       [email]
     );
-    if (existing.rows[0]) return existing.rows[0];
+
+    if (existing.rows[0]) {
+      const row = existing.rows[0];
+      // If CAS returned a real name and the DB still has netid as name, update it
+      if (casName?.trim() && row.name !== casName.trim()) {
+        await client.query('UPDATE users SET name = $1 WHERE user_id = $2', [casName.trim(), row.user_id]);
+        row.name = casName.trim();
+      }
+      return row;
+    }
 
     // Auto-create student account
     const ins = await client.query(
@@ -103,7 +140,12 @@ export async function casCallback(req: Request, res: Response): Promise<void> {
   const validateUrl = `${getCasBaseUrl()}/serviceValidate?service=${encodeURIComponent(service)}&ticket=${encodeURIComponent(ticket)}`;
   const response = await fetch(validateUrl);
   const xml = await response.text();
+
+  // Log CAS response for debugging attribute availability
+  console.log('[CAS] serviceValidate response:', xml);
+
   const { netid, name, email } = parseCasProfile(xml);
+  console.log('[CAS] Parsed profile:', { netid, name, email });
 
   if (!response.ok || !netid) {
     res.status(401).json({ error: 'unauthorized', message: 'CAS validation failed' });
@@ -115,7 +157,7 @@ export async function casCallback(req: Request, res: Response): Promise<void> {
 
   // Set JWT in httpOnly cookie (not in URL) to prevent XSS token theft
   setTokenCookie(res, token);
-  const frontend = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const frontend = resolveFrontendBase();
   res.redirect(`${frontend}/login?cas=success`);
 }
 
@@ -133,6 +175,25 @@ export async function getMe(req: AuthRequest, res: Response): Promise<void> {
     group_id: req.user.group_id,
     enrollments: req.user.enrollments ?? [],
   });
+}
+
+/**
+ * PATCH /auth/profile
+ * Update current user's display name.
+ */
+export async function updateProfile(req: AuthRequest, res: Response): Promise<void> {
+  const { name } = req.body ?? {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    res.status(400).json({ error: 'validation', message: 'name is required' });
+    return;
+  }
+
+  const trimmedName = name.trim();
+  await withDbNoRLS(async (client) => {
+    await client.query('UPDATE users SET name = $1 WHERE user_id = $2', [trimmedName, req.user.user_id]);
+  });
+
+  res.json({ message: 'Profile updated', name: trimmedName });
 }
 
 // =====================================================

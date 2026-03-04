@@ -11,22 +11,48 @@ import type { AuthRequest } from '../types.js';
  */
 export async function listEnrollments(req: AuthRequest, res: Response): Promise<void> {
   const { user_id, role } = req.user;
-  const targetUserId = (role === 'instructor' || role === 'admin')
-    ? (req.query.user_id as string || user_id)
-    : user_id;
+  const targetUserId = (req.query.user_id as string) || null;
 
   const rows = await withDb(user_id, role, async (client) => {
-    const r = await client.query(
-      `SELECT ue.enrollment_id, ue.user_id, ue.course_id, ue.group_id,
-              ue.role, ue.is_primary, ue.enrolled_at,
-              u.name, u.email
-       FROM user_enrollments ue
-       JOIN users u ON u.user_id = ue.user_id
-       WHERE ue.user_id = $1
-       ORDER BY ue.is_primary DESC, ue.enrolled_at ASC`,
-      [targetUserId]
-    );
-    return r.rows;
+    // Instructors/admins see all enrollments (or filtered by ?user_id=xxx)
+    // Students only see their own
+    if (role === 'instructor' || role === 'admin') {
+      if (targetUserId) {
+        const r = await client.query(
+          `SELECT ue.enrollment_id, ue.user_id, ue.course_id, ue.group_id,
+                  ue.role, ue.is_primary, ue.enrolled_at,
+                  u.name, u.email
+           FROM user_enrollments ue
+           JOIN users u ON u.user_id = ue.user_id
+           WHERE ue.user_id = $1
+           ORDER BY ue.is_primary DESC, ue.enrolled_at ASC`,
+          [targetUserId]
+        );
+        return r.rows;
+      } else {
+        const r = await client.query(
+          `SELECT ue.enrollment_id, ue.user_id, ue.course_id, ue.group_id,
+                  ue.role, ue.is_primary, ue.enrolled_at,
+                  u.name, u.email
+           FROM user_enrollments ue
+           JOIN users u ON u.user_id = ue.user_id
+           ORDER BY ue.course_id, ue.group_id NULLS LAST, u.name`
+        );
+        return r.rows;
+      }
+    } else {
+      const r = await client.query(
+        `SELECT ue.enrollment_id, ue.user_id, ue.course_id, ue.group_id,
+                ue.role, ue.is_primary, ue.enrolled_at,
+                u.name, u.email
+         FROM user_enrollments ue
+         JOIN users u ON u.user_id = ue.user_id
+         WHERE ue.user_id = $1
+         ORDER BY ue.is_primary DESC, ue.enrolled_at ASC`,
+        [user_id]
+      );
+      return r.rows;
+    }
   });
 
   res.json(rows);

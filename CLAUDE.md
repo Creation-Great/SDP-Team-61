@@ -46,7 +46,7 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 - **Styling**: Tailwind CSS utility classes. Primary color: `#000E2F` (used as `bg-[#000E2F]`, `text-[#000E2F]`, etc.)
 - **CSS Variables**: Defined in `index.css` — `--primary: #000E2F`, `--uconn-blue: #000E2F`
 - **API calls**: Always use `API` from `services/api.js` (Axios instance). Never use raw `fetch` or `axios` directly.
-- **Proxy**: Vite proxies 12 path prefixes to `http://localhost:8080` — see `vite.config.js`
+- **Proxy**: Vite proxies 11 path prefixes to `http://localhost:8080` — see `vite.config.js`
 - **UI primitives**: Use `Card`, `Button`, `Badge` from `components/ui/` for consistency.
 - **Icons**: Lucide React (`lucide-react`). Never add new icon libraries.
 - **Background images**: Login/register → `content.png`, content area → `background3.jpg` (in `public/images/`)
@@ -54,7 +54,8 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 
 ### AI Service (Flask + OpenAI)
 - **Entry**: `ai-service/app.py`
-- **Endpoints**: `/api/ai/feedback`, `/api/ai/rewrite`, `/api/ai/polish`, `/api/ai/summarize`, `/api/ai/logs`, `/api/search`
+- **Endpoints** (Express side, all under `/api/ai`): `feedback` (POST + GET), `rewrite` (POST + GET + PATCH adopt), `polish` (POST), `summarize` (POST), `logs` (GET), `search` (GET) — 9 endpoints total
+- **Flask paths**: Most map 1:1 (`/api/ai/*`), except search which proxies to `/api/search` on the Flask side
 - **Auth**: Inter-service `X-AI-API-Key` header validated by `@require_api_key` decorator
 - **DB**: Direct `psycopg2` connection to PostgreSQL for `ai_activity_logs` and search queries
 - **Rate limiting**: Flask-Limiter per endpoint (30/min for polish, 20/min for rewrite/summarize)
@@ -86,9 +87,12 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 
 ### Frontend-Backend Data Contract
 - Search results: `{ submissions: [{ submission_id, title, original_filename, status, uploader_name, created_at }], students: [...] }`
-- AI logs: Plain JSON array `[{ id, action, user_id, detail, created_at }]` (not wrapped in object)
+- AI logs: Plain JSON array `[{ id, action, user_id, user_name, detail, created_at }]` (not wrapped in object; `user_name` comes from JOIN with `users` table)
+- AI feedback: `{ toxicity, politeness, sentiment }` from `POST /api/ai/feedback`
+- AI rewrite: `{ id, original, rewritten, adopted }` from `POST /api/ai/rewrite`, adopt via `PATCH /api/ai/rewrite/:id/adopt`
 - Notifications: Plain JSON array from `GET /notifications`, `{ count }` from `GET /notifications/unread-count`
 - AI polish detail stores `{ input_length }`, AI summarize stores `{ input_length, review_count }`
+- Enrollments: `[{ enrollment_id, user_id, course_id, group_id, role, is_primary, enrolled_at, name, email }]`
 
 ## Testing
 
@@ -108,8 +112,12 @@ cd backend && npm test    # Jest — 7 suites, 36 tests
 
 ## Common Pitfalls
 
-1. **Vite proxy**: Any new backend route prefix needs a matching entry in `frontend/vite.config.js`
+1. **Vite proxy**: Any new backend route prefix needs a matching entry in `frontend/vite.config.js` AND `frontend/nginx.conf`
 2. **Express route order**: Parameterized routes (`/:id`) catch everything — put specific routes first
 3. **AI service search SQL**: `submissions` table uses `user_id` (not `student_id`), column is `title` (not `original_filename`)
 4. **Notification polling**: Bell polls every 30s — don't add WebSocket unless explicitly needed
 5. **Migration numbering**: Next migration should be `011_*.sql`
+6. **Enrollment controller**: Instructors see all enrollments; students only see their own (role-based filtering in `listEnrollments`)
+7. **Peer review team_size**: `getSessions` for instructors filters `team_size` by `user_enrollments` matching the session's `course_id` — not a global student count
+8. **AI activity logs**: `user_name` is resolved via JOIN with `users` table; if no match found, frontend falls back to `user_id` or `'A user'`
+9. **Session deadline**: `createSessionSchema` uses `z.string().min(1).nullish()` for `course_id` (not UUID) since course IDs are text like `"CSE4939W"`

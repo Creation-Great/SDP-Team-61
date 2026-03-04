@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, AlertCircle, ArrowLeft, Download, MessageSquare, Star, Sparkles } from 'lucide-react';
+import { Loader2, AlertCircle, ArrowLeft, Download, MessageSquare, Star, Sparkles, ShieldAlert } from 'lucide-react';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -17,6 +17,10 @@ export default function ViewReviewPage() {
   const [aiSummary, setAiSummary] = useState('');
   const [isSummarizing, setIsSummarizing] = useState(false);
 
+  /* AI Feedback state per review (keyed by review_id) */
+  const [feedbackMap, setFeedbackMap] = useState({});
+  const [feedbackLoadingMap, setFeedbackLoadingMap] = useState({});
+
   useEffect(() => {
     const load = async () => {
       try {
@@ -32,6 +36,19 @@ export default function ViewReviewPage() {
     };
     load();
   }, [submissionId]);
+
+  /** Analyze a single review's tone via AI Feedback */
+  const handleAnalyzeReview = async (reviewId, text) => {
+    setFeedbackLoadingMap((m) => ({ ...m, [reviewId]: true }));
+    try {
+      const res = await API.post('/api/ai/feedback', { review_id: reviewId, text });
+      setFeedbackMap((m) => ({ ...m, [reviewId]: res.data }));
+    } catch {
+      setFeedbackMap((m) => ({ ...m, [reviewId]: { error: true } }));
+    } finally {
+      setFeedbackLoadingMap((m) => ({ ...m, [reviewId]: false }));
+    }
+  };
 
   const handleSummarize = async () => {
     if (reviews.length === 0) return;
@@ -119,25 +136,62 @@ export default function ViewReviewPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {reviews.map((review) => (
-            <Card key={review.review_id} className="p-6">
-              <div className="flex justify-between items-start mb-4">
-                <span className="text-sm font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                  {review.reviewer_name || 'Anonymous Peer'}
-                </span>
-                <div className="flex items-center text-amber-500 font-bold">
-                  <Star className="w-4 h-4 mr-1 fill-current" />
-                  {review.score != null ? Number(review.score).toFixed(1) : '—'}
+          {reviews.map((review) => {
+            const fb = feedbackMap[review.review_id];
+            const fbLoading = feedbackLoadingMap[review.review_id];
+            return (
+              <Card key={review.review_id} className="p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <span className="text-sm font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                    {review.reviewer_name || 'Anonymous Peer'}
+                  </span>
+                  <div className="flex items-center text-amber-500 font-bold">
+                    <Star className="w-4 h-4 mr-1 fill-current" />
+                    {review.score != null ? Number(review.score).toFixed(1) : '—'}
+                  </div>
                 </div>
-              </div>
-              {review.comments && (
-                <p className="text-slate-700 text-sm leading-relaxed">"{review.comments}"</p>
-              )}
-              <p className="text-xs text-slate-400 mt-3">
-                {new Date(review.created_at).toLocaleString()}
-              </p>
-            </Card>
-          ))}
+                {review.comments && (
+                  <p className="text-slate-700 text-sm leading-relaxed">"{review.comments}"</p>
+                )}
+                <p className="text-xs text-slate-400 mt-3">
+                  {new Date(review.created_at).toLocaleString()}
+                </p>
+
+                {/* AI Feedback for this review */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  {!fb && (
+                    <Button variant="ghost" size="sm" icon={ShieldAlert} onClick={() => handleAnalyzeReview(review.review_id, review.comments)}
+                      loading={fbLoading} disabled={fbLoading || !review.comments}>
+                      Analyze Tone
+                    </Button>
+                  )}
+                  {fb && !fb.error && (
+                    <div className="grid grid-cols-3 gap-2 text-center mt-2">
+                      <div>
+                        <p className="text-xs text-slate-400">Toxicity</p>
+                        <p className={`text-sm font-bold ${(fb.toxicity ?? 0) > 0.5 ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {((fb.toxicity ?? 0) * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Politeness</p>
+                        <p className={`text-sm font-bold ${(fb.politeness ?? 0) > 0.5 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                          {((fb.politeness ?? 0) * 100).toFixed(0)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-400">Sentiment</p>
+                        <p className="text-sm font-bold text-slate-700 capitalize">{fb.sentiment || 'neutral'}</p>
+                      </div>
+                    </div>
+                  )}
+                  {fb?.error && (
+                    <p className="text-xs text-red-500 mt-1">Analysis failed</p>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 

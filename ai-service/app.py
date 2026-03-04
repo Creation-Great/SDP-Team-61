@@ -489,9 +489,11 @@ def get_ai_logs():
     conn = get_db()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            """SELECT id, action, user_id, detail, created_at
-               FROM ai_activity_logs
-               ORDER BY created_at DESC
+            """SELECT a.id, a.action, a.user_id, a.detail, a.created_at,
+                      u.name AS user_name
+               FROM ai_activity_logs a
+               LEFT JOIN users u ON u.user_id = a.user_id
+               ORDER BY a.created_at DESC
                LIMIT %s""",
             (limit,),
         )
@@ -501,6 +503,7 @@ def get_ai_logs():
             "id": row["id"],
             "action": row["action"],
             "user_id": row["user_id"],
+            "user_name": row.get("user_name"),
             "detail": row["detail"] or {},
             "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
@@ -522,10 +525,10 @@ def search_content():
     search_type = request.args.get("type", "all")
 
     if not q or len(q) < 2:
-        return jsonify({"submissions": [], "students": []})
+        return jsonify({"submissions": [], "users": []})
 
     conn = get_db()
-    results = {"submissions": [], "students": []}
+    results = {"submissions": [], "users": []}
     pattern = f"%{q}%"
 
     if search_type in ("submissions", "all"):
@@ -564,7 +567,7 @@ def search_content():
                 (pattern, pattern),
             )
             rows = cur.fetchall()
-        results["students"] = [
+        results["users"] = [
             {
                 "user_id": str(row["user_id"]),
                 "name": row["name"],

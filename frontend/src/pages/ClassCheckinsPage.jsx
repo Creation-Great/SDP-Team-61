@@ -215,7 +215,7 @@ export default function ClassCheckinsPage() {
                     <th className="text-left px-4 py-3 font-semibold sticky left-0 bg-slate-50 z-10">Member</th>
                     {checkinTemplate.weeks.map((w, i) => (
                       <th key={i} className="text-center px-4 py-3 font-semibold whitespace-nowrap">
-                        {w.week || `Week ${i + 1}`}
+                        {w.label || `Week ${i + 1}`}
                       </th>
                     ))}
                   </tr>
@@ -232,7 +232,7 @@ export default function ClassCheckinsPage() {
                         if (!memberScores) {
                           return <td key={wi} className="px-4 py-3 text-center text-sm text-slate-300">—</td>;
                         }
-                        const vals = Object.values(memberScores).filter(v => typeof v === 'number');
+                        const vals = Object.values(memberScores).map(Number).filter(v => !Number.isNaN(v) && v >= 1 && v <= 5);
                         const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
                         return (
                           <td key={wi} className={`px-4 py-3 text-center text-sm font-semibold ${scoreColor(avg)}`}>

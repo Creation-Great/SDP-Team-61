@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import ScoreSelector from '../components/ScoreSelector';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';

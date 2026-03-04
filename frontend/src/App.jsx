@@ -18,6 +18,7 @@ import StudentCheckinsPage from './pages/StudentCheckinsPage';
 import InstructorPeerReviewPage from './pages/InstructorPeerReviewPage';
 import InstructorAnalyticsPage from './pages/InstructorAnalyticsPage';
 import ClassCheckinsPage from './pages/ClassCheckinsPage';
+import EnrollmentManagementPage from './pages/EnrollmentManagementPage';
 import RegisterPage from './pages/RegisterPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -157,6 +158,13 @@ export default function App() {
         <ProtectedRoute>
           <InstructorRoute>
             <AppLayout><ClassCheckinsPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/instructor/enrollments" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><EnrollmentManagementPage /></AppLayout>
           </InstructorRoute>
         </ProtectedRoute>
       } />

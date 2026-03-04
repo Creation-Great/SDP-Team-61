@@ -100,6 +100,13 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  /**
+   * Update the display name in local state (after PATCH /auth/profile succeeds).
+   */
+  const updateUserName = useCallback((newName) => {
+    setUser((prev) => prev ? { ...prev, name: newName } : prev);
+  }, []);
+
   // ── Computed role helpers (DRY – avoids repeated checks in every consumer) ──
   const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
   const isStudent = !!user && !isInstructor;
@@ -111,6 +118,7 @@ export function AuthProvider({ children }) {
     isStudent,
     loginFromCas,
     loginWithData,
+    updateUserName,
     logout,
   };
 

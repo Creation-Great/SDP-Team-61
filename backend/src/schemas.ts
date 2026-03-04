@@ -48,6 +48,7 @@ export const saveCurrentCheckinsSchema = z.object({
 export const createSessionSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   deadline: z.string().datetime({ offset: true }).nullish(),
+  course_id: z.string().min(1).nullish(),
 });
 
 export const toggleSessionSchema = z.object({
