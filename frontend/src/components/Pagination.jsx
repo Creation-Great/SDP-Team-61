@@ -24,7 +24,7 @@ export default function Pagination({
   const pages = buildPageNumbers(page, totalPages);
 
   const btnBase = 'inline-flex items-center justify-center h-9 min-w-[36px] px-2 rounded-lg text-sm font-medium transition-colors';
-  const btnActive = `${btnBase} bg-indigo-600 text-white shadow-sm`;
+  const btnActive = `${btnBase} bg-[#000E2F] text-white shadow-sm`;
   const btnInactive = `${btnBase} bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed`;
 
   return (

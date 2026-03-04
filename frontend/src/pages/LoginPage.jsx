@@ -65,19 +65,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 relative overflow-hidden">
-      {/* Decorative gradient blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-200 blur-3xl opacity-50" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-teal-100 blur-3xl opacity-50" />
-
-      <Card className="w-full max-w-md p-8 shadow-2xl border-0 relative z-10 backdrop-blur-sm bg-white/90">
+    <div
+      className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/images/content.png')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}
+    >
+      <Card className="w-full max-w-md p-8 shadow-2xl border-0 relative z-10 bg-white">
         {/* Logo / Header */}
         <div className="flex flex-col items-center mb-8 text-center">
-          <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-teal-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-200">
+          <div className="w-16 h-16 bg-[#000E2F] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-[#000E2F]/30">
             <BookOpen className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-slate-900">PeerReview System</h1>
-          <p className="text-slate-500 mt-2 text-sm">University Single Sign-On (CAS)</p>
+          <p className="text-slate-500 mt-2 text-sm font-medium">University Single Sign-On (CAS)</p>
         </div>
 
         {searchParams.get('registered') === 'true' && (
@@ -117,7 +116,7 @@ export default function LoginPage() {
               <label className="sr-only" htmlFor="login-email">Email address</label>
               <input
                 id="login-email"
-                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-slate-50 focus:bg-white text-sm"
+                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 transition-all bg-slate-50 focus:bg-white text-sm"
                 type="email"
                 placeholder="Email address"
                 required
@@ -129,7 +128,7 @@ export default function LoginPage() {
               <label className="sr-only" htmlFor="login-password">Password</label>
               <input
                 id="login-password"
-                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all bg-slate-50 focus:bg-white text-sm"
+                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 transition-all bg-slate-50 focus:bg-white text-sm"
                 type="password"
                 placeholder="Password"
                 required
@@ -142,9 +141,9 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-slate-500">
+          <p className="text-center text-sm text-slate-500 font-medium">
             Don&apos;t have an account?{' '}
-            <Link to="/register" className="text-indigo-600 font-medium hover:text-indigo-700">
+            <Link to="/register" className="text-[#000E2F] font-bold hover:underline">
               Create one
             </Link>
           </p>

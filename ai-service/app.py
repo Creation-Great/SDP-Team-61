@@ -331,6 +331,253 @@ def suggest_rewrite():
 
 
 # ---------------------------------------------------------------------------
+# AI Polish – improve text style and grammar
+# ---------------------------------------------------------------------------
+POLISH_SYSTEM_PROMPT = """You are an AI writing assistant that polishes peer review comments.
+Given a review comment, improve its grammar, clarity, tone, and professionalism while preserving the original meaning and key feedback points.
+Return a JSON object with EXACTLY these keys:
+- "polished": the improved version of the text
+- "changes": array of short strings describing what was changed
+Return ONLY valid JSON, no markdown fences."""
+
+
+@app.route("/api/ai/polish", methods=["POST"])
+@require_api_key
+@limiter.limit("30 per minute")
+def polish_text():
+    """
+    Polish a review comment text.
+    Body: { "text": str }
+    """
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "").strip()
+
+    if not text:
+        return jsonify(error="validation", message="text is required"), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. AI polish is unavailable.",
+        ), 503
+
+    try:
+        client = _get_openai()
+        completion = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": POLISH_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Polish this peer review comment:\n\n{text}"},
+            ],
+        )
+        raw = completion.choices[0].message.content or "{}"
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        log.error("OpenAI returned non-JSON for polish: %s", raw)
+        return jsonify(error="ai_error", message="AI returned invalid response"), 502
+    except Exception as e:
+        log.error("OpenAI polish call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    # Log this AI activity
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO ai_activity_logs (action, user_id, detail, created_at)
+                   VALUES ('polish', %s, %s, now())""",
+                (data.get("user_id", "unknown"), json.dumps({"input_length": len(text)})),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("Failed to log AI polish activity: %s", e)
+
+    return jsonify({
+        "polished": result.get("polished", text),
+        "changes": result.get("changes", []),
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI Summarize – summarize multiple reviews
+# ---------------------------------------------------------------------------
+SUMMARIZE_SYSTEM_PROMPT = """You are an AI assistant that summarizes peer review feedback.
+Given an array of peer review objects (each with score, comments, reviewer_name), produce a comprehensive summary.
+Return a JSON object with EXACTLY these keys:
+- "summary": a markdown-formatted summary including: overall assessment, common themes, strengths noted, areas for improvement, and score analysis
+- "themes": array of short theme strings identified across reviews
+- "avg_score": the average score as a float
+Return ONLY valid JSON, no markdown fences."""
+
+
+@app.route("/api/ai/summarize", methods=["POST"])
+@require_api_key
+@limiter.limit("20 per minute")
+def summarize_reviews():
+    """
+    Summarize multiple reviews for a submission.
+    Body: { "reviews": [...] }
+    """
+    data = request.get_json(silent=True) or {}
+    reviews = data.get("reviews", [])
+
+    if not reviews:
+        return jsonify(error="validation", message="reviews array is required"), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. AI summarization is unavailable.",
+        ), 503
+
+    # Build a text representation of reviews
+    review_text = json.dumps([
+        {"score": r.get("score"), "comments": r.get("comments", ""), "reviewer": r.get("reviewer_name", "Anonymous")}
+        for r in reviews
+    ], indent=2)
+
+    try:
+        client = _get_openai()
+        completion = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SUMMARIZE_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Summarize these peer reviews:\n\n{review_text}"},
+            ],
+        )
+        raw = completion.choices[0].message.content or "{}"
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        log.error("OpenAI returned non-JSON for summarize: %s", raw)
+        return jsonify(error="ai_error", message="AI returned invalid response"), 502
+    except Exception as e:
+        log.error("OpenAI summarize call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    # Log this AI activity
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO ai_activity_logs (action, user_id, detail, created_at)
+                   VALUES ('summarize', %s, %s, now())""",
+                (data.get("user_id", "unknown"), json.dumps({"input_length": len(reviews), "review_count": len(reviews)})),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("Failed to log AI summarize activity: %s", e)
+
+    return jsonify({
+        "summary": result.get("summary", "Summary generation failed."),
+        "themes": result.get("themes", []),
+        "avg_score": result.get("avg_score", 0),
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI Activity Logs – retrieve recent AI usage
+# ---------------------------------------------------------------------------
+@app.route("/api/ai/logs", methods=["GET"])
+@require_api_key
+def get_ai_logs():
+    """Return recent AI activity logs."""
+    limit = request.args.get("limit", 20, type=int)
+    conn = get_db()
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """SELECT id, action, user_id, detail, created_at
+               FROM ai_activity_logs
+               ORDER BY created_at DESC
+               LIMIT %s""",
+            (limit,),
+        )
+        rows = cur.fetchall()
+    return jsonify([
+        {
+            "id": row["id"],
+            "action": row["action"],
+            "user_id": row["user_id"],
+            "detail": row["detail"] or {},
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        }
+        for row in rows
+    ])
+
+
+# ---------------------------------------------------------------------------
+# Search – search submissions and students
+# ---------------------------------------------------------------------------
+@app.route("/api/search", methods=["GET"])
+@require_api_key
+def search_content():
+    """
+    Search submissions and users.
+    Query params: q (search term), type (submissions|students|all)
+    """
+    q = request.args.get("q", "").strip()
+    search_type = request.args.get("type", "all")
+
+    if not q or len(q) < 2:
+        return jsonify({"submissions": [], "students": []})
+
+    conn = get_db()
+    results = {"submissions": [], "students": []}
+    pattern = f"%{q}%"
+
+    if search_type in ("submissions", "all"):
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT s.submission_id, s.title, s.filename, s.status, s.created_at,
+                          u.name as student_name, u.email as student_email
+                   FROM submissions s
+                   JOIN users u ON s.user_id = u.user_id
+                   WHERE s.title ILIKE %s OR u.name ILIKE %s OR u.email ILIKE %s
+                   ORDER BY s.created_at DESC
+                   LIMIT 10""",
+                (pattern, pattern, pattern),
+            )
+            rows = cur.fetchall()
+        results["submissions"] = [
+            {
+                "submission_id": str(row["submission_id"]),
+                "title": row["title"],
+                "original_filename": row["filename"],
+                "status": row["status"],
+                "uploader_name": row["student_name"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            }
+            for row in rows
+        ]
+
+    if search_type in ("students", "all"):
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT user_id, name, email, role
+                   FROM users
+                   WHERE name ILIKE %s OR email ILIKE %s
+                   ORDER BY name ASC
+                   LIMIT 10""",
+                (pattern, pattern),
+            )
+            rows = cur.fetchall()
+        results["students"] = [
+            {
+                "user_id": str(row["user_id"]),
+                "name": row["name"],
+                "email": row["email"],
+                "role": row["role"],
+            }
+            for row in rows
+        ]
+
+    return jsonify(results)
+
+
+# ---------------------------------------------------------------------------
 # GET endpoints – retrieve stored AI results
 # ---------------------------------------------------------------------------
 @app.route("/api/ai/feedback/<review_id>", methods=["GET"])

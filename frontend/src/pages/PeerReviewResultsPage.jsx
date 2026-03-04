@@ -79,7 +79,7 @@ export default function PeerReviewResultsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading results...</span>
       </div>
     );
@@ -153,7 +153,7 @@ export default function PeerReviewResultsPage() {
           {/* Progress bar */}
           <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden mb-4">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressPct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+              className={`h-full rounded-full transition-all duration-500 ${progressPct >= 100 ? 'bg-emerald-500' : 'bg-[#000E2F]/50'}`}
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -263,7 +263,7 @@ export default function PeerReviewResultsPage() {
                       placeholder="Search reviews…"
                     />
                     <select
-                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+                      className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
                       value={detList.filters.team || ''}
                       onChange={(e) => detList.setFilters((f) => ({ ...f, team: e.target.value }))}
                     >
@@ -275,7 +275,7 @@ export default function PeerReviewResultsPage() {
                     <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
                       <input
                         type="checkbox"
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        className="rounded border-slate-300 text-[#000E2F] focus:ring-[#000E2F]"
                         checked={!!detList.filters.selfOnly}
                         onChange={(e) => detList.setFilters((f) => ({ ...f, selfOnly: e.target.checked }))}
                       />

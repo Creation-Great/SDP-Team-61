@@ -107,3 +107,63 @@ export async function adoptRewrite(req: AuthRequest, res: Response): Promise<voi
   }
   res.json(data);
 }
+
+// ── POST /api/ai/polish ────────────────────────────────────
+export async function postPolish(req: AuthRequest, res: Response): Promise<void> {
+  const { text } = req.body ?? {};
+  if (!text) throw new AppError(400, 'text is required');
+
+  const resp = await fetch(`${AI_SERVICE_URL}/api/ai/polish`, {
+    method: 'POST',
+    headers: aiHeaders(),
+    body: JSON.stringify({ text, user_id: req.user?.user_id }),
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) { res.status(resp.status).json(data); return; }
+  res.json(data);
+}
+
+// ── POST /api/ai/summarize ─────────────────────────────────
+export async function postSummarize(req: AuthRequest, res: Response): Promise<void> {
+  const { reviews } = req.body ?? {};
+  if (!reviews || !Array.isArray(reviews)) {
+    throw new AppError(400, 'reviews array is required');
+  }
+
+  const resp = await fetch(`${AI_SERVICE_URL}/api/ai/summarize`, {
+    method: 'POST',
+    headers: aiHeaders(),
+    body: JSON.stringify({ reviews, user_id: req.user?.user_id }),
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) { res.status(resp.status).json(data); return; }
+  res.json(data);
+}
+
+// ── GET /api/ai/logs ────────────────────────────────────────
+export async function getAiLogs(req: AuthRequest, res: Response): Promise<void> {
+  const limit = req.query.limit || '20';
+
+  const resp = await fetch(`${AI_SERVICE_URL}/api/ai/logs?limit=${limit}`, {
+    headers: aiHeaders(),
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) { res.status(resp.status).json(data); return; }
+  res.json(data);
+}
+
+// ── GET /api/ai/search ──────────────────────────────────────
+export async function getSearch(req: AuthRequest, res: Response): Promise<void> {
+  const q = req.query.q || '';
+
+  const resp = await fetch(`${AI_SERVICE_URL}/api/search?q=${encodeURIComponent(String(q))}`, {
+    headers: aiHeaders(),
+  });
+
+  const data = await resp.json();
+  if (!resp.ok) { res.status(resp.status).json(data); return; }
+  res.json(data);
+}

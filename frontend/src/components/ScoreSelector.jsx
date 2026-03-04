@@ -52,8 +52,8 @@ export default function ScoreSelector({ value, onChange, label, disabled = false
             disabled={disabled}
             className={`w-11 h-11 rounded-xl font-semibold text-base transition-all duration-200 ${
               value === n
-                ? 'bg-indigo-600 text-white border-2 border-indigo-600 shadow-sm'
-                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+                ? 'bg-[#000E2F] text-white border-2 border-[#000E2F] shadow-sm'
+                : 'bg-slate-50 text-slate-600 border border-slate-200 hover:border-[#000E2F]/20 hover:bg-[#000E2F]/5'
             } ${disabled ? 'opacity-60 cursor-default' : 'cursor-pointer'}`}
           >
             {n}

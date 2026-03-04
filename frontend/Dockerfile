@@ -6,7 +6,7 @@ RUN npm ci
 COPY index.html ./
 COPY vite.config.js ./
 COPY src/ ./src/
-COPY public/ ./public/ 2>/dev/null || true
+COPY public/ ./public/
 RUN npm run build
 
 # --- Production image: serve with nginx ---

@@ -66,7 +66,7 @@ export default function InstructorAnalyticsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading analytics...</span>
       </div>
     );
@@ -99,13 +99,13 @@ export default function InstructorAnalyticsPage() {
         {/* Score Distribution */}
         <Card className="p-6">
           <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
-            <TrendingUp className="w-5 h-5 mr-2 text-indigo-600" /> Score Distribution
+            <TrendingUp className="w-5 h-5 mr-2 text-[#000E2F]" /> Score Distribution
           </h3>
           <div className="h-40 flex items-end justify-between gap-2 border-b border-slate-200 pb-2">
             {buckets.map((count, i) => (
               <div
                 key={i}
-                className="w-1/5 bg-indigo-500 rounded-t-sm transition-all"
+                className="w-1/5 bg-[#000E2F]/50 rounded-t-sm transition-all"
                 style={{ height: `${(count / maxBucket) * 100}%`, minHeight: count > 0 ? '8px' : '0' }}
                 title={`${count} student(s)`}
               />

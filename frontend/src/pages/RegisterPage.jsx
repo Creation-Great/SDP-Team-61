@@ -43,19 +43,18 @@ export default function RegisterPage() {
 
   const inputClass =
     'w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm ' +
-    'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 ' +
-    'focus:border-indigo-300 transition-all';
+    'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 ' +
+    'focus:border-[#000E2F] transition-all';
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-50">
-      {/* Gradient blobs */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-indigo-200/40 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-teal-200/40 rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
-
-      <Card className="w-full max-w-md relative z-10 !shadow-2xl !bg-white/90 backdrop-blur-sm !p-8">
+    <div
+      className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/images/content.png')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}
+    >
+      <Card className="w-full max-w-md relative z-10 !shadow-2xl !bg-white !p-8">
         {/* Logo */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
+          <div className="w-14 h-14 bg-[#000E2F] rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
             <UserPlus className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Create Account</h1>
@@ -182,9 +181,9 @@ export default function RegisterPage() {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-slate-500 mt-6">
+        <p className="text-center text-sm text-slate-500 font-medium mt-6">
           Already have an account?{' '}
-          <Link to="/login" className="text-indigo-600 font-medium hover:text-indigo-700 transition-colors">
+          <Link to="/login" className="text-[#000E2F] font-bold hover:underline transition-colors">
             Sign in
           </Link>
         </p>

@@ -101,7 +101,7 @@ export default function PeerReviewSessionsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading peer review sessions...</span>
       </div>
     );
@@ -126,9 +126,9 @@ export default function PeerReviewSessionsPage() {
 
       {/* Create Form — indigo-tinted card with 3-col grid */}
       {isInstructor && (
-        <Card className="p-6 bg-indigo-50/50 border-indigo-100">
+        <Card className="p-6 bg-[#000E2F]/5 border-[#000E2F]/10">
           <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
-            <Plus className="w-5 h-5 mr-2 text-indigo-600" />
+            <Plus className="w-5 h-5 mr-2 text-[#000E2F]" />
             Create New Session
           </h3>
           <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={handleCreate}>
@@ -136,7 +136,7 @@ export default function PeerReviewSessionsPage() {
               <label className="text-sm font-medium text-slate-700">Session Name</label>
               <input
                 type="text"
-                className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white text-sm"
+                className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 bg-white text-sm"
                 placeholder="e.g. Sprint 3 Peer Review"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
@@ -146,7 +146,7 @@ export default function PeerReviewSessionsPage() {
               <label className="text-sm font-medium text-slate-700">Deadline</label>
               <input
                 type="datetime-local"
-                className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 bg-white text-sm"
+                className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 bg-white text-sm"
                 value={newDeadline}
                 onChange={(e) => setNewDeadline(e.target.value)}
                 min={new Date().toISOString().slice(0, 16)}
@@ -170,8 +170,8 @@ export default function PeerReviewSessionsPage() {
       {/* Sessions Table */}
       {sessions.length === 0 ? (
         <Card className="text-center px-6 py-12">
-          <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-indigo-500" />
+          <div className="w-16 h-16 bg-[#000E2F]/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Users className="w-8 h-8 text-[#000E2F]" />
           </div>
           <h3 className="text-lg font-semibold text-slate-900 mb-2">No peer review sessions yet</h3>
           <p className="text-slate-500">
@@ -218,7 +218,7 @@ export default function PeerReviewSessionsPage() {
                           <div className="flex items-center gap-2">
                             <div className="w-full bg-slate-200 rounded-full h-2 max-w-[100px]">
                               <div
-                                className={`h-2 rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+                                className={`h-2 rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-[#000E2F]'}`}
                                 style={{ width: `${Math.min(pct, 100)}%` }}
                               />
                             </div>

@@ -148,12 +148,12 @@ export default function StudentCheckinsPage() {
 
   const selectClass =
     'px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm ' +
-    'focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition-all';
+    'focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20 transition-all';
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading check-ins...</span>
       </div>
     );
@@ -200,7 +200,7 @@ export default function StudentCheckinsPage() {
                     type="button"
                     className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                       selectedWeekId === week.id
-                        ? 'bg-indigo-600 text-white shadow-sm'
+                        ? 'bg-[#000E2F] text-white shadow-sm'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                     onClick={() => setSelectedWeekId(week.id)}
@@ -291,7 +291,7 @@ export default function StudentCheckinsPage() {
           {/* Linked Member */}
           <Card className="p-6">
             <h3 className="font-bold text-slate-900 mb-4 flex items-center">
-              <LinkIcon className="w-5 h-5 mr-2 text-indigo-600" /> Linked Member
+              <LinkIcon className="w-5 h-5 mr-2 text-[#000E2F]" /> Linked Member
             </h3>
             <div className="space-y-4">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
@@ -312,7 +312,7 @@ export default function StudentCheckinsPage() {
           {/* Quick Insights */}
           <Card className="p-6">
             <h3 className="font-bold text-slate-900 mb-4 flex items-center">
-              <Activity className="w-5 h-5 mr-2 text-indigo-600" /> Quick Insights
+              <Activity className="w-5 h-5 mr-2 text-[#000E2F]" /> Quick Insights
             </h3>
             <div className="space-y-4">
               <div className="flex justify-between items-center border-b border-slate-100 pb-2">
@@ -331,9 +331,9 @@ export default function StudentCheckinsPage() {
           </Card>
 
           {/* Tip card (prototype: Weekly Comments style) */}
-          <Card className="p-6 bg-indigo-50 border-indigo-100">
-            <h3 className="font-bold text-indigo-900 mb-2">Tip</h3>
-            <p className="text-sm text-indigo-700 italic">
+          <Card className="p-6 bg-[#000E2F]/5 border-[#000E2F]/10">
+            <h3 className="font-bold text-[#000E2F] mb-2">Tip</h3>
+            <p className="text-sm text-[#000E2F] italic">
               "Rate each teammate honestly across all topics every week. Your feedback helps improve team dynamics and collaboration."
             </p>
           </Card>

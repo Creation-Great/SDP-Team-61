@@ -23,7 +23,7 @@ export default function RollingAveragesTable({
           Rolling Per-User Averages
         </h3>
         <select
-          className="min-w-[180px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+          className="min-w-[180px] px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
           value={teamFilter}
           onChange={(e) => onTeamFilterChange(e.target.value)}
         >

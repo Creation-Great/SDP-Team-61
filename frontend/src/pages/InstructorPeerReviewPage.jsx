@@ -364,7 +364,7 @@ export default function InstructorPeerReviewPage() {
             type="button"
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
               mode === 'existing'
-                ? 'bg-indigo-600 text-white shadow-sm'
+                ? 'bg-[#000E2F] text-white shadow-sm'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
             onClick={() => setMode('existing')}
@@ -377,7 +377,7 @@ export default function InstructorPeerReviewPage() {
             type="button"
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
               mode === 'upload'
-                ? 'bg-indigo-600 text-white shadow-sm'
+                ? 'bg-[#000E2F] text-white shadow-sm'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
             onClick={() => setMode('upload')}
@@ -396,7 +396,7 @@ export default function InstructorPeerReviewPage() {
                 type="file"
                 accept=".csv,text/csv"
                 onChange={loadTemplate}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100"
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-[#000E2F]/5 file:text-[#000E2F] hover:file:bg-[#000E2F]/10"
               />
             </div>
           )}
@@ -441,7 +441,7 @@ export default function InstructorPeerReviewPage() {
                 type="button"
                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                   selectedWeekId === week.id
-                    ? 'bg-indigo-600 text-white shadow-sm'
+                    ? 'bg-[#000E2F] text-white shadow-sm'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
                 onClick={() => setSelectedWeekId(week.id)}

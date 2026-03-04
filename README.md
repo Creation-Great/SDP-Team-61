@@ -1,32 +1,32 @@
 # SDP Peer Review System – Integrated
 
-> AI-enhanced peer review platform for university courses. Integrated from `SDP-Team-61-main` and `SDP-Team-61-old-main`, keeping the strengths of each.
+> AI-enhanced peer review platform for university courses. Built with **UConn Blue (#000E2F)** theme, featuring real-time notifications, global search, AI-powered writing tools, and instructor analytics. Integrated from `SDP-Team-61-main` and `SDP-Team-61-old-main`, keeping the strengths of each.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | React 19 · React Router 7 · Vite 7 · Axios · Framer Motion · CSS Variables |
+| **Frontend** | React 19 · React Router 7 · Vite 7 · Axios · Tailwind CSS · Lucide Icons · Framer Motion |
 | **Backend** | TypeScript (ES2022) · Express 5 · PostgreSQL 16 · JWT httpOnly cookies · Zod 4 · Pino |
-| **AI Service** | Python · Flask · OpenAI API |
+| **AI Service** | Python · Flask · OpenAI GPT-4o-mini · psycopg2 |
 | **DevOps** | Docker Compose (4 services) · GitHub Actions CI · ESLint 9 · Prettier |
 | **Testing** | Jest 29 · ts-jest · Supertest |
 
 ## Architecture
 
 ```
-┌───────────────────┐      ┌──────────────────────┐      ┌──────────────┐
-│    Frontend       │────▶│  Backend (TS)        │────▶│ PostgreSQL   │
-│  React 19 / Vite  │      │  Express 5 + JWT     │      │  RLS + Audit │
-│  :5173 (dev)      │      │  Pino + Zod + Helmet │      │  :5432       │
-│  :80  (prod/nginx)│      │  :8080               │      └──────────────┘
-└───────────────────┘      └──────────┬───────────┘
-                                    │
-                            ┌───────▼────────┐
-                            │  AI Service    │
-                            │  Flask + OpenAI│
-                            │  :5001         │
-                            └────────────────┘
+┌──────────────────────┐      ┌──────────────────────┐      ┌──────────────┐
+│    Frontend          │────▶│  Backend (TS)        │────▶│ PostgreSQL   │
+│  React 19 / Vite     │      │  Express 5 + JWT     │      │  RLS + Audit │
+│  Tailwind + UConn    │      │  Pino + Zod + Helmet │      │  :5432       │
+│  :5173 (dev)         │      │  :8080               │      └──────────────┘
+│  :80  (prod/nginx)   │      └──────────┬───────────┘
+└──────────────────────┘                 │
+         │                       ┌───────▼────────┐
+         │  Notifications        │  AI Service    │
+         │  Search               │  Flask + OpenAI│
+         │  Polish / Summarize   │  :5001         │
+         └───────proxy─────────▶└────────────────┘
 ```
 
 ## Features
@@ -38,8 +38,31 @@
 - **Privacy-Isolated Reviews**: Students can only view their own peer review scores — other team members' data is filtered server-side
 - **CSV Aggregation**: Batch upload CSV peer review results with per-student/category breakdown
 - **Weekly Check-ins**: Students self-rate and rate teammates; instructors manage scores across weeks
-- **AI Feedback & Rewrite**: OpenAI-powered review quality analysis and rewrite suggestions
 - **Enrollment Management**: Multi-course support with team grouping
+
+### AI-Powered Features
+- **AI Feedback & Rewrite**: OpenAI-powered review quality analysis (toxicity, politeness, sentiment) and rewrite suggestions
+- **AI Polish**: One-click grammar, clarity, and tone improvements for peer review comments
+- **AI Summarize**: Automatic summarization of multiple reviews per submission with theme extraction
+- **AI Activity Logs**: Instructor dashboard tracks all AI usage (polish/summarize calls) with real-time display
+- **Global Search**: Full-text search across submissions and users via the header search bar
+
+### Notification System
+- **Real-Time Bell**: Header notification bell with unread count badge (polls every 30 seconds)
+- **Notification Panel**: Dropdown panel showing recent notifications with mark-read and mark-all-read
+- **Notification Types**: `review_received`, `review_assigned`, `deadline`, `ai_complete`, `system`
+
+### UI / UX
+- **UConn Blue Theme**: Primary color `#000E2F` applied throughout the application
+- **Sidebar Navigation**: Collapsible sidebar with role-based menu items (replaces top navbar)
+- **UI Component Library**: Reusable `Card`, `Button`, `Badge` components in `components/ui/`
+- **Background Images**: Login/register use `content.png`; main content area uses `background3.jpg`
+- **Responsive Design**: Mobile-friendly layout with hidden sidebar and mobile header
+
+### Instructor Tools
+- **Unified Dashboard**: Overview stats, active sessions, AI activity logs, and weekly trends
+- **Analytics Page**: Score distribution visualization, anomaly detection, and CSV export
+- **Class Check-ins**: 3-tab page (Insights comparison, Weekly Scores matrix, Students list)
 
 ### Security
 - **Row-Level Security (RLS)**: PostgreSQL policies enforce data isolation per user
@@ -49,7 +72,7 @@
 - **CAS SSO**: University single sign-on integration (production)
 - **RBAC Middleware**: `requireRole()` guards protect instructor/student-only routes
 - **Zod Validation**: All request bodies validated with Zod schemas
-- **Rate Limiting**: Global, auth-specific, and upload-specific rate limiters
+- **Rate Limiting**: Global, auth-specific, upload-specific, and AI-specific rate limiters
 - **Audit Trail**: All critical operations logged to `audit` table
 - **bcrypt**: Passwords hashed (10 rounds)
 - **Helmet**: HTTP security headers
@@ -59,7 +82,7 @@
 ### Accessibility (WCAG 2.1)
 - **ARIA radiogroup**: Score selectors use `role="radiogroup/radio"` with full keyboard navigation
 - **Live regions**: Error messages use `role="alert"` + `aria-live="assertive"` for screen reader announcements
-- **Table semantics**: All 13 data tables have `<caption>` and `scope="col"` on headers
+- **Table semantics**: Data tables have `<caption>` and `scope="col"` on headers
 - **Form labels**: All inputs have associated `<label>` elements (visually hidden where placeholder is shown)
 - **Keyboard navigation**: All interactive elements support keyboard (Enter/Space/Arrow keys)
 
@@ -121,7 +144,7 @@ npm run install:all             # installs backend + frontend
 npm run dev                     # runs backend + frontend concurrently
 ```
 
-## API Routes (37 endpoints)
+## API Routes (45 endpoints)
 
 ### Auth (`/auth`)
 
@@ -203,6 +226,19 @@ npm run dev                     # runs backend + frontend concurrently
 | POST | `/api/ai/rewrite` | ✓ | Request AI rewrite suggestion |
 | GET | `/api/ai/rewrite/:reviewId` | ✓ | Get AI rewrite |
 | PATCH | `/api/ai/rewrite/:reviewId/adopt` | ✓ | Adopt AI rewrite |
+| POST | `/api/ai/polish` | ✓ | Polish text (grammar + tone) |
+| POST | `/api/ai/summarize` | ✓ | Summarize multiple reviews |
+| GET | `/api/ai/logs` | ✓ | Recent AI activity logs |
+| GET | `/api/ai/search` | ✓ | Search submissions & users |
+
+### Notifications (`/notifications`)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/notifications` | ✓ | List user's notifications |
+| GET | `/notifications/unread-count` | ✓ | Get unread notification count |
+| PATCH | `/notifications/read-all` | ✓ | Mark all notifications as read |
+| PATCH | `/notifications/:id/read` | ✓ | Mark one notification as read |
 
 ## Project Structure
 
@@ -213,6 +249,7 @@ SDP-Team-61-integrated/
 ├── .prettierignore
 ├── docker-compose.yml            # PostgreSQL + Backend + AI + Frontend
 ├── package.json                  # Monorepo root (concurrently, lint, format)
+├── start-dev.ps1                 # One-click local dev startup script
 │
 ├── backend/
 │   ├── package.json
@@ -230,7 +267,8 @@ SDP-Team-61-integrated/
 │   │   ├── 006_submissions-updated-at.sql
 │   │   ├── 007_user-enrollments.sql
 │   │   ├── 008_cascade-delete-policies.sql
-│   │   └── 009_tighten-rls-policies.sql
+│   │   ├── 009_tighten-rls-policies.sql
+│   │   └── 010_ai-activity-logs.sql      # AI logs + notifications tables
 │   ├── sql/
 │   │   ├── migrations.sql        # Legacy full schema (Docker init)
 │   │   └── seed.sql
@@ -249,7 +287,7 @@ SDP-Team-61-integrated/
 │   │   │   ├── peerReviewController.ts
 │   │   │   ├── checkinController.ts
 │   │   │   ├── enrollmentController.ts
-│   │   │   └── aiController.ts
+│   │   │   └── aiController.ts          # Proxy to AI service (polish, summarize, logs, search)
 │   │   ├── routes/
 │   │   │   ├── authRoutes.ts
 │   │   │   ├── submissionRoutes.ts
@@ -258,7 +296,8 @@ SDP-Team-61-integrated/
 │   │   │   ├── peerReviewRoutes.ts
 │   │   │   ├── checkinRoutes.ts
 │   │   │   ├── enrollmentRoutes.ts
-│   │   │   └── aiRoutes.ts
+│   │   │   ├── aiRoutes.ts
+│   │   │   └── notificationRoutes.ts    # Notification CRUD (direct DB)
 │   │   ├── middleware/
 │   │   │   ├── auth.ts           # JWT verify + CAS SSO
 │   │   │   ├── roleGuard.ts      # RBAC
@@ -291,17 +330,23 @@ SDP-Team-61-integrated/
 │
 ├── frontend/
 │   ├── package.json
-│   ├── vite.config.js            # Dev proxy to backend
+│   ├── vite.config.js            # Dev proxy to backend (12 proxy rules)
 │   ├── eslint.config.js          # ESLint 9 flat config (React)
 │   ├── Dockerfile
-│   ├── nginx.conf              # Production reverse-proxy config
+│   ├── nginx.conf                # Production reverse-proxy config
 │   ├── index.html
+│   ├── tailwind.config.ts        # Tailwind CSS configuration
+│   ├── postcss.config.js
+│   ├── public/
+│   │   └── images/
+│   │       ├── content.png       # Login/register background
+│   │       └── background3.jpg   # Content area background
 │   └── src/
 │       ├── main.jsx              # App entry
-│       ├── App.jsx               # Router + layout
+│       ├── App.jsx               # Router + AppLayout (sidebar + header)
 │       ├── App.css               # Component styles + sr-only utility
-│       ├── index.css             # CSS variables + theme
-│       ├── config.js             # Runtime config
+│       ├── index.css             # CSS variables + UConn Blue theme
+│       ├── config.js             # Runtime config (API_BASE_URL)
 │       ├── contexts/
 │       │   └── AuthContext.jsx    # Auth state provider
 │       ├── hooks/
@@ -311,15 +356,20 @@ SDP-Team-61-integrated/
 │       ├── utils/
 │       │   └── csvHelpers.js     # CSV parsing utilities
 │       ├── components/
-│       │   ├── Navbar.jsx        # Responsive nav + mobile drawer
-│       │   ├── Navbar.css
+│       │   ├── Sidebar.jsx           # Collapsible sidebar navigation
+│       │   ├── HeaderSearchBar.jsx   # Global search with dropdown results
+│       │   ├── NotificationBell.jsx  # Bell icon + unread badge + dropdown
 │       │   ├── ProtectedRoute.jsx
 │       │   ├── InstructorRoute.jsx
 │       │   ├── StudentRoute.jsx
-│       │   ├── ScoreSelector.jsx # Accessible 1–5 score radio group
-│       │   ├── SearchInput.jsx   # Debounced search input
-│       │   ├── Pagination.jsx    # Page navigation
-│       │   └── checkins/         # Check-in sub-components
+│       │   ├── ScoreSelector.jsx     # Accessible 1–5 score radio group
+│       │   ├── SearchInput.jsx       # Debounced search input
+│       │   ├── Pagination.jsx        # Page navigation
+│       │   ├── ui/                   # Reusable UI primitives
+│       │   │   ├── Badge.jsx
+│       │   │   ├── Button.jsx
+│       │   │   └── Card.jsx
+│       │   └── checkins/             # Check-in sub-components
 │       │       ├── WeeklyScoresTable.jsx
 │       │       ├── RollingAveragesTable.jsx
 │       │       ├── InsightsTable.jsx
@@ -331,20 +381,22 @@ SDP-Team-61-integrated/
 │           ├── LoginPage.jsx
 │           ├── RegisterPage.jsx
 │           ├── StudentDashboardPage.jsx
-│           ├── InstructorDashboardPage.jsx
+│           ├── InstructorDashboardPage.jsx   # Stats + AI logs + weekly trends
+│           ├── InstructorAnalyticsPage.jsx   # Score distribution + anomalies
+│           ├── InstructorPeerReviewPage.jsx
+│           ├── ClassCheckinsPage.jsx         # 3-tab: Insights / Scores / Students
 │           ├── UploadAssignment.jsx
 │           ├── AssignedReviewsPage.jsx
 │           ├── ReviewPage.jsx
-│           ├── ViewReviewPage.jsx
+│           ├── ViewReviewPage.jsx            # AI Summarize integration
 │           ├── PeerReviewSessionsPage.jsx
-│           ├── PeerReviewFormPage.jsx
+│           ├── PeerReviewFormPage.jsx        # AI Polish integration
 │           ├── PeerReviewResultsPage.jsx
-│           ├── InstructorPeerReviewPage.jsx
 │           ├── StudentCheckinsPage.jsx
 │           └── NotFoundPage.jsx
 │
 └── ai-service/
-    ├── app.py                    # Flask API (OpenAI integration)
+    ├── app.py                    # Flask API (OpenAI + search + logs)
     ├── Dockerfile
     └── requirements.txt
 ```
@@ -360,7 +412,9 @@ SDP-Team-61-integrated/
 | `npm run build` | Build frontend for production |
 | `npm test` | Run backend tests |
 | `npm run lint` | Lint backend + frontend |
+| `npm run lint:fix` | Lint + auto-fix backend + frontend |
 | `npm run format` | Format backend + frontend |
+| `npm run format:check` | Check formatting without writing |
 
 ### Backend
 
@@ -419,6 +473,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | `OPENAI_MODEL` | `gpt-4o-mini` | Model to use |
 | `AI_API_KEY` | — | Internal API key (must match backend) |
 | `AI_PORT` | `5001` | Flask port |
+| `DATABASE_URL` | — | PostgreSQL connection string (for logs + search) |
+| `FRONTEND_URL` | `http://localhost:5173` | CORS origin |
 
 ## Default Accounts (from seed.sql)
 
@@ -444,11 +500,33 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | MVC controller pattern | New | Clear separation of concerns |
 | Zod schema validation | Enhanced | Runtime type safety for all endpoints |
 | Pino structured logging | Enhanced | Production-grade observability |
-| CSS Variables + semantic classes | Old | Maintainable, responsive styling |
-| Vite dev proxy | New | No hardcoded API URLs |
+| Tailwind CSS + UConn theme | Enhanced | Utility-first styling with brand colors |
+| Vite dev proxy | New | No hardcoded API URLs (12 proxy rules) |
 | Framer Motion animations | New | Smooth transitions |
 | Smart reviewer auto-assignment | Old | Fair distribution algorithm |
-| OpenAI AI integration | Enhanced | Review feedback + rewrite suggestions |
+| OpenAI AI integration | Enhanced | Feedback + rewrite + polish + summarize |
+| Sidebar navigation | Enhanced | Replaces top navbar, collapsible, role-aware |
+| UI component library | New | Reusable Card, Button, Badge primitives |
+| Global search | New | Full-text search across submissions & users |
+| Notification system | New | Real-time bell with unread count + dropdown |
+| AI activity logs | New | Track and display all AI usage for instructors |
+| Instructor analytics | New | Score distribution, anomaly detection, export |
+| Class check-ins page | Enhanced | 3-tab view: insights, weekly scores, students |
+
+## Database Schema (10 migrations)
+
+| Migration | Tables / Changes |
+|-----------|-----------------|
+| 001 | `users` + enum types (`user_role`, `submission_status`, etc.) |
+| 002 | `submissions`, `assignments`, `reviews`, `ml_outputs`, `rewrite_suggestions` |
+| 003 | RLS policies, views, materialized views |
+| 004 | `peer_review_sessions`, `peer_review_scores`, `session_members` |
+| 005 | `checkin_templates`, `checkin_scores`, unified dashboard views |
+| 006 | `submissions.updated_at` column |
+| 007 | `user_enrollments` table |
+| 008 | CASCADE delete policies across all FK relationships |
+| 009 | Tightened RLS policies |
+| 010 | `ai_activity_logs`, `notifications` tables |
 
 ## License
 

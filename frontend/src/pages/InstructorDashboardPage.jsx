@@ -33,6 +33,10 @@ export default function InstructorDashboardPage() {
   const [csvResult, setCsvResult] = useState(null);
   const [csvError, setCsvError] = useState('');
 
+  // AI Activity Logs state
+  const [aiLogs, setAiLogs] = useState([]);
+  const [aiLogsLoading, setAiLogsLoading] = useState(false);
+
   const subSearchKeys = useCallback((s) => [s.title, s.student_name, s.student_email], []);
   const subFilterFn = useCallback((s, f) => !f.status || s.status === f.status, []);
   const subs = useFilteredList(submissions, {
@@ -62,6 +66,15 @@ export default function InstructorDashboardPage() {
       })
       .catch((err) => console.error('Error loading dashboard:', err))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Fetch AI activity logs
+  useEffect(() => {
+    setAiLogsLoading(true);
+    API.get('/api/ai/logs', { params: { limit: 10 } })
+      .then((res) => setAiLogs(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setAiLogs([]))
+      .finally(() => setAiLogsLoading(false));
   }, []);
 
   const handleAssign = async () => {
@@ -110,7 +123,7 @@ export default function InstructorDashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading dashboard...</span>
       </div>
     );
@@ -147,7 +160,7 @@ export default function InstructorDashboardPage() {
             key={tab}
             className={`px-4 py-2 rounded-xl text-sm font-medium capitalize transition-colors ${
               activeTab === tab
-                ? 'bg-indigo-600 text-white shadow-sm'
+                ? 'bg-[#000E2F] text-white shadow-sm'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
             onClick={() => setActiveTab(tab)}
@@ -162,7 +175,7 @@ export default function InstructorDashboardPage() {
         <div className="space-y-6">
           {/* 4 Stat Cards with border-l-4 */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card className="p-6 border-l-4 border-l-indigo-500">
+            <Card className="p-6 border-l-4 border-l-[#000E2F]">
               <h3 className="text-slate-500 font-medium text-sm">Total Submissions</h3>
               <div className="text-3xl font-bold text-slate-900 mt-2">{fr.total_submissions || 0}</div>
             </Card>
@@ -202,7 +215,7 @@ export default function InstructorDashboardPage() {
                       </div>
                       <div className="w-full bg-slate-100 rounded-full h-2">
                         <div
-                          className={`h-2 rounded-full ${row.reviews_completed >= row.assignments ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+                          className={`h-2 rounded-full ${row.reviews_completed >= row.assignments ? 'bg-emerald-500' : 'bg-[#000E2F]'}`}
                           style={{ width: `${row.assignments ? Math.round((row.reviews_completed / row.assignments) * 100) : 0}%` }}
                         />
                       </div>
@@ -221,19 +234,36 @@ export default function InstructorDashboardPage() {
               </div>
               <div className="p-6">
                 <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-start gap-3 text-sm">
-                      <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
-                        <Sparkles className="w-4 h-4" />
+                  {aiLogsLoading && (
+                    <p className="text-sm text-slate-400 text-center py-4">Loading AI logs...</p>
+                  )}
+                  {!aiLogsLoading && aiLogs.length === 0 && (
+                    <p className="text-sm text-slate-400 text-center py-8">No AI activity recorded yet.</p>
+                  )}
+                  {!aiLogsLoading && aiLogs.map((log) => {
+                    const mins = Math.floor((Date.now() - new Date(log.created_at).getTime()) / 60000);
+                    let timeStr;
+                    if (mins < 1) timeStr = 'just now';
+                    else if (mins < 60) timeStr = `${mins}m ago`;
+                    else if (mins < 1440) timeStr = `${Math.floor(mins / 60)}h ago`;
+                    else timeStr = `${Math.floor(mins / 1440)}d ago`;
+
+                    return (
+                      <div key={log.id} className="flex items-start gap-3 text-sm">
+                        <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-slate-900">
+                            <span className="font-medium">{log.user_id || 'A user'}</span>{' '}
+                            used AI <span className="capitalize font-medium">{log.action}</span>
+                            {log.detail?.input_length ? ` (${log.detail.input_length} chars)` : ''}
+                          </p>
+                          <p className="text-slate-400 text-xs mt-0.5">{timeStr}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-slate-900">
-                          <span className="font-medium">Student</span> used AI Polish for review.
-                        </p>
-                        <p className="text-slate-400 text-xs mt-0.5">{i * 15} mins ago</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </Card>
@@ -303,7 +333,7 @@ export default function InstructorDashboardPage() {
                   className="flex-1 min-w-[200px]"
                 />
                 <select
-                  className="max-w-[160px] px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+                  className="max-w-[160px] px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
                   value={subs.filters.status || ''}
                   onChange={(e) => subs.setFilters({ ...subs.filters, status: e.target.value || undefined })}
                 >
@@ -350,7 +380,7 @@ export default function InstructorDashboardPage() {
                               {assignTarget === s.submission_id ? (
                                 <div className="flex items-center gap-2">
                                   <select
-                                    className="max-w-[180px] px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                                    className="max-w-[180px] px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10"
                                     value={assignReviewerId}
                                     onChange={(e) => setAssignReviewerId(e.target.value)}
                                   >
@@ -458,7 +488,7 @@ export default function InstructorDashboardPage() {
       {/* ═══════ CSV Aggregate Tab ═══════ */}
       {activeTab === 'csv aggregate' && (
         <div className="space-y-4">
-          <Card className="p-6 bg-indigo-50/50 border-indigo-100">
+          <Card className="p-6 bg-[#000E2F]/5 border-[#000E2F]/10">
             <h3 className="text-lg font-bold text-slate-900 mb-1">Peer Review CSV Aggregation</h3>
             <p className="text-sm text-slate-500 mb-4">
               Upload one or more peer-review CSV files to compute aggregated averages per student.
@@ -474,7 +504,7 @@ export default function InstructorDashboardPage() {
                 multiple
                 onChange={handleCsvUpload}
                 disabled={csvUploading}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100"
+                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-[#000E2F]/5 file:text-[#000E2F] hover:file:bg-[#000E2F]/10"
               />
             </div>
 
@@ -498,11 +528,11 @@ export default function InstructorDashboardPage() {
               <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-indigo-600">{csvResult.summary.files_processed}</div>
+                    <div className="text-2xl font-bold text-[#000E2F]">{csvResult.summary.files_processed}</div>
                     <div className="text-xs text-slate-500 mt-1">Files Processed</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-indigo-600">{csvResult.summary.evaluations_count}</div>
+                    <div className="text-2xl font-bold text-[#000E2F]">{csvResult.summary.evaluations_count}</div>
                     <div className="text-xs text-slate-500 mt-1">Evaluations</div>
                   </div>
                   <div className="text-center">

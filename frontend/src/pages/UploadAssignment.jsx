@@ -62,8 +62,8 @@ export default function UploadAssignment() {
 
   const inputClass =
     'w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm ' +
-    'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 ' +
-    'focus:border-indigo-300 transition-all';
+    'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 ' +
+    'focus:border-[#000E2F]/20 transition-all';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -105,7 +105,7 @@ export default function UploadAssignment() {
         <Card
           className={`p-8 border-dashed border-2 flex flex-col items-center justify-center min-h-[300px] transition-all cursor-pointer ${
             isDragging
-              ? 'border-indigo-400 bg-indigo-50'
+              ? 'border-[#000E2F]/30 bg-[#000E2F]/5'
               : file
                 ? 'border-emerald-300 bg-emerald-50/50'
                 : 'border-slate-300 bg-slate-50'
@@ -125,7 +125,7 @@ export default function UploadAssignment() {
             </div>
           ) : (
             <>
-              <div className="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-4">
+              <div className="w-20 h-20 bg-[#000E2F]/10 text-[#000E2F] rounded-full flex items-center justify-center mb-4">
                 <FileUp className="w-10 h-10" />
               </div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">Drag & Drop files here</h3>

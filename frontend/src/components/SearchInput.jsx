@@ -20,7 +20,7 @@ export default function SearchInput({
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden />
       <input
         type="text"
-        className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300 transition"
+        className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20 transition"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

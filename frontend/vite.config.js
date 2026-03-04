@@ -16,6 +16,7 @@ export default defineConfig({
       '/checkins': 'http://localhost:8080',
       '/enrollments': 'http://localhost:8080',
       '/api/ai': 'http://localhost:8080',
+      '/notifications': 'http://localhost:8080',
     },
   },
 });

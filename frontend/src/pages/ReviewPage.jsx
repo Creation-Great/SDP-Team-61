@@ -49,7 +49,7 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-2 text-slate-500">Loading review...</span>
       </div>
     );
@@ -86,7 +86,7 @@ export default function ReviewPage() {
         >
           <Card className="p-6 min-h-[500px]">
             <h3 className="text-base font-semibold text-slate-900 mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-indigo-500" />
+              <FileText className="w-4 h-4 text-[#000E2F]" />
               Document
             </h3>
             {review?.file_url ? (
@@ -152,7 +152,7 @@ export default function ReviewPage() {
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="comments">Comments</label>
                   <textarea
                     id="comments"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 resize-y"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#000E2F]/40 focus:border-[#000E2F]/30 resize-y"
                     placeholder="Provide detailed feedback on this submission..."
                     value={comments}
                     onChange={(e) => setComments(e.target.value)}

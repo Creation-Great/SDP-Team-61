@@ -39,7 +39,7 @@ export default function WeeklyScoresTable({
               {topics.map((topic) => (
                 <td key={`${member.id}-${topic}`} className={tdCls}>
                   <select
-                    className="min-w-[90px] px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-300"
+                    className="min-w-[90px] px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
                     value={week.scores?.[member.id]?.[topic] || ''}
                     onChange={(e) => onSetScore(week.id, member.id, topic, e.target.value)}
                   >

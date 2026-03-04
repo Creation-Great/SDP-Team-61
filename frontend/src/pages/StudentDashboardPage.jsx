@@ -37,7 +37,7 @@ export default function StudentDashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading dashboard...</span>
       </div>
     );
@@ -61,12 +61,12 @@ export default function StudentDashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Pending Reviews (gradient) */}
         <Card
-          className="p-6 bg-gradient-to-br from-indigo-500 to-teal-600 text-white border-0 shadow-md cursor-pointer"
+          className="p-6 bg-gradient-to-br from-[#000E2F] to-[#1a3a6b] text-white border-0 shadow-md cursor-pointer"
           onClick={() => navigate('/reviews')}
         >
-          <h3 className="text-indigo-100 font-medium mb-1">Pending Reviews</h3>
+          <h3 className="text-white/80 font-medium mb-1">Pending Reviews</h3>
           <div className="text-4xl font-bold">{tasks.length}</div>
-          <div className="mt-4 flex items-center text-sm text-indigo-100 bg-white/10 px-3 py-1.5 rounded-lg w-fit">
+          <div className="mt-4 flex items-center text-sm text-white/80 bg-white/10 px-3 py-1.5 rounded-lg w-fit">
             <Clock className="w-4 h-4 mr-2" /> Needs Attention <ChevronRight className="w-4 h-4 ml-1" />
           </div>
         </Card>
@@ -99,7 +99,7 @@ export default function StudentDashboardPage() {
               <Star className="w-5 h-5" />
             </div>
           </div>
-          <div className="mt-3 text-sm text-indigo-600 font-medium flex items-center">
+          <div className="mt-3 text-sm text-[#000E2F] font-medium flex items-center">
             View Details <ChevronRight className="w-4 h-4" />
           </div>
         </Card>
@@ -109,7 +109,7 @@ export default function StudentDashboardPage() {
       <Card className="p-0 overflow-hidden">
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
           <h2 className="text-lg font-bold text-slate-900 flex items-center">
-            <MessageSquare className="w-5 h-5 mr-2 text-indigo-600" />
+            <MessageSquare className="w-5 h-5 mr-2 text-[#000E2F]" />
             Assigned Peer Reviews
           </h2>
           <Button variant="ghost" size="sm" onClick={() => navigate('/reviews')}>View All</Button>

@@ -42,7 +42,7 @@ function ScoreBadge({ value, label }) {
   if (!value && value !== 0) return null;
   return (
     <div className="text-center">
-      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 font-bold text-sm flex items-center justify-center">{value}</div>
+      <div className="w-10 h-10 rounded-xl bg-[#000E2F]/5 text-[#000E2F] font-bold text-sm flex items-center justify-center">{value}</div>
       <span className="text-xs text-slate-500 mt-1 block">{label}</span>
     </div>
   );
@@ -149,7 +149,7 @@ export default function PeerReviewFormPage() {
     if (!text?.trim()) return;
     setPolishingFor(userId);
     try {
-      const res = await API.post('/ai/polish', { text });
+      const res = await API.post('/api/ai/polish', { text });
       updateReview(userId, 'individual_comments', res.data?.polished || text);
     } catch {
       /* Fallback: just append a note */
@@ -184,7 +184,7 @@ export default function PeerReviewFormPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-3 text-slate-500">Loading peer review form...</span>
       </div>
     );
@@ -263,8 +263,8 @@ export default function PeerReviewFormPage() {
       <Card className="p-6">
         <div className="flex items-center justify-between cursor-pointer" onClick={() => setShowTeamBoard(!showTeamBoard)}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
-              <Users className="w-5 h-5 text-indigo-500" />
+            <div className="w-10 h-10 rounded-xl bg-[#000E2F]/5 flex items-center justify-center">
+              <Users className="w-5 h-5 text-[#000E2F]" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-slate-900">Team Board — Live</h3>
@@ -297,7 +297,7 @@ export default function PeerReviewFormPage() {
                 if (!isMe) return null;
                 if (rReviews.length === 0 && !chem) return null;
                 return (
-                  <div key={reviewer.user_id} className="mt-4 p-4 rounded-xl bg-indigo-50/50 border border-indigo-100">
+                  <div key={reviewer.user_id} className="mt-4 p-4 rounded-xl bg-[#000E2F]/5 border border-[#000E2F]/10">
                     <div className="flex items-center gap-2 mb-3">
                       <span className="font-medium text-slate-800">{reviewer.name}</span>
                       {isMe && <Badge type="info">You</Badge>}
@@ -343,8 +343,8 @@ export default function PeerReviewFormPage() {
                 onClick={() => setTeamChemistry(score)}
                 className={`w-12 h-12 rounded-xl border-2 font-bold transition-all ${
                   teamChemistry === score
-                    ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
-                    : 'border-slate-200 text-slate-600 hover:border-indigo-300'
+                    ? 'bg-[#000E2F]/5 border-[#000E2F] text-[#000E2F]'
+                    : 'border-slate-200 text-slate-600 hover:border-[#000E2F]/20'
                 }`}
               >
                 {score}
@@ -384,8 +384,8 @@ export default function PeerReviewFormPage() {
                           onClick={() => updateReview(t.user_id, key, score)}
                           className={`w-12 h-12 rounded-xl border-2 font-bold transition-all ${
                             r[key] === score
-                              ? 'bg-indigo-50 border-indigo-600 text-indigo-700'
-                              : 'border-slate-200 text-slate-600 hover:border-indigo-300'
+                              ? 'bg-[#000E2F]/5 border-[#000E2F] text-[#000E2F]'
+                              : 'border-slate-200 text-slate-600 hover:border-[#000E2F]/20'
                           }`}
                         >
                           {score}
@@ -402,7 +402,7 @@ export default function PeerReviewFormPage() {
                     <textarea
                       value={r.individual_comments || ''}
                       onChange={(e) => updateReview(t.user_id, 'individual_comments', e.target.value)}
-                      className="w-full p-4 pb-14 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all resize-none h-40 bg-slate-50 focus:bg-white"
+                      className="w-full p-4 pb-14 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#000E2F] focus:border-[#000E2F] outline-none transition-all resize-none h-40 bg-slate-50 focus:bg-white"
                       placeholder={`Write your thoughts about ${isSelf ? 'your own' : t.name + "'s"} contributions, then ask AI to polish it...`}
                       rows={4}
                     />

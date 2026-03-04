@@ -45,22 +45,22 @@ export default function Sidebar() {
   const linkClass = ({ isActive }) =>
     `w-full flex items-center px-4 py-3 rounded-xl transition-all no-underline text-sm ${
       isActive
-        ? 'bg-indigo-50 text-indigo-700 font-semibold'
+        ? 'bg-[#000E2F]/10 text-[#000E2F] font-semibold'
         : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
     }`;
 
   const iconClass = (isActive) =>
-    `w-5 h-5 mr-3 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`;
+    `w-5 h-5 mr-3 ${isActive ? 'text-[#000E2F]' : 'text-slate-400'}`;
 
   const sidebarContent = (
     <>
       {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-slate-100 shrink-0">
-        <div className="w-8 h-8 bg-gradient-to-tr from-indigo-600 to-teal-500 rounded-lg flex items-center justify-center mr-3">
+        <div className="w-8 h-8 bg-[#000E2F] rounded-lg flex items-center justify-center mr-3">
           <Sparkles className="w-4 h-4 text-white" />
         </div>
         <span className="font-bold text-lg text-slate-900 tracking-tight">
-          Peer<span className="text-indigo-600">Review</span>
+          Peer<span className="text-[#000E2F]">Review</span>
         </span>
       </div>
 
@@ -87,7 +87,7 @@ export default function Sidebar() {
       {/* User area */}
       <div className="p-4 border-t border-slate-100 shrink-0">
         <div className="flex items-center px-4 py-3 bg-slate-50 rounded-xl mb-3">
-          <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold mr-3">
+          <div className="w-8 h-8 bg-[#000E2F]/10 text-[#000E2F] rounded-full flex items-center justify-center font-bold mr-3">
             {(user?.name || 'U').charAt(0).toUpperCase()}
           </div>
           <div className="flex-1 overflow-hidden">
@@ -119,7 +119,7 @@ export default function Sidebar() {
       {/* Mobile header bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 h-14 bg-white/80 backdrop-blur-md border-b border-slate-200 flex items-center justify-between px-4">
         <span className="font-bold text-lg text-slate-900">
-          Peer<span className="text-indigo-600">Review</span>
+          Peer<span className="text-[#000E2F]">Review</span>
         </span>
         <button
           onClick={() => setMobileOpen(!mobileOpen)}

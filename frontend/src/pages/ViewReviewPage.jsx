@@ -37,7 +37,7 @@ export default function ViewReviewPage() {
     if (reviews.length === 0) return;
     setIsSummarizing(true);
     try {
-      const res = await API.post('/ai/summarize', { reviews });
+      const res = await API.post('/api/ai/summarize', { reviews });
       setAiSummary(res.data?.summary || 'Summary generated successfully.');
     } catch {
       /* Fallback: build a client-side summary */
@@ -52,7 +52,7 @@ export default function ViewReviewPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-2 text-slate-500">Loading reviews...</span>
       </div>
     );

@@ -28,7 +28,7 @@ export default function Button({
 
   const variants = {
     primary:
-      'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm focus:ring-indigo-500',
+      'bg-[#000E2F] text-white hover:bg-[#061a3d] shadow-sm focus:ring-[#000E2F]',
     secondary:
       'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 focus:ring-slate-200',
     danger:

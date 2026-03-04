@@ -10,10 +10,10 @@
    ===================================================== */
 
 :root {
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-light: #eef2ff;
-  --primary-ring: rgba(79, 70, 229, 0.25);
+  --primary: #000E2F;
+  --primary-hover: #061a3d;
+  --primary-light: #f0f2f6;
+  --primary-ring: rgba(0, 14, 47, 0.25);
   --success: #10b981;
   --danger: #ef4444;
   --danger-hover: #dc2626;
@@ -21,6 +21,7 @@
   --text-secondary: #475569;
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(226, 232, 240, 0.8);
+  --uconn-blue: #000E2F;
 }
 
 /* ── Base ── */
@@ -41,7 +42,7 @@
   }
 
   ::selection {
-    @apply bg-indigo-100 text-indigo-900;
+    @apply bg-primary-100 text-primary-900;
   }
 
   ::-webkit-scrollbar { width: 6px; }

@@ -21,6 +21,7 @@ import peerReviewRoutes from './routes/peerReviewRoutes.js';
 import checkinRoutes from './routes/checkinRoutes.js';
 import enrollmentRoutes from './routes/enrollmentRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import { authenticate } from './middleware/auth.js';
 import { h } from './utils/asyncHandler.js';
 import fs from 'fs';
@@ -117,6 +118,7 @@ app.use('/peer-review', peerReviewRoutes);
 app.use('/checkins', checkinRoutes);
 app.use('/enrollments', enrollmentRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/notifications', notificationRoutes);
 
 // Global error handler — typed, handles AppError, ZodValidationError, and unknown errors
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

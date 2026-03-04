@@ -9,7 +9,7 @@ export default function NotFoundPage() {
 
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
-      <h1 className="text-7xl font-bold text-indigo-600">404</h1>
+      <h1 className="text-7xl font-bold text-[#000E2F]">404</h1>
       <p className="text-lg text-slate-500 mt-2 mb-8">
         The page you're looking for doesn't exist.
       </p>
