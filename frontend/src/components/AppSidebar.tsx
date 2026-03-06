@@ -1,33 +1,191 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import {
-  LayoutDashboard,
-  ClipboardList,
-  LogOut,
-  Menu,
-  X,
-} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { LogOut, Menu, X } from 'lucide-react';
 import type { User } from '../types';
+import oakLeafImg from '../../brand_assets/oak-leaf1.png';
 
-function LogoMark({ size = 32 }: { size?: number }) {
+/* ── UConn Logo badge + wordmark ──────────────────────────── */
+function NavLogo() {
   return (
-    <svg width={size} height={size} viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M18 2.5 L31 9.75 L31 26.25 L18 33.5 L5 26.25 L5 9.75 Z"
-        stroke="rgba(75,159,225,0.50)" strokeWidth="1.4" fill="rgba(75,159,225,0.08)"
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none', userSelect: 'none' }}>
+      {/* Oak leaf PNG — white on dark */}
+      <img
+        src={oakLeafImg}
+        alt="UConn"
+        style={{
+          width: '34px',
+          height: '34px',
+          objectFit: 'contain',
+          display: 'block',
+          flexShrink: 0,
+          filter: 'invert(1)',
+          mixBlendMode: 'screen',
+          opacity: 0.92,
+        }}
       />
-      <path
-        d="M10.5 13v10M10.5 13h4.2a3 3 0 0 1 0 6h-4.2"
-        stroke="rgba(226,237,255,0.90)" strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round"
-      />
-      <path
-        d="M19.5 13v10M19.5 13h4a2.8 2.8 0 0 1 0 5.6H19.5M22.5 18.6 L26 23"
-        stroke="rgba(75,159,225,0.85)" strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round"
-      />
-    </svg>
+      {/* Wordmark */}
+      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+        <span style={{
+          fontFamily: 'Montserrat, sans-serif',
+          fontWeight: 900,
+          fontSize: '1.05rem',
+          color: 'rgba(255,255,255,0.97)',
+          letterSpacing: '-0.02em',
+        }}>
+          UCONN
+        </span>
+        <span style={{
+          fontFamily: 'Roboto Mono, monospace',
+          fontSize: '0.46rem',
+          color: 'rgba(255,255,255,0.36)',
+          letterSpacing: '0.18em',
+          textTransform: 'uppercase',
+          marginTop: '3px',
+        }}>
+          Peer Review
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Nav link ─────────────────────────────────────────────── */
+interface NavLinkProps {
+  to: string;
+  label: string;
+  badge?: number;
+}
+
+function TopNavLink({ to, label, badge }: NavLinkProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isActive = location.pathname === to || location.pathname.startsWith(to + '/');
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigate(to)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '0 22px',
+        height: '68px',
+        border: 'none',
+        borderBottom: isActive ? '2.5px solid #ffbc0e' : '2.5px solid transparent',
+        borderTop: '2.5px solid transparent',
+        background: 'transparent',
+        cursor: 'pointer',
+        color: isActive ? '#ffffff' : 'rgba(255,255,255,0.52)',
+        fontFamily: 'Montserrat, sans-serif',
+        fontSize: '0.90rem',
+        fontWeight: isActive ? 700 : 500,
+        letterSpacing: '0.01em',
+        whiteSpace: 'nowrap',
+        transition: 'color 0.18s ease, background 0.18s ease, border-color 0.22s ease',
+        position: 'relative',
+      }}
+      onMouseEnter={e => {
+        if (!isActive) {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.color = 'rgba(255,255,255,0.88)';
+          el.style.background = 'rgba(255,255,255,0.07)';
+          el.style.borderBottomColor = 'rgba(255,188,14,0.40)';
+        }
+      }}
+      onMouseLeave={e => {
+        if (!isActive) {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.color = 'rgba(255,255,255,0.52)';
+          el.style.background = 'transparent';
+          el.style.borderBottomColor = 'transparent';
+        }
+      }}
+    >
+      {label}
+      {badge !== undefined && badge > 0 && (
+        <span style={{
+          minWidth: '18px',
+          height: '18px',
+          borderRadius: '9px',
+          background: '#ffbc0e',
+          color: '#111113',
+          fontSize: '0.58rem',
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '0 5px',
+          fontFamily: 'Roboto Mono, monospace',
+          letterSpacing: '0',
+        }}>
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/* ── Circle icon button (Wooting-style, dark) ─────────────── */
+function CircleIconBtn({
+  icon,
+  onClick,
+  title,
+  danger = false,
+  label,
+}: {
+  icon: React.ReactNode;
+  onClick?: () => void;
+  title?: string;
+  danger?: boolean;
+  label?: string;
+}) {
+  const baseColor = danger ? 'rgba(255,100,120,0.65)' : label ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.48)';
+  const hoverColor = danger ? 'rgba(255,100,120,1)' : 'rgba(255,255,255,0.95)';
+  const baseBorder = danger ? 'rgba(255,100,120,0.22)' : 'rgba(255,255,255,0.14)';
+  const hoverBorder = danger ? 'rgba(255,100,120,0.50)' : 'rgba(255,255,255,0.30)';
+  const hoverBg = danger ? 'rgba(255,80,100,0.10)' : 'rgba(255,255,255,0.07)';
+
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      style={{
+        width: '40px',
+        height: '40px',
+        borderRadius: '50%',
+        border: `1.5px solid ${baseBorder}`,
+        background: 'transparent',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 0.18s ease, background 0.18s ease, color 0.18s ease',
+        color: baseColor,
+        flexShrink: 0,
+        fontFamily: 'Montserrat, sans-serif',
+        fontSize: '0.66rem',
+        fontWeight: 700,
+      }}
+      onMouseEnter={e => {
+        if (!onClick) return;
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.borderColor = hoverBorder;
+        el.style.background = hoverBg;
+        el.style.color = hoverColor;
+      }}
+      onMouseLeave={e => {
+        if (!onClick) return;
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.borderColor = baseBorder;
+        el.style.background = 'transparent';
+        el.style.color = baseColor;
+      }}
+    >
+      {label ?? icon}
+    </button>
   );
 }
 
@@ -36,72 +194,9 @@ function getInitials(name?: string): string {
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
-interface SidebarLinkProps {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-  open: boolean;
-  onClick?: () => void;
-}
-
-function SidebarNavLink({ to, icon, label, open, onClick }: SidebarLinkProps) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const isActive = location.pathname === to || location.pathname.startsWith(to + '/');
-
-  return (
-    <button
-      type="button"
-      onClick={() => { navigate(to); onClick?.(); }}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '10px',
-        width: '100%',
-        padding: '10px 10px',
-        borderRadius: '8px',
-        border: 'none',
-        cursor: 'pointer',
-        background: isActive ? 'rgba(75,159,225,0.12)' : 'transparent',
-        color: isActive ? 'var(--tech-blue)' : 'var(--text-secondary)',
-        transition: 'background 0.15s ease, color 0.15s ease',
-        textAlign: 'left',
-        fontFamily: 'Montserrat, sans-serif',
-        fontSize: '0.875rem',
-        fontWeight: isActive ? 600 : 400,
-      }}
-      onMouseEnter={e => {
-        if (!isActive) {
-          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(75,159,225,0.06)';
-          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
-        }
-      }}
-      onMouseLeave={e => {
-        if (!isActive) {
-          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
-        }
-      }}
-    >
-      <span style={{ flexShrink: 0, width: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {icon}
-      </span>
-      <motion.span
-        animate={{
-          display: open ? 'block' : 'none',
-          opacity: open ? 1 : 0,
-        }}
-        style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}
-      >
-        {label}
-      </motion.span>
-    </button>
-  );
-}
-
 export default function AppSidebar() {
-  const [open, setOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const navigate = useNavigate();
 
   const user: Partial<User> = (() => {
@@ -111,212 +206,224 @@ export default function AppSidebar() {
 
   const isInstructor = user.role === 'instructor' || user.role === 'admin';
 
+  useEffect(() => {
+    if (isInstructor) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    fetch('/api/me/assigned-reviews', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => { if (!res.ok) throw new Error('Failed'); return res.json(); })
+      .then((reviews: Array<{ status: string; week_open?: boolean }>) => {
+        const count = reviews.filter(r => r.status === 'PENDING' && r.week_open !== false).length;
+        setPendingCount(count);
+      })
+      .catch(() => { /* silently ignore */ });
+  }, [isInstructor]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     navigate('/login');
   };
 
-  const iconStyle = { width: 18, height: 18, strokeWidth: 1.8 };
+  interface NavItem { to: string; label: string; badge?: number; }
 
-  const studentLinks = [
-    { to: '/student/reviews', icon: <ClipboardList {...iconStyle} />, label: 'My Reviews' },
+  const studentLinks: NavItem[] = [
+    { to: '/student/overview', label: 'Overview' },
+    { to: '/student/reviews', label: 'My Reviews', badge: pendingCount },
+    { to: '/student/history', label: 'My Scores' },
   ];
 
-  const instructorLinks = [
-    { to: '/instructor/courses', icon: <LayoutDashboard {...iconStyle} />, label: 'Courses' },
+  const instructorLinks: NavItem[] = [
+    { to: '/instructor/overview', label: 'Overview' },
+    { to: '/instructor/courses', label: 'Courses' },
+    { to: '/instructor/analytics', label: 'Analytics' },
   ];
 
   const links = isInstructor ? instructorLinks : studentLinks;
+  const initials = getInitials(user.name ?? undefined);
+  const userTooltip = `${user.name ?? user.email ?? 'User'} · ${user.role ?? 'student'}`;
 
-  // ── Desktop Sidebar ──────────────────────────────────────
-  const DesktopSidebar = (
-    <motion.div
+  /* ── Dark Wooting-style Navbar ───────────────────────────── */
+  const DesktopNav = (
+    <nav
       className="hidden md:flex"
-      animate={{ width: open ? '220px' : '60px' }}
-      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
       style={{
-        height: '100vh',
-        flexDirection: 'column',
+        height: '68px',
         flexShrink: 0,
-        background: 'var(--surface-raised)',
-        borderRight: '1px solid var(--glass-border)',
-        overflow: 'hidden',
+        background: '#111113',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex' as const,
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 28px 0 24px',
         position: 'relative',
-        zIndex: 50,
+        zIndex: 100,
       }}
     >
-      {/* Logo */}
-      <div style={{ padding: '18px 12px', display: 'flex', alignItems: 'center', gap: '10px', borderBottom: '1px solid var(--glass-border)', flexShrink: 0 }}>
-        <div style={{ flexShrink: 0 }}>
-          <LogoMark size={32} />
-        </div>
-        <motion.div
-          animate={{ opacity: open ? 1 : 0, display: open ? 'block' : 'none' }}
-          style={{ whiteSpace: 'nowrap', overflow: 'hidden' }}
-        >
-          <div style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-            UConn <span style={{ color: 'var(--tech-blue)' }}>PR</span>
-          </div>
-          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase', marginTop: '1px' }}>
-            Peer Review
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Nav links */}
-      <div style={{ flex: 1, padding: '12px 8px', display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto', overflowX: 'hidden' }}>
-        {links.map(link => (
-          <SidebarNavLink key={link.to} {...link} open={open} />
-        ))}
-      </div>
-
-      {/* User section */}
-      <div style={{ padding: '12px 8px', borderTop: '1px solid var(--glass-border)', flexShrink: 0 }}>
-        {/* User info */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', marginBottom: '4px' }}>
-          <div style={{
-            width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
-            background: 'linear-gradient(135deg, var(--tech-blue), var(--uconn-orange))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.7rem', fontWeight: 700, color: '#fff', fontFamily: 'Montserrat, sans-serif',
-          }}>
-            {getInitials(user.name ?? undefined)}
-          </div>
-          <motion.div animate={{ opacity: open ? 1 : 0, display: open ? 'block' : 'none' }} style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'Montserrat, sans-serif' }}>
-              {user.name ?? user.email ?? 'User'}
-            </div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--tech-blue)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              {user.role ?? 'student'}
-            </div>
-          </motion.div>
+      {/* Left: Logo + nav links */}
+      <div style={{ display: 'flex', alignItems: 'center', height: '100%', gap: '0' }}>
+        {/* Logo */}
+        <div style={{
+          paddingRight: '36px',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          borderRight: '1px solid rgba(255,255,255,0.07)',
+          marginRight: '8px',
+        }}>
+          <NavLogo />
         </div>
 
-        {/* Logout */}
-        <button
-          type="button"
+        {/* Nav links — text only, Wooting-style */}
+        <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
+          {links.map(link => (
+            <TopNavLink key={link.to} {...link} />
+          ))}
+        </div>
+      </div>
+
+      {/* Right: circle icons */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* User avatar circle */}
+        <CircleIconBtn
+          icon={null}
+          label={initials}
+          title={userTooltip}
+        />
+
+        {/* Thin separator */}
+        <div style={{ width: '1px', height: '22px', background: 'rgba(255,255,255,0.10)' }} />
+
+        {/* Logout circle */}
+        <CircleIconBtn
+          icon={<LogOut width={16} height={16} strokeWidth={1.8} />}
+          title="Log out"
           onClick={handleLogout}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-            padding: '8px 10px', borderRadius: '8px', border: 'none',
-            cursor: 'pointer', background: 'transparent',
-            color: 'var(--danger)', transition: 'background 0.15s ease',
-            fontFamily: 'Montserrat, sans-serif', fontSize: '0.875rem',
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(224,92,92,0.08)'; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-        >
-          <LogOut width={18} height={18} strokeWidth={1.8} style={{ flexShrink: 0 }} />
-          <motion.span animate={{ opacity: open ? 1 : 0, display: open ? 'block' : 'none' }} style={{ whiteSpace: 'nowrap' }}>
-            Logout
-          </motion.span>
-        </button>
+          danger
+        />
       </div>
-    </motion.div>
+    </nav>
   );
 
-  // ── Mobile Top Bar ──────────────────────────────────────
+  /* ── Mobile Top Bar ─────────────────────────────────────── */
   const MobileBar = (
     <div
       className="flex md:hidden"
       style={{
-        height: '52px', flexShrink: 0,
-        background: 'var(--surface-raised)',
-        borderBottom: '1px solid var(--glass-border)',
-        alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 16px', zIndex: 50,
+        height: '52px',
+        flexShrink: 0,
+        background: '#111113',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        zIndex: 100,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <LogoMark size={28} />
-        <span style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-          UConn <span style={{ color: 'var(--tech-blue)' }}>PR</span>
-        </span>
-      </div>
+      <NavLogo />
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.55)', padding: '4px' }}
       >
-        <Menu width={22} height={22} />
+        <Menu width={20} height={20} strokeWidth={1.8} />
       </button>
 
-      {/* Mobile Drawer */}
-      {mobileOpen && (
-        <motion.div
-          initial={{ x: '-100%', opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: '-100%', opacity: 0 }}
-          transition={{ duration: 0.28, ease: 'easeInOut' }}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 200,
-            background: 'var(--surface-page)',
-            display: 'flex', flexDirection: 'column',
-            padding: '24px 20px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <LogoMark size={32} />
-              <span style={{ fontFamily: 'Montserrat, sans-serif', fontWeight: 700, fontSize: '1rem', color: 'var(--text-primary)' }}>
-                UConn <span style={{ color: 'var(--tech-blue)' }}>PR</span>
-              </span>
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ x: '-100%', opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '-100%', opacity: 0 }}
+            transition={{ duration: 0.26, ease: 'easeInOut' }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: '#111113',
+              display: 'flex', flexDirection: 'column',
+              padding: '20px 16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
+              <NavLogo />
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.40)', padding: '4px' }}
+              >
+                <X width={20} height={20} strokeWidth={1.8} />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setMobileOpen(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)' }}
-            >
-              <X width={22} height={22} />
-            </button>
-          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
-            {links.map(link => (
-              <SidebarNavLink key={link.to} {...link} open={true} onClick={() => setMobileOpen(false)} />
-            ))}
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', marginBottom: '8px' }}>
-              <div style={{
-                width: '36px', height: '36px', borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--tech-blue), var(--uconn-orange))',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '0.8rem', fontWeight: 700, color: '#fff',
-              }}>
-                {getInitials(user.name ?? undefined)}
-              </div>
-              <div>
-                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{user.name ?? user.email ?? 'User'}</div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--tech-blue)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{user.role}</div>
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
+              {links.map(link => (
+                <button
+                  key={link.to}
+                  type="button"
+                  onClick={() => { navigate(link.to); setMobileOpen(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '13px 14px', borderRadius: '8px', border: 'none',
+                    background: 'transparent', color: 'rgba(255,255,255,0.58)',
+                    fontFamily: 'Montserrat, sans-serif', fontSize: '0.92rem',
+                    fontWeight: 500, cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  {link.label}
+                  {link.badge !== undefined && link.badge > 0 && (
+                    <span style={{ marginLeft: 'auto', background: '#ffbc0e', color: '#111113', borderRadius: '8px', fontSize: '0.66rem', fontWeight: 700, padding: '2px 7px' }}>
+                      {link.badge > 9 ? '9+' : link.badge}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                background: 'rgba(224,92,92,0.08)', color: 'var(--danger)',
-                fontFamily: 'Montserrat, sans-serif', fontSize: '0.9rem',
-              }}
-            >
-              <LogOut width={18} height={18} />
-              Logout
-            </button>
-          </div>
-        </motion.div>
-      )}
+
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px', marginBottom: '8px' }}>
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%',
+                  border: '1.5px solid rgba(255,255,255,0.20)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.60rem', fontWeight: 700, color: 'rgba(255,255,255,0.85)',
+                  fontFamily: 'Montserrat, sans-serif', flexShrink: 0,
+                }}>
+                  {initials}
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'rgba(255,255,255,0.90)', fontFamily: 'Montserrat, sans-serif' }}>
+                    {user.name ?? user.email ?? 'User'}
+                  </div>
+                  <div style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.32)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'Roboto Mono, monospace' }}>
+                    {user.role}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                  padding: '10px 14px', borderRadius: '8px', border: '1px solid rgba(255,100,120,0.22)',
+                  cursor: 'pointer', background: 'rgba(255,80,100,0.08)',
+                  color: 'rgba(255,100,120,0.75)', fontFamily: 'Montserrat, sans-serif', fontSize: '0.88rem',
+                }}
+              >
+                <LogOut width={16} height={16} strokeWidth={1.8} />
+                Log out
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 
   return (
     <>
-      {DesktopSidebar}
+      {DesktopNav}
       {MobileBar}
     </>
   );

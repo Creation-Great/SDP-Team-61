@@ -1,17 +1,22 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AppSidebar from './components/AppSidebar';
 import { InfiniteGridBackground } from './components/ui/the-infinite-grid';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import InstructorRoute from './components/InstructorRoute';
 import StudentRoute from './components/StudentRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import InstructorOverviewPage from './pages/InstructorOverviewPage';
 import InstructorCoursesPage from './pages/InstructorCoursesPage';
 import InstructorCourseDetailPage from './pages/InstructorCourseDetailPage';
 import InstructorWeekDetailPage from './pages/InstructorWeekDetailPage';
+import InstructorAnalyticsPage from './pages/InstructorAnalyticsPage';
+import StudentOverviewPage from './pages/StudentOverviewPage';
 import StudentReviewsPage from './pages/StudentReviewsPage';
 import StudentWeekPage from './pages/StudentWeekPage';
 import StudentReviewFormPage from './pages/StudentReviewFormPage';
+import StudentHistoryPage from './pages/StudentHistoryPage';
 import type { UserRole } from './types';
 
 interface AppLayoutProps {
@@ -20,22 +25,22 @@ interface AppLayoutProps {
 
 function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
       <AppSidebar />
       <div
         style={{
           flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
           overflow: 'hidden',
           position: 'relative',
-          minWidth: 0,
+          minHeight: 0,
         }}
       >
         <InfiniteGridBackground />
-        <main style={{ flex: 1, overflowY: 'auto', position: 'relative', zIndex: 1 }}>
-          <div style={{ padding: '36px 40px', maxWidth: '1200px', margin: '0 auto' }}>
-            {children}
+        <main style={{ height: '100%', overflowY: 'auto', position: 'relative', zIndex: 1 }}>
+          <div style={{ padding: '36px 40px', maxWidth: '1360px', margin: '0 auto' }}>
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
           </div>
         </main>
       </div>
@@ -57,9 +62,9 @@ function RootRedirect() {
   } catch { }
 
   if (role === 'instructor' || role === 'admin') {
-    return <Navigate to="/instructor/courses" replace />;
+    return <Navigate to="/instructor/overview" replace />;
   }
-  return <Navigate to="/student/reviews" replace />;
+  return <Navigate to="/student/overview" replace />;
 }
 
 export default function App() {
@@ -73,6 +78,18 @@ export default function App() {
       <Route path="/" element={<RootRedirect />} />
 
       {/* Instructor routes */}
+      <Route
+        path="/instructor/overview"
+        element={
+          <ProtectedRoute>
+            <InstructorRoute>
+              <AppLayout>
+                <InstructorOverviewPage />
+              </AppLayout>
+            </InstructorRoute>
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/instructor/courses"
         element={
@@ -98,6 +115,18 @@ export default function App() {
         }
       />
       <Route
+        path="/instructor/analytics"
+        element={
+          <ProtectedRoute>
+            <InstructorRoute>
+              <AppLayout>
+                <InstructorAnalyticsPage />
+              </AppLayout>
+            </InstructorRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/instructor/courses/:courseId/weeks/:weekId"
         element={
           <ProtectedRoute>
@@ -111,6 +140,18 @@ export default function App() {
       />
 
       {/* Student routes */}
+      <Route
+        path="/student/overview"
+        element={
+          <ProtectedRoute>
+            <StudentRoute>
+              <AppLayout>
+                <StudentOverviewPage />
+              </AppLayout>
+            </StudentRoute>
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/student/reviews"
         element={
@@ -142,6 +183,19 @@ export default function App() {
             <StudentRoute>
               <AppLayout>
                 <StudentReviewFormPage />
+              </AppLayout>
+            </StudentRoute>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/student/history"
+        element={
+          <ProtectedRoute>
+            <StudentRoute>
+              <AppLayout>
+                <StudentHistoryPage />
               </AppLayout>
             </StudentRoute>
           </ProtectedRoute>

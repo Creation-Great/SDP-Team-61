@@ -1,30 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CheckCircle, Send } from 'lucide-react';
 import type { AssignmentForm } from '../types';
+import { apiFetch } from '../utils/api';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { useToast } from '../components/ToastProvider';
 
-function getToken() { return localStorage.getItem('token') || ''; }
+const SCORE_LABELS = ['Poor', 'Below Avg', 'Average', 'Good', 'Excellent'];
 
-async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
-      ...(opts?.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any).message || `HTTP ${res.status}`);
-  }
-  return res.json();
+function getDraftKey(assignmentId: string) {
+  return `review-draft-${assignmentId}`;
 }
 
 export default function StudentReviewFormPage() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [form, setForm] = useState<AssignmentForm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,6 +28,28 @@ export default function StudentReviewFormPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
+  // Confirmation dialog state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Auto-save debounce ref
+  const commentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Save draft to localStorage
+  const saveDraft = useCallback((s: Record<string, number>, c: string) => {
+    if (!assignmentId) return;
+    try {
+      localStorage.setItem(getDraftKey(assignmentId), JSON.stringify({ scores: s, comment: c }));
+    } catch { /* localStorage full or unavailable */ }
+  }, [assignmentId]);
+
+  // Clear draft from localStorage
+  const clearDraft = useCallback(() => {
+    if (!assignmentId) return;
+    try {
+      localStorage.removeItem(getDraftKey(assignmentId));
+    } catch { /* ignore */ }
+  }, [assignmentId]);
+
   useEffect(() => {
     if (!assignmentId) return;
     apiFetch<AssignmentForm>(`/assignments/${assignmentId}/form`)
@@ -46,13 +60,61 @@ export default function StudentReviewFormPage() {
         for (const cat of data.categories) {
           initial[cat] = 0;
         }
+
+        // Restore draft if form is PENDING
+        if (data.status === 'PENDING') {
+          try {
+            const raw = localStorage.getItem(getDraftKey(assignmentId));
+            if (raw) {
+              const draft = JSON.parse(raw);
+              if (draft && typeof draft.scores === 'object') {
+                // Only restore scores for categories that exist in the form
+                for (const cat of data.categories) {
+                  if (typeof draft.scores[cat] === 'number' && draft.scores[cat] >= 1 && draft.scores[cat] <= 5) {
+                    initial[cat] = draft.scores[cat];
+                  }
+                }
+              }
+              if (draft && typeof draft.comment === 'string') {
+                setComment(draft.comment);
+              }
+            }
+          } catch { /* corrupted draft, ignore */ }
+        }
+
         setScores(initial);
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, [assignmentId]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  // Handle score click -- save draft immediately
+  function handleScoreClick(cat: string, val: number) {
+    setScores(prev => {
+      const next = { ...prev, [cat]: val };
+      saveDraft(next, comment);
+      return next;
+    });
+  }
+
+  // Handle comment change -- debounced draft save
+  function handleCommentChange(value: string) {
+    setComment(value);
+    if (commentTimerRef.current) clearTimeout(commentTimerRef.current);
+    commentTimerRef.current = setTimeout(() => {
+      saveDraft(scores, value);
+    }, 500);
+  }
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (commentTimerRef.current) clearTimeout(commentTimerRef.current);
+    };
+  }, []);
+
+  // Intercept form submit -- show confirmation
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitError(null);
 
@@ -69,15 +131,25 @@ export default function StudentReviewFormPage() {
       return;
     }
 
+    // Open confirmation dialog
+    setConfirmOpen(true);
+  }
+
+  // Actual submit after confirmation
+  async function doSubmit() {
+    setConfirmOpen(false);
     setSubmitting(true);
     try {
       await apiFetch(`/assignments/${assignmentId}/submit`, {
         method: 'POST',
         body: JSON.stringify({ scores, comment: comment.trim() }),
       });
+      clearDraft();
       setSubmitted(true);
+      addToast({ type: 'success', title: 'Review Submitted', message: `Your review for ${form?.reviewee_name} has been submitted.` });
     } catch (e: any) {
       setSubmitError(e.message);
+      addToast({ type: 'error', title: 'Submission Failed', message: e.message });
     } finally {
       setSubmitting(false);
     }
@@ -176,40 +248,51 @@ export default function StudentReviewFormPage() {
                 {[1, 2, 3, 4, 5].map(val => {
                   const selected = scores[cat] === val;
                   return (
-                    <button
-                      key={val}
-                      type="button"
-                      onClick={() => setScores(prev => ({ ...prev, [cat]: val }))}
-                      style={{
-                        width: '48px', height: '48px',
-                        borderRadius: '8px',
-                        border: selected ? '2px solid var(--tech-blue)' : '1px solid var(--glass-border)',
-                        background: selected ? 'rgba(75,159,225,0.18)' : 'var(--surface-input)',
-                        color: selected ? 'var(--tech-blue)' : 'var(--text-secondary)',
+                    <div key={val} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleScoreClick(cat, val)}
+                        style={{
+                          width: '48px', height: '48px',
+                          borderRadius: '4px',
+                          border: selected ? '2px solid var(--tech-blue)' : '1px solid var(--glass-border)',
+                          background: selected ? 'rgba(75,159,225,0.18)' : 'var(--surface-input)',
+                          color: selected ? 'var(--tech-blue)' : 'var(--text-secondary)',
+                          fontFamily: 'Roboto Mono, monospace',
+                          fontWeight: selected ? 700 : 400,
+                          fontSize: '1rem',
+                          cursor: 'pointer',
+                          transition: 'border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s cubic-bezier(0.34,1.56,0.64,1)',
+                          transform: selected ? 'scale(1.1)' : 'scale(1)',
+                        }}
+                        onMouseEnter={e => {
+                          if (!selected) {
+                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--glass-border-hover)';
+                            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          if (!selected) {
+                            (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--glass-border)';
+                            (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
+                          }
+                        }}
+                        aria-pressed={selected}
+                        aria-label={`Score ${val} for ${cat}`}
+                      >
+                        {val}
+                      </button>
+                      <span style={{
+                        fontSize: '0.6rem',
+                        color: 'var(--text-muted)',
+                        marginTop: '4px',
+                        textAlign: 'center',
                         fontFamily: 'Roboto Mono, monospace',
-                        fontWeight: selected ? 700 : 400,
-                        fontSize: '1rem',
-                        cursor: 'pointer',
-                        transition: 'border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.12s cubic-bezier(0.34,1.56,0.64,1)',
-                        transform: selected ? 'scale(1.1)' : 'scale(1)',
-                      }}
-                      onMouseEnter={e => {
-                        if (!selected) {
-                          (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--glass-border-hover)';
-                          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
-                        }
-                      }}
-                      onMouseLeave={e => {
-                        if (!selected) {
-                          (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--glass-border)';
-                          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
-                        }
-                      }}
-                      aria-pressed={selected}
-                      aria-label={`Score ${val} for ${cat}`}
-                    >
-                      {val}
-                    </button>
+                        lineHeight: 1.2,
+                      }}>
+                        {SCORE_LABELS[val - 1]}
+                      </span>
+                    </div>
                   );
                 })}
               </div>
@@ -223,7 +306,7 @@ export default function StudentReviewFormPage() {
             </p>
             <textarea
               value={comment}
-              onChange={e => setComment(e.target.value)}
+              onChange={e => handleCommentChange(e.target.value)}
               placeholder={`Write your feedback for ${form?.reviewee_name}...`}
               required
               rows={5}
@@ -231,7 +314,7 @@ export default function StudentReviewFormPage() {
                 width: '100%',
                 background: 'var(--surface-input)',
                 border: '1px solid var(--glass-border)',
-                borderRadius: '8px',
+                borderRadius: '4px',
                 padding: '12px 14px',
                 color: 'var(--text-primary)',
                 fontFamily: 'Roboto Mono, monospace',
@@ -248,7 +331,7 @@ export default function StudentReviewFormPage() {
 
           {/* Submit error */}
           {submitError && (
-            <div style={{ background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '8px', padding: '12px 16px', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.8rem', marginBottom: '16px' }}>
+            <div style={{ background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '4px', padding: '12px 16px', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.8rem', marginBottom: '16px' }}>
               {submitError}
             </div>
           )}
@@ -264,6 +347,55 @@ export default function StudentReviewFormPage() {
           </button>
         </form>
       </div>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Confirm Submission"
+        message="Please review your scores before submitting:"
+        confirmLabel="Submit Review"
+        cancelLabel="Go Back"
+        onConfirm={doSubmit}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+          {form?.categories.map(cat => (
+            <div
+              key={cat}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '8px 12px',
+                background: 'var(--surface-input)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '4px',
+              }}
+            >
+              <span style={{ fontFamily: 'Roboto Mono, monospace', fontSize: '0.78rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                {cat}
+              </span>
+              <span style={{ fontFamily: 'Roboto Mono, monospace', fontSize: '0.82rem', fontWeight: 700, color: 'var(--tech-blue)' }}>
+                {scores[cat]} — {SCORE_LABELS[(scores[cat] || 1) - 1]}
+              </span>
+            </div>
+          ))}
+          {comment.trim() && (
+            <div style={{
+              padding: '8px 12px',
+              background: 'var(--surface-input)',
+              border: '1px solid var(--glass-border)',
+              borderRadius: '4px',
+              marginTop: '4px',
+            }}>
+              <span style={{ fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                Comment
+              </span>
+              <span style={{ fontFamily: 'Roboto Mono, monospace', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {comment.trim().length > 200 ? comment.trim().slice(0, 200) + '...' : comment.trim()}
+              </span>
+            </div>
+          )}
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }

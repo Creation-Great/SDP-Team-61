@@ -44,6 +44,38 @@ export async function getAssignedReviews(req: AuthRequest, res: Response): Promi
 }
 
 /**
+ * GET /me/received-reviews
+ * Anonymized received review aggregates for the current user.
+ * Only returns data for closed weeks (closes_at < now()).
+ */
+export async function getReceivedReviews(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const { user_id } = req.user;
+
+    const reviews = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT w.week_id, w.week_number, c.name AS course_name,
+                wsa.avg_overall, wsa.per_category_json, wsa.n_reviews
+         FROM week_students ws
+         LEFT JOIN week_student_aggregates wsa ON wsa.reviewee_week_student_id = ws.id AND wsa.week_id = ws.week_id
+         JOIN weeks w ON w.week_id = ws.week_id
+         JOIN courses c ON c.course_id = w.course_id
+         WHERE ws.user_id = $1
+           AND w.closes_at < now()
+         ORDER BY w.closes_at DESC`,
+        [user_id]
+      );
+      return r.rows;
+    });
+
+    res.json(reviews);
+  } catch (err) {
+    console.error('getReceivedReviews error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to fetch received reviews' });
+  }
+}
+
+/**
  * GET /me/weeks/:weekId/assignments
  * All review assignments for current user in a specific week.
  */
@@ -52,16 +84,22 @@ export async function getWeekAssignments(req: AuthRequest, res: Response): Promi
     const { user_id } = req.user;
     const { weekId } = req.params;
 
-    const assignments = await withDbNoRLS(async (client) => {
+    const result = await withDbNoRLS(async (client) => {
       const r = await client.query(
         `SELECT
            ra.assignment_id,
            ra.status,
            ws.full_name AS reviewee_name,
            ws.team_key,
-           ra.week_id
+           ra.week_id,
+           w.week_number,
+           w.closes_at,
+           c.name AS course_name,
+           (w.closes_at > now()) AS week_is_open
          FROM review_assignments ra
          JOIN week_students ws ON ws.id = ra.reviewee_week_student_id
+         JOIN weeks w ON w.week_id = ra.week_id
+         JOIN courses c ON c.course_id = w.course_id
          WHERE ra.reviewer_user_id = $1 AND ra.week_id = $2
          ORDER BY ws.full_name`,
         [user_id, weekId]
@@ -69,7 +107,7 @@ export async function getWeekAssignments(req: AuthRequest, res: Response): Promi
       return r.rows;
     });
 
-    res.json(assignments);
+    res.json(result);
   } catch (err) {
     console.error('getWeekAssignments error:', err);
     res.status(500).json({ error: 'internal_error', message: 'Failed to fetch assignments' });

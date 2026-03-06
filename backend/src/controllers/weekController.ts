@@ -63,7 +63,7 @@ async function snapshotStudentsForTeams(
       const wsResult = await client.query(
         `INSERT INTO week_students (week_id, team_key, full_name, netid_guess, user_id)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT DO NOTHING
+         ON CONFLICT (week_id, team_key, netid_guess) DO NOTHING
          RETURNING id`,
         [weekId, teamKey, s.full_name, s.netid_guess, userId]
       );
@@ -223,7 +223,7 @@ export async function createWeek(req: AuthRequest, res: Response): Promise<void>
 
           // Add to week_teams
           await client.query(
-            `INSERT INTO week_teams (week_id, team_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            `INSERT INTO week_teams (week_id, team_key) VALUES ($1, $2) ON CONFLICT (week_id, team_key) DO NOTHING`,
             [existingWeekId, tk]
           );
 
@@ -276,15 +276,9 @@ export async function createWeek(req: AuthRequest, res: Response): Promise<void>
       );
       const week: { week_id: string; week_number: number; opens_at: Date; closes_at: Date; scope_type: string } = weekResult.rows[0];
 
-      // If TEAM scope, insert into week_teams junction
+      // Get teams to snapshot and insert into week_teams junction
       let teamsToSnapshot: string[];
       if (scopeType === 'TEAM') {
-        for (const tk of teamKeys as string[]) {
-          await client.query(
-            `INSERT INTO week_teams (week_id, team_key) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-            [week.week_id, tk]
-          );
-        }
         teamsToSnapshot = teamKeys as string[];
       } else {
         // ALL scope: get all distinct team_keys in this course
@@ -296,6 +290,13 @@ export async function createWeek(req: AuthRequest, res: Response): Promise<void>
           [courseId]
         );
         teamsToSnapshot = allTeamsResult.rows.map((r: any) => r.team_key);
+      }
+      // Insert all teams into week_teams junction (for both scope types)
+      for (const tk of teamsToSnapshot) {
+        await client.query(
+          `INSERT INTO week_teams (week_id, team_key) VALUES ($1, $2) ON CONFLICT (week_id, team_key) DO NOTHING`,
+          [week.week_id, tk]
+        );
       }
 
       // Snapshot students and categories
@@ -328,6 +329,64 @@ export async function createWeek(req: AuthRequest, res: Response): Promise<void>
     }
     console.error('createWeek error:', err);
     res.status(500).json({ error: 'internal_error', message: 'Failed to create week' });
+  }
+}
+
+/**
+ * PATCH /courses/:courseId/weeks/:weekId
+ * Update a week's closes_at timestamp. Instructor only.
+ */
+export async function updateWeek(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user.role !== 'instructor' && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Instructors only' });
+      return;
+    }
+
+    const { courseId, weekId } = req.params;
+    const { closes_at } = req.body;
+
+    if (!closes_at) {
+      res.status(400).json({ error: 'validation', message: 'closes_at is required' });
+      return;
+    }
+
+    const parsedDate = new Date(closes_at);
+    if (isNaN(parsedDate.getTime())) {
+      res.status(400).json({ error: 'validation', message: 'closes_at must be a valid ISO 8601 date' });
+      return;
+    }
+
+    const result = await withDbNoRLS(async (client) => {
+      // Verify instructor owns this course
+      const courseCheck = await client.query(
+        `SELECT course_id FROM courses WHERE course_id = $1 AND instructor_user_id = $2`,
+        [courseId, req.user.user_id]
+      );
+      if (courseCheck.rows.length === 0 && req.user.role !== 'admin') {
+        throw { status: 403, message: 'Not your course' };
+      }
+
+      const r = await client.query(
+        `UPDATE weeks SET closes_at = $1 WHERE week_id = $2 AND course_id = $3 RETURNING *`,
+        [parsedDate.toISOString(), weekId, courseId]
+      );
+
+      if (r.rows.length === 0) {
+        throw { status: 404, message: 'Week not found' };
+      }
+
+      return r.rows[0];
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    if (err.status) {
+      res.status(err.status).json({ error: 'validation', message: err.message });
+      return;
+    }
+    console.error('updateWeek error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to update week' });
   }
 }
 
@@ -382,12 +441,13 @@ export async function getWeekStatus(req: AuthRequest, res: Response): Promise<vo
            ws.full_name,
            ws.team_key,
            ws.netid_guess,
+           ws.user_id,
            COUNT(ra.assignment_id) FILTER (WHERE ra.status != 'CANCELLED') AS total_assignments,
            COUNT(ra.assignment_id) FILTER (WHERE ra.status = 'SUBMITTED') AS submitted_assignments
          FROM week_students ws
          LEFT JOIN review_assignments ra ON ra.reviewer_user_id = ws.user_id AND ra.week_id = ws.week_id
          WHERE ws.week_id = $1
-         GROUP BY ws.id, ws.full_name, ws.team_key, ws.netid_guess
+         GROUP BY ws.id, ws.full_name, ws.team_key, ws.netid_guess, ws.user_id
          ORDER BY ws.team_key, ws.full_name`,
         [weekId]
       );
@@ -439,6 +499,234 @@ export async function getWeekAnalytics(req: AuthRequest, res: Response): Promise
   } catch (err) {
     console.error('getWeekAnalytics error:', err);
     res.status(500).json({ error: 'internal_error', message: 'Failed to get analytics' });
+  }
+}
+
+/**
+ * GET /courses/:courseId/weeks/:weekId/export
+ * Export week analytics as CSV. Instructor only.
+ */
+export async function exportWeekCsv(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user.role !== 'instructor' && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Instructors only' });
+      return;
+    }
+
+    const { courseId, weekId } = req.params;
+
+    // Verify instructor owns this course
+    const courseCheck = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT course_id FROM courses WHERE course_id = $1 AND instructor_user_id = $2`,
+        [courseId, req.user.user_id]
+      );
+      return r.rows[0] || null;
+    });
+
+    if (!courseCheck && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Not your course' });
+      return;
+    }
+
+    const data = await withDbNoRLS(async (client) => {
+      // Get week number
+      const weekResult = await client.query(
+        `SELECT week_number FROM weeks WHERE week_id = $1 AND course_id = $2`,
+        [weekId, courseId]
+      );
+      if (weekResult.rows.length === 0) {
+        throw { status: 404, message: 'Week not found' };
+      }
+      const weekNumber = weekResult.rows[0].week_number;
+
+      // Get categories for this week
+      const catResult = await client.query(
+        `SELECT label FROM week_categories WHERE week_id = $1 ORDER BY sort_order`,
+        [weekId]
+      );
+      const categories = catResult.rows.map((r: any) => r.label);
+
+      // Get student analytics
+      const studentsResult = await client.query(
+        `SELECT ws.full_name, ws.team_key,
+                wsa.avg_overall, wsa.per_category_json, wsa.n_reviews
+         FROM week_student_aggregates wsa
+         JOIN week_students ws ON ws.id = wsa.reviewee_week_student_id
+         WHERE wsa.week_id = $1
+         ORDER BY ws.team_key, ws.full_name`,
+        [weekId]
+      );
+
+      return { weekNumber, categories, students: studentsResult.rows };
+    });
+
+    const { weekNumber, categories, students } = data;
+
+    // Set CSV headers
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="week-${weekNumber}-analytics.csv"`);
+
+    // Write header row
+    const headerCols = ['Student Name', 'Team', 'Overall Avg', ...categories, 'Review Count'];
+    res.write(headerCols.map(escapeCsvField).join(',') + '\n');
+
+    // Write data rows
+    for (const student of students) {
+      const perCategory = student.per_category_json || {};
+      const row = [
+        student.full_name,
+        student.team_key,
+        student.avg_overall != null ? Number(student.avg_overall).toFixed(2) : '',
+        ...categories.map((cat: string) => perCategory[cat] != null ? Number(perCategory[cat]).toFixed(2) : ''),
+        student.n_reviews != null ? String(student.n_reviews) : '0',
+      ];
+      res.write(row.map(escapeCsvField).join(',') + '\n');
+    }
+
+    res.end();
+  } catch (err: any) {
+    if (err.status) {
+      res.status(err.status).json({ error: 'validation', message: err.message });
+      return;
+    }
+    console.error('exportWeekCsv error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to export CSV' });
+  }
+}
+
+/** Escape a CSV field value (wrap in quotes if it contains comma, quote, or newline). */
+function escapeCsvField(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return '"' + value.replace(/"/g, '""') + '"';
+  }
+  return value;
+}
+
+/**
+ * GET /courses/:courseId/weeks/:weekId/quality-flags
+ * Get quality flag issues for a week. Instructor only.
+ */
+export async function getQualityFlags(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user.role !== 'instructor' && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Instructors only' });
+      return;
+    }
+
+    const { courseId, weekId } = req.params;
+
+    // Verify instructor owns this course
+    const courseCheck = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT course_id FROM courses WHERE course_id = $1 AND instructor_user_id = $2`,
+        [courseId, req.user.user_id]
+      );
+      return r.rows[0] || null;
+    });
+
+    if (!courseCheck && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Not your course' });
+      return;
+    }
+
+    const flags = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT
+           u.name AS reviewer_name,
+           ws.full_name AS reviewee_name,
+           rsub.submitted_at,
+           rsub.comment_text,
+           count(DISTINCT rsc.score_int) AS distinct_scores
+         FROM review_assignments ra
+         JOIN review_submissions rsub ON rsub.assignment_id = ra.assignment_id
+         JOIN review_scores rsc ON rsc.submission_id = rsub.submission_id
+         JOIN week_students ws ON ws.id = ra.reviewee_week_student_id
+         JOIN users u ON u.user_id = ra.reviewer_user_id
+         WHERE ra.week_id = $1
+           AND ra.status = 'SUBMITTED'
+         GROUP BY ra.assignment_id, u.name, ws.full_name, rsub.submitted_at, rsub.comment_text
+         HAVING count(DISTINCT rsc.score_int) = 1
+            OR char_length(COALESCE(rsub.comment_text, '')) < 20`,
+        [weekId]
+      );
+
+      return r.rows.map((row: any) => {
+        const reasons: string[] = [];
+        if (Number(row.distinct_scores) === 1) {
+          reasons.push('Identical scores');
+        }
+        if ((row.comment_text || '').length < 20) {
+          reasons.push('Short comment');
+        }
+        return {
+          reviewer_name: row.reviewer_name,
+          reviewee_name: row.reviewee_name,
+          flag_reason: reasons.join(', '),
+          submitted_at: row.submitted_at,
+        };
+      });
+    });
+
+    res.json(flags);
+  } catch (err) {
+    console.error('getQualityFlags error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to get quality flags' });
+  }
+}
+
+/**
+ * GET /courses/:courseId/weeks/:weekId/students/:weekStudentId/reviews
+ * Get individual reviews for a specific student in a week. Instructor only.
+ */
+export async function getStudentReviews(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    if (req.user.role !== 'instructor' && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Instructors only' });
+      return;
+    }
+
+    const { courseId, weekId, weekStudentId } = req.params;
+
+    // Verify instructor owns this course
+    const courseCheck = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT course_id FROM courses WHERE course_id = $1 AND instructor_user_id = $2`,
+        [courseId, req.user.user_id]
+      );
+      return r.rows[0] || null;
+    });
+
+    if (!courseCheck && req.user.role !== 'admin') {
+      res.status(403).json({ error: 'forbidden', message: 'Not your course' });
+      return;
+    }
+
+    const reviews = await withDbNoRLS(async (client) => {
+      const r = await client.query(
+        `SELECT u.name AS reviewer_name,
+                rsub.comment_text AS comment,
+                rsub.submitted_at,
+                json_object_agg(wc.label, rsc.score_int ORDER BY wc.sort_order) AS scores
+         FROM review_assignments ra
+         JOIN review_submissions rsub ON rsub.assignment_id = ra.assignment_id
+         JOIN review_scores rsc ON rsc.submission_id = rsub.submission_id
+         JOIN week_categories wc ON wc.id = rsc.week_category_id
+         JOIN users u ON u.user_id = ra.reviewer_user_id
+         WHERE ra.reviewee_week_student_id = $1
+           AND ra.week_id = $2
+           AND ra.status = 'SUBMITTED'
+         GROUP BY ra.assignment_id, u.name, rsub.comment_text, rsub.submitted_at
+         ORDER BY rsub.submitted_at DESC`,
+        [weekStudentId, weekId]
+      );
+      return r.rows;
+    });
+
+    res.json(reviews);
+  } catch (err) {
+    console.error('getStudentReviews error:', err);
+    res.status(500).json({ error: 'internal_error', message: 'Failed to get student reviews' });
   }
 }
 

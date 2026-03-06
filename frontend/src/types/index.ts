@@ -64,6 +64,7 @@ export interface WeekStatusRow {
   full_name: string;
   team_key: string;
   netid_guess: string;
+  user_id: string | null;
   total_assignments: number;
   submitted_assignments: number;
 }
@@ -100,6 +101,68 @@ export interface StudentAggregate {
 
 export interface TeamAggregate {
   team_key: string;
+  avg_overall: number | null;
+  per_category_json: Record<string, number>;
+  n_reviews: number;
+}
+
+// Phase 3: Course with stats
+export interface CourseWithStats extends Course {
+  student_count: number;
+  active_week_count: number;
+  total_assignments: number;
+  submitted_assignments: number;
+  // Roster-based completion: students who fully submitted in closed weeks vs total slots
+  completed_students_in_closed_weeks: number;
+  total_students_in_closed_weeks: number;
+}
+
+// Phase 3b: CSV diff preview
+export interface CsvDiffPreview {
+  added: Array<{ team_key: string; students: string[] }>;
+  removed: Array<{ team_key: string; students: string[] }>;
+  unchanged: Array<{ team_key: string; count: number }>;
+}
+
+// Phase 4c: Quality flags
+export interface QualityFlag {
+  reviewer_name: string;
+  reviewee_name: string;
+  flag_reason: string;
+  submitted_at: string;
+}
+
+// Phase 4d: Student review drilldown
+export interface StudentReviewDetail {
+  reviewer_name: string;
+  scores: Record<string, number>;
+  comment: string;
+  submitted_at: string;
+}
+
+// Team Analytics
+export interface TeamAnalyticsRow {
+  team_key: string;
+  week_number: number;
+  week_id: string;
+  avg_overall: number | null;
+  per_category_json: Record<string, number>;
+  n_reviews: number;
+  total_students: number;
+  submitted_students: number;
+}
+
+export interface CourseTeamAnalytics {
+  teams: string[];
+  categories: string[];
+  rows: TeamAnalyticsRow[];
+}
+
+// Phase 5: Received reviews (student history)
+export interface ReceivedReview {
+  week_id: string;
+  week_number: number;
+  course_name: string;
   avg_overall: number | null;
   per_category_json: Record<string, number>;
   n_reviews: number;

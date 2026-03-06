@@ -6,8 +6,10 @@ import {
   listCourses,
   getCourseById,
   uploadDefinition,
+  previewDefinition,
   getCurrentDefinition,
   listDefinitions,
+  getCourseTeamAnalytics,
 } from '../controllers/courseController.js';
 import weekRoutes from './weekRoutes.js';
 
@@ -19,8 +21,10 @@ router.post('/', createCourse as any);
 router.get('/', listCourses as any);
 router.get('/:courseId', getCourseById as any);
 router.post('/:courseId/definition/upload', csvUpload.single('file'), uploadDefinition as any);
+router.post('/:courseId/definition/preview', csvUpload.single('file'), previewDefinition as any);
 router.get('/:courseId/definition/current', getCurrentDefinition as any);
 router.get('/:courseId/definitions', listDefinitions as any);
+router.get('/:courseId/team-analytics', getCourseTeamAnalytics as any);
 
 // Nested week routes
 router.use('/:courseId/weeks', weekRoutes);

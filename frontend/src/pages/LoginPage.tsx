@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import type { UserRole } from '../types';
+import oakLeafImg from '../../brand_assets/oak-leaf1.png';
 
 function LogoMark({ size = 36 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M18 2.5 L31 9.75 L31 26.25 L18 33.5 L5 26.25 L5 9.75 Z"
-        stroke="rgba(75,159,225,0.50)" strokeWidth="1.4" fill="rgba(75,159,225,0.08)"
-      />
-      <path
-        d="M10.5 13v10M10.5 13h4.2a3 3 0 0 1 0 6h-4.2"
-        stroke="rgba(226,237,255,0.90)" strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round"
-      />
-      <path
-        d="M19.5 13v10M19.5 13h4a2.8 2.8 0 0 1 0 5.6H19.5M22.5 18.6 L26 23"
-        stroke="rgba(75,159,225,0.85)" strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round"
-      />
-    </svg>
+    <img
+      src={oakLeafImg}
+      alt="UConn"
+      style={{
+        width: size,
+        height: size,
+        objectFit: 'contain',
+        display: 'block',
+        filter: 'invert(1)',
+        mixBlendMode: 'screen',
+        opacity: 0.88,
+      }}
+    />
   );
 }
 
@@ -49,9 +47,9 @@ export default function LoginPage() {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify({ id: user.id, name: user.name, email: user.email, role: user.role, netid: user.netid ?? null }));
       if (user.role === 'instructor' || user.role === 'admin') {
-        navigate('/instructor/courses', { replace: true });
+        navigate('/instructor/overview', { replace: true });
       } else {
-        navigate('/student/reviews', { replace: true });
+        navigate('/student/overview', { replace: true });
       }
     } catch {
       setError('Network error — please try again.');
@@ -76,9 +74,9 @@ export default function LoginPage() {
 
     window.history.replaceState({}, '', `${window.location.origin}/login`);
     if (role === 'instructor' || role === 'admin') {
-      navigate('/instructor/courses', { replace: true });
+      navigate('/instructor/overview', { replace: true });
     } else {
-      navigate('/student/reviews', { replace: true });
+      navigate('/student/overview', { replace: true });
     }
   }, [navigate]);
 

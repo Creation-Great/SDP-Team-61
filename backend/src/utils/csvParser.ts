@@ -14,15 +14,40 @@ export interface ParsedStudent {
 }
 
 /**
- * Compute a 3-char netid prefix from first name and last name.
- * Pattern: first2charsOfFirstName + first1charOfLastName, lowercase, only a-z, padded to 3 with 'x'.
- * Example: "Alice Wang" -> "alw", "Bob Johnson" -> "boj"
+ * Compute a 3-char netid prefix from name parts.
+ *
+ * Rules by number of parts:
+ *   2 parts  (e.g. "John Smith"):          first 2 chars of parts[0] + first char of parts[1]  -> "jos"
+ *   3+ parts (e.g. "Nicholas D Cage"):     parts[0][0] + parts[n-2][0] + parts[n-1][0]         -> "ndc"
+ *   4+ parts (e.g. "Esha Reddy Rami Gari"): same formula as 3+                                 -> "erg"
+ *
+ * All chars lowercased, non-a-z stripped, result padded to 3 with 'x'.
  */
 export function computeNetidGuess(firstName: string, lastName: string): string {
+  // Reconstruct the full parts array from the two args as the caller passes them.
+  // firstName = parts[0], lastName = parts[1..].join(' ')
   const clean = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
-  const f = clean(firstName);
-  const l = clean(lastName);
-  const part = (f.slice(0, 2) + l.slice(0, 1)).padEnd(3, 'x');
+  const firstPart = clean(firstName);
+
+  // Re-split lastName to recover all name parts beyond the first.
+  const lastParts = lastName.trim().split(/\s+/).filter(p => p.length > 0).map(clean);
+
+  if (lastParts.length === 0) {
+    // Only one name part total — pad first two chars of firstName
+    return firstPart.slice(0, 3).padEnd(3, 'x');
+  }
+
+  if (lastParts.length === 1) {
+    // Exactly 2 parts: first 2 chars of firstName + first char of lastName (original rule)
+    const part = (firstPart.slice(0, 2) + lastParts[0].slice(0, 1)).padEnd(3, 'x');
+    return part.slice(0, 3);
+  }
+
+  // 3+ total parts (lastParts has 2+): parts[0][0] + parts[n-2][0] + parts[n-1][0]
+  // parts array: [firstName, ...lastParts]
+  const secondToLast = lastParts[lastParts.length - 2];
+  const last = lastParts[lastParts.length - 1];
+  const part = (firstPart.slice(0, 1) + secondToLast.slice(0, 1) + last.slice(0, 1)).padEnd(3, 'x');
   return part.slice(0, 3);
 }
 

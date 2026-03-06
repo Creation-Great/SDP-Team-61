@@ -5,25 +5,9 @@ import {
   Upload, Plus, ChevronRight, Users, Calendar, CheckCircle,
   Clock, ArrowLeft, ChevronDown, ChevronUp, History, X,
 } from 'lucide-react';
-import type { Course, CourseDefinitionCurrent, Week } from '../types';
-
-function getToken() { return localStorage.getItem('token') || ''; }
-
-async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...opts,
-    headers: {
-      ...(opts?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      Authorization: `Bearer ${getToken()}`,
-      ...(opts?.headers || {}),
-    },
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as any).message || `HTTP ${res.status}`);
-  }
-  return res.json();
-}
+import type { Course, CourseDefinitionCurrent, Week, CsvDiffPreview } from '../types';
+import { apiFetch, apiFetchRaw } from '../utils/api';
+import { useToast } from '../components/ToastProvider';
 
 interface DefinitionSummary {
   definition_id: string;
@@ -45,9 +29,12 @@ interface WeekDialogState {
   customClosesAt: string;
 }
 
+// ─── Main Page ───────────────────────────────────────────────────────────────
+
 export default function InstructorCourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [definition, setDefinition] = useState<CourseDefinitionCurrent | null>(null);
@@ -60,7 +47,14 @@ export default function InstructorCourseDetailPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Phase 3b: CSV diff preview state
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [diffPreview, setDiffPreview] = useState<CsvDiffPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
   const [expandedTeams, setExpandedTeams] = useState<Set<string>>(new Set());
+  const [allTeamsExpanded, setAllTeamsExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   // Week creation dialog state
@@ -95,30 +89,66 @@ export default function InstructorCourseDetailPage() {
     loadData().catch(e => setError(e.message)).finally(() => setLoading(false));
   }, [courseId]);
 
-  async function handleFileUpload(file: File) {
+  // Phase 3b: Preview CSV diff when file is selected
+  async function handleFileSelected(file: File) {
+    setUploadError(null);
+    setPreviewError(null);
+    setPendingFile(file);
+    setPreviewing(true);
+    setDiffPreview(null);
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiFetchRaw(`/courses/${courseId}/definition/preview`, {
+        method: 'POST',
+        body: form,
+      });
+      const preview: CsvDiffPreview = await res.json();
+      setDiffPreview(preview);
+    } catch (e: any) {
+      setPreviewError(e.message);
+      setPendingFile(null);
+    } finally {
+      setPreviewing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  // Phase 3b: Confirm upload with the pending file
+  async function handleConfirmUpload() {
+    if (!pendingFile) return;
     setUploadError(null);
     setUploading(true);
     try {
       const form = new FormData();
-      form.append('file', file);
-      await apiFetch<any>(`/courses/${courseId}/definition/upload`, {
+      form.append('file', pendingFile);
+      await apiFetchRaw(`/courses/${courseId}/definition/upload`, {
         method: 'POST',
         body: form,
-        headers: {},
       });
-      // Re-fetch the current definition and history after upload
       const [defData, historyData] = await Promise.all([
         apiFetch<CourseDefinitionCurrent>(`/courses/${courseId}/definition/current`).catch(() => null),
         apiFetch<DefinitionSummary[]>(`/courses/${courseId}/definitions`).catch(() => [] as DefinitionSummary[]),
       ]);
       setDefinition(defData);
       setDefinitionHistory(historyData);
+      addToast({ type: 'success', title: 'Roster uploaded', message: 'CSV definition has been updated.' });
     } catch (e: any) {
       setUploadError(e.message);
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setPendingFile(null);
+      setDiffPreview(null);
     }
+  }
+
+  // Phase 3b: Cancel diff preview
+  function handleCancelPreview() {
+    setPendingFile(null);
+    setDiffPreview(null);
+    setPreviewError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   function openWeekDialog() {
@@ -143,7 +173,6 @@ export default function InstructorCourseDetailPage() {
     setWeekError(null);
     if (weekDialogStep === 1) {
       if (weekDialog.scopeType === 'ALL') {
-        // Skip team selection, go straight to mode selection
         setWeekDialogStep(3);
       } else {
         setWeekDialogStep(2);
@@ -211,7 +240,6 @@ export default function InstructorCourseDetailPage() {
       });
 
       if (weekDialog.weekMode === 'existing') {
-        // Update the existing week in state
         setWeeks(prev => prev.map(w => w.week_id === week.week_id ? week : w));
       } else {
         setWeeks(prev => [week, ...prev]);
@@ -231,6 +259,18 @@ export default function InstructorCourseDetailPage() {
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
+  }
+
+  // Phase 3b: Expand All / Collapse All
+  function handleToggleAllTeams() {
+    if (allTeamsExpanded) {
+      setExpandedTeams(new Set());
+      setAllTeamsExpanded(false);
+    } else {
+      const allKeys = new Set(definition?.teams.map(t => t.teamKey) || []);
+      setExpandedTeams(allKeys);
+      setAllTeamsExpanded(true);
+    }
   }
 
   // Open weeks available for "Add to existing week"
@@ -280,7 +320,7 @@ export default function InstructorCourseDetailPage() {
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {course.term && (
-            <span style={{ display: 'inline-block', background: 'rgba(75,159,225,0.1)', color: 'var(--tech-blue)', border: '1px solid rgba(75,159,225,0.2)', borderRadius: '4px', padding: '2px 8px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem', fontWeight: 600 }}>
+            <span style={{ display: 'inline-block', background: 'rgba(75,159,225,0.1)', color: 'var(--tech-blue)', border: '1px solid rgba(75,159,225,0.2)', borderRadius: '0', padding: '2px 8px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem', fontWeight: 600 }}>
               {course.term}
             </span>
           )}
@@ -290,6 +330,8 @@ export default function InstructorCourseDetailPage() {
         </div>
       </div>
 
+      {/* Course Overview */}
+      {(
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         {/* Roster / Definition Panel */}
         <div className="card">
@@ -304,24 +346,146 @@ export default function InstructorCourseDetailPage() {
                 type="file"
                 accept=".csv"
                 style={{ display: 'none' }}
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelected(f); }}
               />
               <button
                 type="button"
                 className="btn btn-primary"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
+                disabled={uploading || previewing}
                 style={{ fontSize: '0.75rem', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '5px' }}
               >
                 <Upload width={13} height={13} />
-                {uploading ? 'Uploading...' : definition ? 'Upload CSV' : 'Upload CSV'}
+                {previewing ? 'Previewing...' : uploading ? 'Uploading...' : 'Upload CSV'}
               </button>
             </div>
           </div>
 
           {uploadError && (
-            <div style={{ background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '6px', padding: '10px 14px', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.78rem', marginBottom: '16px' }}>
+            <div style={{ background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '0', padding: '10px 14px', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.78rem', marginBottom: '16px' }}>
               {uploadError}
+            </div>
+          )}
+
+          {previewError && (
+            <div style={{ background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '0', padding: '10px 14px', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.78rem', marginBottom: '16px' }}>
+              Preview failed: {previewError}
+            </div>
+          )}
+
+          {/* Phase 3b: CSV Diff Preview Card */}
+          {diffPreview && (
+            <div style={{
+              border: '1px solid rgba(75,159,225,0.25)',
+              borderRadius: '0',
+              padding: '16px',
+              marginBottom: '16px',
+              background: 'rgba(75,159,225,0.03)',
+            }}>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '12px', fontFamily: 'Montserrat, sans-serif' }}>
+                Upload Preview
+              </h3>
+
+              {/* Added */}
+              {diffPreview.added.length > 0 && (
+                <div style={{ marginBottom: '10px' }}>
+                  <p style={{ color: 'var(--success)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                    + Added
+                  </p>
+                  {diffPreview.added.map(item => (
+                    <div key={item.team_key} style={{
+                      padding: '8px 12px', marginBottom: '4px',
+                      background: 'rgba(61,187,121,0.08)', border: '1px solid rgba(61,187,121,0.2)', borderRadius: '0',
+                    }}>
+                      <span style={{ color: 'var(--success)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.75rem', fontWeight: 600 }}>
+                        Team {item.team_key}
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                        {item.students.map(s => (
+                          <span key={s} style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem' }}>
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Removed */}
+              {diffPreview.removed.length > 0 && (
+                <div style={{ marginBottom: '10px' }}>
+                  <p style={{ color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                    - Removed
+                  </p>
+                  {diffPreview.removed.map(item => (
+                    <div key={item.team_key} style={{
+                      padding: '8px 12px', marginBottom: '4px',
+                      background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.2)', borderRadius: '0',
+                    }}>
+                      <span style={{ color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.75rem', fontWeight: 600 }}>
+                        Team {item.team_key}
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                        {item.students.map(s => (
+                          <span key={s} style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.7rem' }}>
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Unchanged */}
+              {diffPreview.unchanged.length > 0 && (
+                <div style={{ marginBottom: '12px' }}>
+                  <p style={{ color: 'var(--text-muted)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '6px' }}>
+                    Unchanged
+                  </p>
+                  {diffPreview.unchanged.map(item => (
+                    <div key={item.team_key} style={{
+                      padding: '6px 12px', marginBottom: '4px',
+                      background: 'rgba(100,100,120,0.06)', border: '1px solid rgba(100,100,120,0.12)', borderRadius: '0',
+                    }}>
+                      <span style={{ color: 'var(--text-muted)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem' }}>
+                        Team {item.team_key} — {item.count} student{item.count !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* No changes */}
+              {diffPreview.added.length === 0 && diffPreview.removed.length === 0 && (
+                <p style={{ color: 'var(--text-muted)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.78rem', marginBottom: '12px' }}>
+                  No changes detected. The roster is identical to the current definition.
+                </p>
+              )}
+
+              {/* Confirm / Cancel buttons */}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleCancelPreview}
+                  disabled={uploading}
+                  style={{ fontSize: '0.75rem', padding: '7px 14px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleConfirmUpload}
+                  disabled={uploading}
+                  style={{ fontSize: '0.75rem', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <Upload width={13} height={13} />
+                  {uploading ? 'Uploading...' : 'Confirm Upload'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -337,7 +501,7 @@ export default function InstructorCourseDetailPage() {
           ) : (
             <div>
               {/* Summary strip */}
-              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', padding: '10px 14px', background: 'var(--surface-input)', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', padding: '10px 14px', background: 'var(--surface-input)', borderRadius: '0', border: '1px solid var(--glass-border)' }}>
                 <span style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem' }}>
                   <strong style={{ color: 'var(--tech-blue)' }}>{definition.teams.length}</strong> teams
                 </span>
@@ -361,7 +525,7 @@ export default function InstructorCourseDetailPage() {
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {definition.categories.map(c => (
-                    <span key={c} style={{ background: 'rgba(232,119,34,0.08)', color: 'var(--uconn-orange)', border: '1px solid rgba(232,119,34,0.15)', borderRadius: '4px', padding: '3px 8px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem' }}>
+                    <span key={c} style={{ background: 'rgba(232,119,34,0.08)', color: 'var(--uconn-orange)', border: '1px solid rgba(232,119,34,0.15)', borderRadius: '0', padding: '3px 8px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem' }}>
                       {c}
                     </span>
                   ))}
@@ -370,12 +534,27 @@ export default function InstructorCourseDetailPage() {
 
               {/* Teams expandable */}
               <div>
-                <p style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                  Teams &amp; Students
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <p style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+                    Teams &amp; Students
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleToggleAllTeams}
+                    style={{
+                      background: 'none', border: '1px solid var(--glass-border)', cursor: 'pointer',
+                      color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.68rem',
+                      padding: '3px 10px', borderRadius: '0',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--tech-blue)'; e.currentTarget.style.color = 'var(--tech-blue)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--glass-border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                  >
+                    {allTeamsExpanded ? 'Collapse All' : 'Expand All'}
+                  </button>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {definition.teams.map(team => (
-                    <div key={team.teamKey} style={{ border: '1px solid var(--glass-border)', borderRadius: '6px', overflow: 'hidden' }}>
+                    <div key={team.teamKey} style={{ border: '1px solid var(--glass-border)', borderRadius: '0', overflow: 'hidden' }}>
                       <button
                         type="button"
                         onClick={() => toggleTeam(team.teamKey)}
@@ -389,7 +568,7 @@ export default function InstructorCourseDetailPage() {
                           <span style={{ color: 'var(--tech-blue)' }}>Team {team.teamKey}</span>
                           <span style={{
                             background: 'rgba(75,159,225,0.1)', color: 'var(--tech-blue)',
-                            border: '1px solid rgba(75,159,225,0.2)', borderRadius: '999px',
+                            border: '1px solid rgba(75,159,225,0.2)', borderRadius: '0',
                             padding: '1px 8px', fontSize: '0.68rem', fontWeight: 700,
                           }}>
                             {team.members.length}
@@ -421,7 +600,7 @@ export default function InstructorCourseDetailPage() {
                                       {m.netidGuess}***
                                     </span>
                                     {m.userId && (
-                                      <span style={{ background: 'rgba(61,187,121,0.1)', color: 'var(--success)', border: '1px solid rgba(61,187,121,0.2)', borderRadius: '3px', padding: '1px 5px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.62rem' }}>
+                                      <span style={{ background: 'rgba(61,187,121,0.1)', color: 'var(--success)', border: '1px solid rgba(61,187,121,0.2)', borderRadius: '0', padding: '1px 5px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.62rem' }}>
                                         linked
                                       </span>
                                     )}
@@ -464,11 +643,11 @@ export default function InstructorCourseDetailPage() {
                       {definitionHistory.map((h, i) => (
                         <div key={h.definition_id} style={{
                           display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px',
-                          background: 'var(--surface-input)', borderRadius: '6px',
+                          background: 'var(--surface-input)', borderRadius: '0',
                           border: `1px solid ${i === 0 ? 'rgba(75,159,225,0.3)' : 'var(--glass-border)'}`,
                         }}>
                           {i === 0 && (
-                            <span style={{ background: 'rgba(75,159,225,0.12)', color: 'var(--tech-blue)', padding: '1px 6px', borderRadius: '3px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.62rem', fontWeight: 600, flexShrink: 0 }}>
+                            <span style={{ background: 'rgba(75,159,225,0.12)', color: 'var(--tech-blue)', padding: '1px 6px', borderRadius: '0', fontFamily: 'Roboto Mono, monospace', fontSize: '0.62rem', fontWeight: 600, flexShrink: 0 }}>
                               LATEST
                             </span>
                           )}
@@ -510,7 +689,7 @@ export default function InstructorCourseDetailPage() {
           </div>
 
           {!definition && (
-            <div style={{ padding: '10px 14px', background: 'rgba(232,119,34,0.06)', border: '1px solid rgba(232,119,34,0.15)', borderRadius: '6px', marginBottom: '16px' }}>
+            <div style={{ padding: '10px 14px', background: 'rgba(232,119,34,0.06)', border: '1px solid rgba(232,119,34,0.15)', borderRadius: '0', marginBottom: '16px' }}>
               <p style={{ color: 'var(--uconn-orange)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', margin: 0 }}>
                 Upload a roster CSV first to enable week creation.
               </p>
@@ -534,7 +713,7 @@ export default function InstructorCourseDetailPage() {
                     padding: '12px 14px',
                     background: 'var(--surface-input)',
                     border: '1px solid var(--glass-border)',
-                    borderRadius: '8px',
+                    borderRadius: '0',
                     cursor: 'pointer',
                     transition: 'border-color 0.15s ease',
                   }}
@@ -549,7 +728,7 @@ export default function InstructorCourseDetailPage() {
                       </span>
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: '4px',
-                        padding: '2px 8px', borderRadius: '999px',
+                        padding: '2px 8px', borderRadius: '0',
                         fontSize: '0.68rem', fontFamily: 'Roboto Mono, monospace', fontWeight: 600,
                         background: week.is_open ? 'rgba(61,187,121,0.12)' : 'rgba(100,100,120,0.12)',
                         color: week.is_open ? 'var(--success)' : 'var(--text-muted)',
@@ -569,7 +748,7 @@ export default function InstructorCourseDetailPage() {
                         {week.team_keys.map(tk => (
                           <span key={tk} style={{
                             background: 'rgba(75,159,225,0.08)', color: 'var(--tech-blue)',
-                            border: '1px solid rgba(75,159,225,0.15)', borderRadius: '3px',
+                            border: '1px solid rgba(75,159,225,0.15)', borderRadius: '0',
                             padding: '1px 6px', fontFamily: 'Roboto Mono, monospace', fontSize: '0.65rem', fontWeight: 600,
                           }}>
                             {tk}
@@ -585,8 +764,9 @@ export default function InstructorCourseDetailPage() {
           )}
         </div>
       </div>
+      )}
 
-      {/* ─── Add Week Dialog ────────────────────────────────────────────────── */}
+      {/* Add Week Dialog */}
       <AnimatePresence>
         {showWeekDialog && (
           <motion.div
@@ -606,7 +786,7 @@ export default function InstructorCourseDetailPage() {
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ duration: 0.15 }}
               style={{
-                background: 'var(--surface-card)', borderRadius: '12px',
+                background: 'var(--surface-card)', borderRadius: '0',
                 border: '1px solid var(--glass-border)', boxShadow: '0 24px 80px rgba(0,0,0,0.4)',
                 padding: '28px', width: '100%', maxWidth: '480px',
               }}
@@ -645,7 +825,7 @@ export default function InstructorCourseDetailPage() {
                         onClick={() => setWeekDialog(prev => ({ ...prev, scopeType: opt.value, selectedTeamKeys: [] }))}
                         style={{
                           display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                          padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+                          padding: '14px 16px', borderRadius: '0', cursor: 'pointer', textAlign: 'left',
                           border: `2px solid ${weekDialog.scopeType === opt.value ? 'var(--tech-blue)' : 'var(--glass-border)'}`,
                           background: weekDialog.scopeType === opt.value ? 'rgba(75,159,225,0.06)' : 'var(--surface-input)',
                           transition: 'border-color 0.1s ease',
@@ -675,7 +855,7 @@ export default function InstructorCourseDetailPage() {
                         key={tk}
                         style={{
                           display: 'flex', alignItems: 'center', gap: '12px',
-                          padding: '10px 14px', borderRadius: '6px', cursor: 'pointer',
+                          padding: '10px 14px', borderRadius: '0', cursor: 'pointer',
                           border: `1px solid ${weekDialog.selectedTeamKeys.includes(tk) ? 'rgba(75,159,225,0.4)' : 'var(--glass-border)'}`,
                           background: weekDialog.selectedTeamKeys.includes(tk) ? 'rgba(75,159,225,0.06)' : 'var(--surface-input)',
                         }}
@@ -715,7 +895,7 @@ export default function InstructorCourseDetailPage() {
                       onClick={() => setWeekDialog(prev => ({ ...prev, weekMode: 'new' }))}
                       style={{
                         display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                        padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+                        padding: '14px 16px', borderRadius: '0', cursor: 'pointer', textAlign: 'left',
                         border: `2px solid ${weekDialog.weekMode === 'new' ? 'var(--tech-blue)' : 'var(--glass-border)'}`,
                         background: weekDialog.weekMode === 'new' ? 'rgba(75,159,225,0.06)' : 'var(--surface-input)',
                         transition: 'border-color 0.1s ease',
@@ -735,7 +915,7 @@ export default function InstructorCourseDetailPage() {
                         onClick={() => setWeekDialog(prev => ({ ...prev, weekMode: 'existing' }))}
                         style={{
                           display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                          padding: '14px 16px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+                          padding: '14px 16px', borderRadius: '0', cursor: 'pointer', textAlign: 'left',
                           border: `2px solid ${weekDialog.weekMode === 'existing' ? 'var(--tech-blue)' : 'var(--glass-border)'}`,
                           background: weekDialog.weekMode === 'existing' ? 'rgba(75,159,225,0.06)' : 'var(--surface-input)',
                           transition: 'border-color 0.1s ease',
@@ -798,7 +978,7 @@ export default function InstructorCourseDetailPage() {
                       />
                     </div>
                   ) : (
-                    <div style={{ padding: '12px 14px', background: 'var(--surface-input)', borderRadius: '6px', border: '1px solid var(--glass-border)' }}>
+                    <div style={{ padding: '12px 14px', background: 'var(--surface-input)', borderRadius: '0', border: '1px solid var(--glass-border)' }}>
                       <p style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.78rem', margin: 0 }}>
                         Adding to existing week — deadline is set by that week.
                       </p>
@@ -806,7 +986,7 @@ export default function InstructorCourseDetailPage() {
                   )}
 
                   {/* Summary */}
-                  <div style={{ marginTop: '16px', padding: '12px 14px', background: 'rgba(75,159,225,0.05)', border: '1px solid rgba(75,159,225,0.15)', borderRadius: '8px' }}>
+                  <div style={{ marginTop: '16px', padding: '12px 14px', background: 'rgba(75,159,225,0.05)', border: '1px solid rgba(75,159,225,0.15)', borderRadius: '0' }}>
                     <p style={{ color: 'var(--text-secondary)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.72rem', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Summary
                     </p>
@@ -824,7 +1004,7 @@ export default function InstructorCourseDetailPage() {
 
               {/* Error */}
               {weekError && (
-                <div style={{ marginTop: '12px', padding: '8px 12px', background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '6px', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.75rem' }}>
+                <div style={{ marginTop: '12px', padding: '8px 12px', background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.25)', borderRadius: '0', color: 'var(--danger)', fontFamily: 'Roboto Mono, monospace', fontSize: '0.75rem' }}>
                   {weekError}
                 </div>
               )}

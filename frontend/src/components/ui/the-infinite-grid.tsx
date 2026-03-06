@@ -89,7 +89,7 @@ export const InfiniteGridBackground = () => {
       }}
     >
       {/* Static faint grid */}
-      <div style={{ position: "absolute", inset: 0, opacity: 0.04 }}>
+      <div style={{ position: "absolute", inset: 0, opacity: 0.07 }}>
         <GridPattern offsetX={gridOffsetX} offsetY={gridOffsetY} />
       </div>
       {/* Mouse-reveal grid */}
@@ -97,7 +97,7 @@ export const InfiniteGridBackground = () => {
         style={{
           position: "absolute",
           inset: 0,
-          opacity: 0.35,
+          opacity: 0.18,
           maskImage,
           WebkitMaskImage: maskImage,
         }}
@@ -119,8 +119,8 @@ const AmbientGlow = () => (
         width: "45%",
         height: "45%",
         borderRadius: "50%",
-        background: "rgba(232, 119, 34, 0.12)",
-        filter: "blur(120px)",
+        background: "rgba(255, 188, 14, 0.06)",
+        filter: "blur(140px)",
       }}
     />
     <div
@@ -131,8 +131,8 @@ const AmbientGlow = () => (
         width: "40%",
         height: "40%",
         borderRadius: "50%",
-        background: "rgba(75, 159, 225, 0.10)",
-        filter: "blur(120px)",
+        background: "rgba(59, 125, 216, 0.05)",
+        filter: "blur(140px)",
       }}
     />
     <div
@@ -143,7 +143,7 @@ const AmbientGlow = () => (
         width: "20%",
         height: "20%",
         borderRadius: "50%",
-        background: "rgba(75, 159, 225, 0.06)",
+        background: "rgba(59, 125, 216, 0.04)",
         filter: "blur(80px)",
       }}
     />
@@ -165,8 +165,8 @@ const GridPattern = ({ offsetX, offsetY }: { offsetX: any; offsetY: any }) => {
           <path
             d="M 40 0 L 0 0 0 40"
             fill="none"
-            stroke="rgba(75,159,225,1)"
-            strokeWidth="0.8"
+            stroke="rgba(0,0,0,0.55)"
+            strokeWidth="0.6"
           />
         </motion.pattern>
       </defs>

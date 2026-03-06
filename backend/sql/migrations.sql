@@ -224,3 +224,12 @@ CREATE POLICY p_rscores ON review_scores USING (
   )
   OR current_setting('app.current_role', true) IN ('instructor','admin')
 );
+
+-- ─── Unique constraints for data integrity ───────────────────────────────────
+-- Prevent duplicate categories per week
+CREATE UNIQUE INDEX IF NOT EXISTS uq_week_categories_week_label
+  ON week_categories (week_id, label);
+
+-- Prevent duplicate students per week+team
+CREATE UNIQUE INDEX IF NOT EXISTS uq_week_students_week_netid
+  ON week_students (week_id, team_key, netid_guess);
