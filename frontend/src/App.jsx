@@ -4,6 +4,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import InstructorRoute from './components/InstructorRoute';
 import StudentRoute from './components/StudentRoute';
 import { useAuth } from './contexts/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
+import InfiniteGridBackground from './components/ui/InfiniteGridBackground';
 import LoginPage from './pages/LoginPage';
 import StudentDashboardPage from './pages/StudentDashboardPage';
 import InstructorDashboardPage from './pages/InstructorDashboardPage';
@@ -20,6 +22,7 @@ import InstructorAnalyticsPage from './pages/InstructorAnalyticsPage';
 import ClassCheckinsPage from './pages/ClassCheckinsPage';
 import EnrollmentManagementPage from './pages/EnrollmentManagementPage';
 import RegisterPage from './pages/RegisterPage';
+import StudentScoresPage from './pages/StudentScoresPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import HeaderSearchBar from './components/HeaderSearchBar';
@@ -40,10 +43,11 @@ function AppLayout({ children }) {
   return (
     <div className="min-h-screen flex">
       <Sidebar />
-      <div
-        className="flex-1 flex flex-col min-h-0 overflow-hidden bg-center bg-no-repeat"
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative"
         style={{ backgroundImage: "url('/images/background3.jpg')", backgroundSize: '100% 100%', backgroundColor: '#FFFFFF' }}
       >
+        {/* Subtle grid overlay on top of background image */}
+        <InfiniteGridBackground />
         {/* Desktop top header */}
         <header className="hidden md:flex h-16 bg-white/90 backdrop-blur-md border-b border-slate-200 items-center justify-between px-6 shrink-0 z-10">
           <div className="flex flex-1">
@@ -53,12 +57,22 @@ function AppLayout({ children }) {
             <NotificationBell />
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:mt-0 mt-14">
-          {children}
+        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:mt-0 mt-14 relative z-[1]">
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </main>
       </div>
     </div>
   );
+}
+
+/** 404 wrapper: show sidebar for authenticated users, plain page for guests */
+function NotFoundWrapper() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <NotFoundPage />;
+  return <AppLayout><NotFoundPage /></AppLayout>;
 }
 
 export default function App() {
@@ -122,6 +136,13 @@ export default function App() {
           </InstructorRoute>
         </ProtectedRoute>
       } />
+      <Route path="/peer-review/:sessionId/my-scores" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><StudentScoresPage /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
 
       {/* Student check-ins */}
       <Route path="/student/checkins" element={
@@ -169,8 +190,8 @@ export default function App() {
         </ProtectedRoute>
       } />
 
-      {/* 404 */}
-      <Route path="*" element={<AppLayout><NotFoundPage /></AppLayout>} />
+      {/* 404 — show sidebar only for authenticated users */}
+      <Route path="*" element={<NotFoundWrapper />} />
     </Routes>
   );
 }

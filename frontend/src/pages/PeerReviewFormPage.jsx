@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import { PeerReviewRubric } from '../components/RubricPanel';
 
 const POLL_INTERVAL = 5000;
 
@@ -391,6 +392,7 @@ export default function PeerReviewFormPage() {
                         </button>
                       ))}
                     </div>
+                    <PeerReviewRubric category={key} currentScore={r[key]} />
                   </div>
                 ))}
 

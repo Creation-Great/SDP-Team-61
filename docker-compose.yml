@@ -29,10 +29,10 @@ services:
       PORT: "8080"
       NODE_ENV: development
       DATABASE_URL: postgres://postgres:postgres@db:5432/peerreview
-      JWT_SECRET: ${JWT_SECRET:-db1998037902163adba7f7d4744a667ea8755d1a646ca46e7288498073cd96a32e4fa131f098298505bb7bf3a40749eb1ab35b635148816cf1069b1647499d4e}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env file}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
-      FRONTEND_URL: ${FRONTEND_URL:-https://www.peer.review.uconn.edu}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://www.peer.review.uconn.edu,http://localhost:5173}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
       AI_SERVICE_URL: http://ai-service:5001
       AI_API_KEY: ${AI_API_KEY:-}
     depends_on:
@@ -61,7 +61,7 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_PORT: "5001"
       FLASK_DEBUG: "0"
-      FRONTEND_URL: ${FRONTEND_URL:-https://www.peer.review.uconn.edu}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
     depends_on:
       db:
         condition: service_healthy

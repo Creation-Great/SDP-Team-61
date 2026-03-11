@@ -3,6 +3,7 @@ import { withDb } from '../db.js';
 import { audit } from '../utils/audit.js';
 import { AppError } from '../utils/AppError.js';
 import { getGroupForCourse, getTeammatesByCourse } from '../utils/enrollment.js';
+import { emitSseEvent } from '../utils/sse.js';
 import type { AuthRequest } from '../types.js';
 import type { PoolClient } from 'pg';
 
@@ -72,7 +73,7 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
     }
 
     if (role === 'student') {
-      // Students see only open sessions with team-scoped submitted_count
+      // Students see open sessions AND closed sessions with released scores
       const result = await client.query(
         `SELECT s.*,
                 u.name AS created_by_name,
@@ -86,7 +87,7 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
                  WHERE tu.group_id = $1 AND tu.role = 'student') AS team_size
          FROM peer_review_sessions s
          LEFT JOIN users u ON u.user_id = s.created_by
-         WHERE s.is_open = true
+         WHERE s.is_open = true OR s.scores_released = true
          ORDER BY s.created_at DESC`,
         [groupId]
       );
@@ -150,6 +151,37 @@ export async function toggleSession(req: AuthRequest, res: Response): Promise<vo
     }
 
     await audit(client, user_id, is_open ? 'OPEN_PR_SESSION' : 'CLOSE_PR_SESSION',
+      'peer_review_session', sessionId, {});
+
+    return result.rows[0];
+  });
+
+  res.json(session);
+}
+
+/**
+ * PATCH /peer-review/sessions/:sessionId/release-scores
+ * Toggle scores_released flag. Instructor only.
+ */
+export async function releaseScores(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { sessionId } = req.params;
+  const { scores_released } = req.body;
+
+  const session = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `UPDATE peer_review_sessions
+       SET scores_released = $1
+       WHERE session_id = $2
+       RETURNING *`,
+      [scores_released, sessionId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new AppError(404, 'Session not found');
+    }
+
+    await audit(client, user_id, scores_released ? 'RELEASE_SCORES' : 'HIDE_SCORES',
       'peer_review_session', sessionId, {});
 
     return result.rows[0];
@@ -288,6 +320,14 @@ export async function submitPeerReviews(req: AuthRequest, res: Response): Promis
   });
 
   res.json({ message: 'Peer reviews submitted successfully' });
+
+  // Emit SSE event after response — non-blocking
+  const sseChannel = req.user.course_id ? `course:${req.user.course_id}` : `instructor:global`;
+  emitSseEvent(sseChannel, 'peer_review_submitted', {
+    session_id: sessionId,
+    reviewer_name: req.user.name,
+    review_count: reviews.length,
+  });
 }
 
 /**
@@ -526,4 +566,203 @@ export async function exportCsv(req: AuthRequest, res: Response): Promise<void> 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename=peer-review-results-${sessionId}.csv`);
   res.send(csv);
+}
+
+/**
+ * POST /peer-review/sessions/:sessionId/instructor-review
+ * Instructor submits reviews for students in any team. No group/team restriction.
+ */
+export async function submitInstructorReview(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const rawSessionId = req.params.sessionId;
+  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+  const { reviews } = req.body;
+
+  await withDb(user_id, role, async (client) => {
+    // Verify session exists
+    const session = await client.query(
+      'SELECT session_id, course_id FROM peer_review_sessions WHERE session_id = $1',
+      [sessionId]
+    );
+    if (session.rows.length === 0) {
+      throw new AppError(404, 'Session not found');
+    }
+
+    // Upsert each review — is_self is always false for instructor reviews
+    for (const r of reviews) {
+      await client.query(
+        `INSERT INTO peer_reviews
+           (session_id, reviewer_id, reviewee_id, is_self,
+            technical_contributions, team_interactions, project_management, individual_comments)
+         VALUES ($1, $2, $3, false, $4, $5, $6, $7)
+         ON CONFLICT (session_id, reviewer_id, reviewee_id)
+         DO UPDATE SET
+           technical_contributions = EXCLUDED.technical_contributions,
+           team_interactions = EXCLUDED.team_interactions,
+           project_management = EXCLUDED.project_management,
+           individual_comments = EXCLUDED.individual_comments,
+           updated_at = now()`,
+        [sessionId, user_id, r.reviewee_id,
+         r.technical_contributions, r.team_interactions, r.project_management,
+         r.individual_comments || '']
+      );
+    }
+
+    await audit(client, user_id, 'INSTRUCTOR_SUBMIT_PEER_REVIEWS', 'peer_review_session', sessionId, {
+      review_count: reviews.length,
+    });
+  });
+
+  res.json({ message: 'Instructor reviews submitted successfully' });
+}
+
+/**
+ * GET /peer-review/sessions/:sessionId/bias-analytics
+ * Self vs peer score comparison — detect scoring bias.
+ */
+export async function getBiasAnalytics(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { sessionId } = req.params;
+
+  const data = await withDb(user_id, role, async (client) => {
+    // For each student: compute self-given scores vs peer-given scores
+    const result = await client.query(
+      `SELECT
+         u.user_id,
+         u.name AS student_name,
+         COALESCE(ue.group_id, u.group_id) AS team,
+
+         -- Self-review scores (where reviewer = reviewee)
+         AVG(CASE WHEN pr.is_self THEN pr.technical_contributions END)::numeric(4,2) AS self_technical,
+         AVG(CASE WHEN pr.is_self THEN pr.team_interactions END)::numeric(4,2)       AS self_interactions,
+         AVG(CASE WHEN pr.is_self THEN pr.project_management END)::numeric(4,2)      AS self_management,
+
+         -- Peer-review scores (where reviewer != reviewee)
+         AVG(CASE WHEN NOT pr.is_self THEN pr.technical_contributions END)::numeric(4,2) AS peer_technical,
+         AVG(CASE WHEN NOT pr.is_self THEN pr.team_interactions END)::numeric(4,2)       AS peer_interactions,
+         AVG(CASE WHEN NOT pr.is_self THEN pr.project_management END)::numeric(4,2)      AS peer_management,
+
+         -- Overall averages
+         AVG(CASE WHEN pr.is_self THEN (pr.technical_contributions + pr.team_interactions + pr.project_management) / 3.0 END)::numeric(4,2) AS self_avg,
+         AVG(CASE WHEN NOT pr.is_self THEN (pr.technical_contributions + pr.team_interactions + pr.project_management) / 3.0 END)::numeric(4,2) AS peer_avg,
+
+         COUNT(*) FILTER (WHERE pr.is_self) AS self_review_count,
+         COUNT(*) FILTER (WHERE NOT pr.is_self) AS peer_review_count
+
+       FROM peer_reviews pr
+       JOIN users u ON u.user_id = pr.reviewee_id
+       LEFT JOIN user_enrollments ue ON ue.user_id = u.user_id
+         AND ue.course_id = (SELECT course_id FROM peer_review_sessions WHERE session_id = $1)
+       WHERE pr.session_id = $1
+       GROUP BY u.user_id, u.name, COALESCE(ue.group_id, u.group_id)
+       ORDER BY COALESCE(ue.group_id, u.group_id), u.name`,
+      [sessionId]
+    );
+
+    // Add bias metric: self_avg - peer_avg
+    const analytics = result.rows.map((r: any) => ({
+      ...r,
+      bias: r.self_avg != null && r.peer_avg != null
+        ? parseFloat((Number(r.self_avg) - Number(r.peer_avg)).toFixed(2))
+        : null,
+    }));
+
+    return analytics;
+  });
+
+  res.json(data);
+}
+
+/**
+ * GET /peer-review/sessions/:sessionId/student-scores
+ * Student endpoint: returns their own average scores ONLY if scores are released.
+ */
+export async function getStudentScores(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { sessionId } = req.params;
+
+  const data = await withDb(user_id, role, async (client) => {
+    // Check if scores are released
+    const session = await client.query(
+      'SELECT session_id, title, scores_released FROM peer_review_sessions WHERE session_id = $1',
+      [sessionId]
+    );
+    if (session.rows.length === 0) {
+      throw new AppError(404, 'Session not found');
+    }
+
+    if (!session.rows[0].scores_released) {
+      return { released: false, session: session.rows[0], scores: null };
+    }
+
+    // Get this student's aggregated scores
+    const scores = await client.query(
+      `SELECT * FROM v_peer_review_averages
+       WHERE session_id = $1 AND reviewee_id = $2`,
+      [sessionId, user_id]
+    );
+
+    return {
+      released: true,
+      session: session.rows[0],
+      scores: scores.rows[0] || null,
+    };
+  });
+
+  res.json(data);
+}
+
+/**
+ * GET /peer-review/sessions/:sessionId/all-students
+ * Instructor endpoint: returns all students in the session's course for the consolidated review page.
+ */
+export async function getAllStudentsForSession(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { sessionId } = req.params;
+
+  const data = await withDb(user_id, role, async (client) => {
+    const session = await client.query(
+      'SELECT session_id, title, course_id, is_open FROM peer_review_sessions WHERE session_id = $1',
+      [sessionId]
+    );
+    if (session.rows.length === 0) {
+      throw new AppError(404, 'Session not found');
+    }
+
+    const courseId = session.rows[0].course_id;
+
+    // Get all students in this course
+    const students = courseId
+      ? await client.query(
+          `SELECT u.user_id, u.name, u.email, COALESCE(ue.group_id, u.group_id) AS group_id
+           FROM users u
+           LEFT JOIN user_enrollments ue ON ue.user_id = u.user_id AND ue.course_id = $1
+           WHERE u.role = 'student'
+             AND (ue.enrollment_id IS NOT NULL OR u.course_id = $1)
+           ORDER BY COALESCE(ue.group_id, u.group_id), u.name`,
+          [courseId]
+        )
+      : await client.query(
+          `SELECT u.user_id, u.name, u.email, u.group_id
+           FROM users u WHERE u.role = 'student'
+           ORDER BY u.group_id, u.name`
+        );
+
+    // Get existing instructor reviews for this session
+    const existingReviews = await client.query(
+      `SELECT reviewee_id, technical_contributions, team_interactions,
+              project_management, individual_comments
+       FROM peer_reviews
+       WHERE session_id = $1 AND reviewer_id = $2`,
+      [sessionId, user_id]
+    );
+
+    return {
+      session: session.rows[0],
+      students: students.rows,
+      existingReviews: existingReviews.rows,
+    };
+  });
+
+  res.json(data);
 }

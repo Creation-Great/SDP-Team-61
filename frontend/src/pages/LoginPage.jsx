@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { BookOpen, Loader2 } from 'lucide-react';
+import { BookOpen, Loader2, Lock, Mail, KeyRound } from 'lucide-react';
+import { motion } from 'framer-motion';
 import API from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
 export default function LoginPage() {
@@ -65,90 +65,182 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-cover bg-center bg-no-repeat"
-      style={{ backgroundImage: "url('/images/content.png')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}
-    >
-      <Card className="w-full max-w-md p-8 shadow-2xl border-0 relative z-10 bg-white">
-        {/* Logo / Header */}
-        <div className="flex flex-col items-center mb-8 text-center">
-          <div className="w-16 h-16 bg-[#000E2F] rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-[#000E2F]/30">
-            <BookOpen className="w-8 h-8 text-white" />
+    <div className="min-h-screen flex flex-col relative" style={{ backgroundImage: "url('/images/content.png')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}>
+      {/* Gradient overlay on top of background image */}
+      <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(135deg, rgba(0,14,47,0.6) 0%, rgba(10,22,40,0.4) 40%, rgba(15,29,53,0.4) 70%, rgba(0,14,47,0.6) 100%)' }} />
+
+      {/* ── NAV ── */}
+      <nav className="flex items-center justify-between px-8 py-5 relative z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-white/10 rounded-xl flex items-center justify-center backdrop-blur-sm border border-white/10">
+            <BookOpen className="w-5 h-5 text-white/90" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">PeerReview System</h1>
-          <p className="text-slate-500 mt-2 text-sm font-medium">University Single Sign-On (CAS)</p>
+          <div className="flex flex-col leading-tight">
+            <span className="text-white/90 text-sm font-semibold tracking-wide">UConn <strong>PR</strong></span>
+            <span className="text-white/40 text-[10px] tracking-widest uppercase">Peer Review</span>
+          </div>
+        </div>
+        <div className="text-[11px] text-white/50 font-medium tracking-wider uppercase bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
+          Sign In
+        </div>
+      </nav>
+
+      {/* ── HERO ── */}
+      <main className="flex-1 flex items-start justify-center relative overflow-hidden px-4 pt-4">
+        {/* Atmospheric elements */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full opacity-[0.06]"
+               style={{ background: 'radial-gradient(circle, rgba(59,125,216,0.6) 0%, transparent 70%)' }} />
+          <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-full opacity-[0.04]"
+               style={{ background: 'radial-gradient(circle, rgba(255,188,14,0.6) 0%, transparent 70%)' }} />
         </div>
 
-        {searchParams.get('registered') === 'true' && (
-          <p className="text-emerald-600 text-sm text-center mb-4 font-medium">
-            Registration successful! Please sign in.
-          </p>
-        )}
-        {error && (
-          <p className="text-red-600 text-sm text-center mb-4 font-medium" role="alert" aria-live="assertive">
-            {error}
-          </p>
-        )}
+        {/* Watermark */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none">
+          <span className="text-[20vw] font-black text-white/[0.015] leading-none tracking-tighter">PR</span>
+        </div>
 
-        <div className="space-y-6">
-          {/* CAS login */}
-          <Button
-            size="lg"
-            className="w-full py-3"
-            onClick={handleCasLogin}
-            loading={casLoading}
-          >
-            Login via CAS (SSO)
-          </Button>
+        {/* Card */}
+        <motion.div
+          initial={{ opacity: 0, y: 24, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-md relative z-10 origin-top scale-[0.78]"
+        >
+          <div className="rounded-3xl border border-white/[0.08] overflow-hidden"
+               style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(24px)' }}>
+            <div className="p-8 sm:p-10">
+              {/* Card header */}
+              <div className="flex items-center gap-2.5 mb-8">
+                <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-white/70" />
+                </div>
+                <span className="text-white/50 text-xs font-medium tracking-wider uppercase">UConn Peer Review</span>
+              </div>
 
-          {/* Divider */}
-          <div className="relative flex items-center py-2">
-            <div className="flex-grow border-t border-slate-200" />
-            <span className="flex-shrink-0 mx-4 text-slate-400 text-xs uppercase tracking-wider font-semibold">
-              Developer Mode
-            </span>
-            <div className="flex-grow border-t border-slate-200" />
+              <h1 className="text-3xl font-bold text-white mb-1 tracking-tight">Peer Review</h1>
+              <p className="text-white/30 text-xs tracking-[0.3em] uppercase mb-8">UConn Portal</p>
+
+              <div className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-8" />
+
+              {searchParams.get('registered') === 'true' && (
+                <p className="text-emerald-400 text-sm text-center mb-4 font-medium">
+                  Registration successful! Please sign in.
+                </p>
+              )}
+              {error && (
+                <p className="text-red-400 text-sm text-center mb-4 font-medium" role="alert" aria-live="assertive">
+                  {error}
+                </p>
+              )}
+
+              <p className="text-white/40 text-[11px] font-medium tracking-wider uppercase mb-3">Authentication</p>
+
+              {/* CAS login */}
+              <button
+                onClick={handleCasLogin}
+                disabled={casLoading}
+                className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl text-white text-sm font-semibold transition-all duration-200 mb-6"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(59,125,216,0.35), rgba(59,125,216,0.18))',
+                  border: '1px solid rgba(59,125,216,0.3)',
+                  boxShadow: '0 0 24px rgba(59,125,216,0.12)',
+                }}
+              >
+                {casLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Lock className="w-4 h-4" />
+                )}
+                Sign in with UConn NetID
+              </button>
+
+              {/* Divider */}
+              <div className="flex items-center gap-3 my-6">
+                <span className="flex-1 h-px bg-white/[0.06]" />
+                <span className="text-white/20 text-[10px] tracking-widest uppercase font-medium">or</span>
+                <span className="flex-1 h-px bg-white/[0.06]" />
+              </div>
+
+              {/* Local login */}
+              <form onSubmit={handleLocalLogin} className="space-y-3">
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <input
+                    id="login-email"
+                    className="w-full py-3 pl-10 pr-4 rounded-xl text-sm text-white placeholder-white/25 outline-none transition-all"
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}
+                    type="email"
+                    placeholder="Email address"
+                    required
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
+                  <input
+                    id="login-password"
+                    className="w-full py-3 pl-10 pr-4 rounded-xl text-sm text-white placeholder-white/25 outline-none transition-all"
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                    }}
+                    type="password"
+                    placeholder="Password"
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 rounded-xl text-sm text-white/80 font-medium transition-all duration-200 hover:text-white"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  {loading ? 'Signing in…' : 'Sign in with Email'}
+                </button>
+              </form>
+
+              <p className="text-white/15 text-[10px] text-center mt-6 tracking-wider uppercase font-medium">
+                Secured via UConn CAS single sign-on
+              </p>
+
+              <p className="text-center text-sm text-white/30 mt-4">
+                No account?{' '}
+                <Link to="/register" className="text-white/60 hover:text-white font-semibold transition-colors">
+                  Create one
+                </Link>
+              </p>
+            </div>
           </div>
+        </motion.div>
 
-          {/* Local dev login form */}
-          <form onSubmit={handleLocalLogin} className="space-y-4">
-            <div>
-              <label className="sr-only" htmlFor="login-email">Email address</label>
-              <input
-                id="login-email"
-                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 transition-all bg-slate-50 focus:bg-white text-sm"
-                type="email"
-                placeholder="Email address"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="sr-only" htmlFor="login-password">Password</label>
-              <input
-                id="login-password"
-                className="w-full p-3 border border-slate-200 rounded-xl outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 transition-all bg-slate-50 focus:bg-white text-sm"
-                type="password"
-                placeholder="Password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" className="w-full" loading={loading}>
-              Sign in
-            </Button>
-          </form>
-
-          <p className="text-center text-sm text-slate-500 font-medium">
-            Don&apos;t have an account?{' '}
-            <Link to="/register" className="text-[#000E2F] font-bold hover:underline">
-              Create one
-            </Link>
+        {/* Tagline */}
+        <div className="absolute bottom-8 left-0 right-0 text-center">
+          <p className="text-white/15 text-xs tracking-wider">
+            University of Connecticut &nbsp;·&nbsp; Collaborative Peer Review Platform
           </p>
         </div>
-      </Card>
+      </main>
+
+      {/* ── FOOTER ── */}
+      <footer className="flex items-center justify-between px-8 py-5 relative z-10">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-white/20" />
+          <span className="text-white/20 text-xs font-medium">UConn <strong>PR</strong></span>
+        </div>
+        <span className="text-white/15 text-[10px] tracking-wider">© University of Connecticut</span>
+      </footer>
     </div>
   );
 }

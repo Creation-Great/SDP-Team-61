@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Download, ArrowLeft, Loader2, AlertCircle, ChevronDown, ChevronUp, LogIn } from 'lucide-react';
+import { Download, ArrowLeft, Loader2, AlertCircle, ChevronDown, ChevronUp, LogIn, Eye, EyeOff, TrendingUp, Users } from 'lucide-react';
 import API from '../services/api';
 import { API_BASE_URL } from '../config';
 import useFilteredList from '../hooks/useFilteredList';
@@ -18,6 +18,12 @@ export default function PeerReviewResultsPage() {
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [biasData, setBiasData] = useState(null);
+  const [showBias, setShowBias] = useState(false);
+  const [allStudents, setAllStudents] = useState(null);
+  const [showInstructorReview, setShowInstructorReview] = useState(false);
+  const [instructorReviews, setInstructorReviews] = useState({});
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   /* ── Averages: search by student name / team ── */
   const avgSearchKeys = useCallback((r) => [r.student_name, r.team], []);
@@ -57,6 +63,78 @@ export default function PeerReviewResultsPage() {
       })
       .finally(() => setLoading(false));
   }, [sessionId]);
+
+  /* ── Load bias analytics on demand ── */
+  useEffect(() => {
+    if (showBias && !biasData) {
+      API.get(`/peer-review/sessions/${sessionId}/bias-analytics`)
+        .then((res) => setBiasData(res.data))
+        .catch(() => setBiasData([]));
+    }
+  }, [showBias, biasData, sessionId]);
+
+  /* ── Load all students for instructor review on demand ── */
+  useEffect(() => {
+    if (showInstructorReview && !allStudents) {
+      API.get(`/peer-review/sessions/${sessionId}/all-students`)
+        .then((res) => {
+          setAllStudents(res.data.students || []);
+          const existing = {};
+          (res.data.existingReviews || []).forEach((r) => {
+            existing[r.reviewee_id] = {
+              technical_contributions: r.technical_contributions,
+              team_interactions: r.team_interactions,
+              project_management: r.project_management,
+              individual_comments: r.individual_comments || '',
+            };
+          });
+          setInstructorReviews(existing);
+        })
+        .catch(() => setAllStudents([]));
+    }
+  }, [showInstructorReview, allStudents, sessionId]);
+
+  const handleReleaseScores = async () => {
+    const current = data?.session?.scores_released;
+    try {
+      await API.patch(`/peer-review/sessions/${sessionId}/release-scores`, { scores_released: !current });
+      setData((prev) => ({
+        ...prev,
+        session: { ...prev.session, scores_released: !current },
+      }));
+    } catch {
+      alert('Failed to toggle score release');
+    }
+  };
+
+  const handleInstructorReviewChange = (studentId, field, value) => {
+    setInstructorReviews((prev) => ({
+      ...prev,
+      [studentId]: { ...prev[studentId], [field]: value },
+    }));
+  };
+
+  const handleSubmitInstructorReviews = async () => {
+    const reviews = Object.entries(instructorReviews)
+      .filter(([, v]) => v.technical_contributions && v.team_interactions && v.project_management)
+      .map(([reviewee_id, v]) => ({
+        reviewee_id,
+        ...v,
+        technical_contributions: Number(v.technical_contributions),
+        team_interactions: Number(v.team_interactions),
+        project_management: Number(v.project_management),
+      }));
+    if (reviews.length === 0) return alert('Please fill scores for at least one student.');
+    setSubmittingReview(true);
+    try {
+      await API.post(`/peer-review/sessions/${sessionId}/instructor-review`, { reviews });
+      alert(`Submitted reviews for ${reviews.length} student(s).`);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to submit reviews');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
 
   const handleExportCsv = () => {
     // Use credentials: 'include' to send the httpOnly cookie automatically
@@ -131,6 +209,10 @@ export default function PeerReviewResultsPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button onClick={handleReleaseScores} variant={session.scores_released ? 'primary' : 'secondary'}>
+            {session.scores_released ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
+            {session.scores_released ? 'Hide Scores' : 'Release Scores'}
+          </Button>
           <Button onClick={handleExportCsv}>
             <Download className="w-4 h-4 mr-2" />
             Export CSV
@@ -325,6 +407,178 @@ export default function PeerReviewResultsPage() {
                     total={detList.total}
                     noun="reviews"
                   />
+                </>
+              )}
+            </motion.div>
+          )}
+        </Card>
+      </motion.div>
+
+      {/* Bias Analytics Section */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+        <Card className="p-6">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowBias(!showBias)}
+          >
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-amber-500" />
+              Self-Score Bias Analytics
+            </h3>
+            {showBias
+              ? <ChevronUp className="w-5 h-5 text-slate-400" />
+              : <ChevronDown className="w-5 h-5 text-slate-400" />
+            }
+          </div>
+
+          {showBias && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mt-4"
+            >
+              {!biasData ? (
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading analytics...
+                </div>
+              ) : biasData.length === 0 ? (
+                <p className="text-sm text-slate-400">No self-reviews data available.</p>
+              ) : (
+                <div className="overflow-x-auto -mx-6 px-6">
+                  <table className="w-full text-sm">
+                    <caption className="sr-only">Self-score bias analytics by student</caption>
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                        <th scope="col" className={thClass}>Team</th>
+                        <th scope="col" className={thClass}>Student</th>
+                        <th scope="col" className={thClass + ' text-center'}>Self Avg</th>
+                        <th scope="col" className={thClass + ' text-center'}>Peer Avg</th>
+                        <th scope="col" className={thClass + ' text-center'}>Bias</th>
+                        <th scope="col" className={thClass + ' text-center'}>Flag</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {biasData.map((b, idx) => {
+                        const bias = b.bias != null ? Number(b.bias) : null;
+                        const flagged = bias != null && Math.abs(bias) >= 1.0;
+                        return (
+                          <tr key={idx} className={`hover:bg-slate-50/50 ${flagged ? 'bg-amber-50/50' : ''}`}>
+                            <td className={tdClass}>{b.team || '—'}</td>
+                            <td className={tdClass + ' font-medium'}>{b.student_name}</td>
+                            <td className={tdCenter}>{b.self_avg != null ? Number(b.self_avg).toFixed(2) : '—'}</td>
+                            <td className={tdCenter}>{b.peer_avg != null ? Number(b.peer_avg).toFixed(2) : '—'}</td>
+                            <td className={tdCenter}>
+                              {bias != null ? (
+                                <span className={bias > 0.5 ? 'text-red-600 font-semibold' : bias < -0.5 ? 'text-blue-600 font-semibold' : ''}>
+                                  {bias > 0 ? '+' : ''}{bias.toFixed(2)}
+                                </span>
+                              ) : '—'}
+                            </td>
+                            <td className={tdCenter}>
+                              {flagged && (
+                                <Badge type={bias > 0 ? 'error' : 'info'}>
+                                  {bias > 0 ? '⬆ Inflated' : '⬇ Deflated'}
+                                </Badge>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="text-xs text-slate-400 mt-3">
+                    Bias = Self Avg − Peer Avg. Students with |bias| ≥ 1.0 are flagged.
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </Card>
+      </motion.div>
+
+      {/* Instructor Review All Students Section */}
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+        <Card className="p-6">
+          <div
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => setShowInstructorReview(!showInstructorReview)}
+          >
+            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-500" />
+              Instructor Review (All Students)
+            </h3>
+            {showInstructorReview
+              ? <ChevronUp className="w-5 h-5 text-slate-400" />
+              : <ChevronDown className="w-5 h-5 text-slate-400" />
+            }
+          </div>
+
+          {showInstructorReview && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mt-4 space-y-4"
+            >
+              {!allStudents ? (
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading students...
+                </div>
+              ) : allStudents.length === 0 ? (
+                <p className="text-sm text-slate-400">No students enrolled in this course.</p>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-500">
+                    Review all {allStudents.length} students in one page. Fill scores and comments, then submit.
+                  </p>
+                  <div className="space-y-3">
+                    {allStudents.map((s) => {
+                      const rev = instructorReviews[s.user_id] || {};
+                      return (
+                        <div key={s.user_id} className="p-4 rounded-xl border border-slate-200 bg-white space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-slate-900">{s.name}</span>
+                            <Badge type="default">Team {s.group_id}</Badge>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {['technical_contributions', 'team_interactions', 'project_management'].map((field) => (
+                              <div key={field}>
+                                <label className="text-xs text-slate-500 capitalize">{field.replace(/_/g, ' ')}</label>
+                                <div className="flex gap-1 mt-1">
+                                  {[1, 2, 3, 4, 5].map((v) => (
+                                    <button
+                                      key={v}
+                                      type="button"
+                                      className={`w-8 h-8 rounded-lg text-sm font-medium border transition-colors ${
+                                        Number(rev[field]) === v
+                                          ? 'bg-[#000E2F] text-white border-[#000E2F]'
+                                          : 'bg-white text-slate-600 border-slate-200 hover:border-[#000E2F]/30'
+                                      }`}
+                                      onClick={() => handleInstructorReviewChange(s.user_id, field, v)}
+                                    >
+                                      {v}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="Comments (optional)"
+                            className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10"
+                            value={rev.individual_comments || ''}
+                            onChange={(e) => handleInstructorReviewChange(s.user_id, 'individual_comments', e.target.value)}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-end pt-2">
+                    <Button onClick={handleSubmitInstructorReviews} disabled={submittingReview}>
+                      {submittingReview && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Submit Instructor Reviews
+                    </Button>
+                  </div>
                 </>
               )}
             </motion.div>

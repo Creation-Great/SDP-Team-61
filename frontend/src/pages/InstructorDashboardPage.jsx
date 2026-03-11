@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Loader2, Upload, UserPlus, Download, AlertCircle, BarChart3,
-  ChevronRight, Plus, Sparkles,
+  ChevronRight, Plus, Sparkles, Radio,
 } from 'lucide-react';
 import API from '../services/api';
 import useFilteredList from '../hooks/useFilteredList';
+import useSSE from '../hooks/useSSE';
 import SearchInput from '../components/SearchInput';
 import Pagination from '../components/Pagination';
 import Card from '../components/ui/Card';
@@ -36,6 +37,18 @@ export default function InstructorDashboardPage() {
   // AI Activity Logs state
   const [aiLogs, setAiLogs] = useState([]);
   const [aiLogsLoading, setAiLogsLoading] = useState(false);
+
+  // SSE live events
+  const [liveEvents, setLiveEvents] = useState([]);
+  const { connected } = useSSE('/instructor/events', {
+    onEvent: useCallback((event) => {
+      setLiveEvents((prev) => [event, ...prev].slice(0, 20));
+      // Auto-refresh submissions list on new submission
+      if (event.type === 'submission_created') {
+        API.get('/submissions/all').then((r) => setSubmissions(r.data)).catch(() => {});
+      }
+    }, []),
+  });
 
   const subSearchKeys = useCallback((s) => [s.title, s.student_name, s.student_email], []);
   const subFilterFn = useCallback((s, f) => !f.status || s.status === f.status, []);
@@ -99,6 +112,36 @@ export default function InstructorDashboardPage() {
     }
   };
 
+  const exportAggregateCsv = () => {
+    if (!csvResult?.students?.length) return;
+    const cats = csvResult.categories || [];
+    const hdr = ['Team', 'Student', ...cats.map((c) => c.label), 'Overall', 'Individual Comments'];
+    const rows = csvResult.students.map((s) => {
+      const catVals = cats.map((c) => {
+        const avg = s.per_category?.[c.key]?.average;
+        return avg !== null && avg !== undefined ? avg.toFixed(2) : '';
+      });
+      return [
+        s.team || '',
+        s.student_name || '',
+        ...catVals,
+        s.overall_average !== null && s.overall_average !== undefined ? s.overall_average.toFixed(2) : '',
+        (s.comments || []).join('; '),
+      ];
+    });
+    const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [hdr.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `aggregate-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleCsvUpload = async (e) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -144,7 +187,14 @@ export default function InstructorDashboardPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Instructor Dashboard</h1>
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            Instructor Dashboard
+            {connected && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                <Radio className="w-3 h-3 animate-pulse" /> Live
+              </span>
+            )}
+          </h1>
           <p className="text-slate-500 mt-1">Monitor course progress, submissions, and review quality.</p>
         </div>
         <div className="flex gap-3">
@@ -268,6 +318,44 @@ export default function InstructorDashboardPage() {
               </div>
             </Card>
           </div>
+
+          {/* Live Events Feed */}
+          {liveEvents.length > 0 && (
+            <Card className="p-0 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-emerald-500" /> Live Events
+                </h2>
+                <Button variant="ghost" size="sm" onClick={() => setLiveEvents([])}>Clear</Button>
+              </div>
+              <div className="p-6 space-y-3 max-h-64 overflow-y-auto">
+                {liveEvents.map((evt, i) => {
+                  const labels = {
+                    submission_created: 'New Submission',
+                    review_submitted: 'Review Submitted',
+                    peer_review_submitted: 'Peer Review Submitted',
+                  };
+                  const colors = {
+                    submission_created: 'info',
+                    review_submitted: 'success',
+                    peer_review_submitted: 'warning',
+                  };
+                  return (
+                    <div key={i} className="flex items-center gap-3 text-sm">
+                      <Badge type={colors[evt.type] || 'info'}>{labels[evt.type] || evt.type}</Badge>
+                      <span className="text-slate-700">
+                        {evt.data?.student_name || evt.data?.reviewer_name || 'Unknown'}
+                        {evt.data?.title ? ` — "${evt.data.title}"` : ''}
+                      </span>
+                      <span className="text-xs text-slate-400 ml-auto whitespace-nowrap">
+                        {new Date(evt.timestamp || Date.now()).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
 
           {/* Weekly Trends table */}
           {weeklyTrends.length > 0 && (
@@ -540,6 +628,13 @@ export default function InstructorDashboardPage() {
                     <div className="text-xs text-slate-500 mt-1">Rows Skipped</div>
                   </div>
                 </div>
+                {csvResult.students?.length > 0 && (
+                  <div className="mt-4 flex justify-center">
+                    <Button variant="secondary" icon={Download} onClick={exportAggregateCsv}>
+                      Download Aggregate CSV
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="p-6 space-y-6 overflow-x-auto">
@@ -583,6 +678,7 @@ export default function InstructorDashboardPage() {
                             <th scope="col" key={c.key} className={thClass}>{c.label}</th>
                           ))}
                           <th scope="col" className={thClass}>Overall</th>
+                          <th scope="col" className={thClass}>Individual Comments</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -599,6 +695,11 @@ export default function InstructorDashboardPage() {
                             ))}
                             <td className={tdClass + ' font-semibold'}>
                               {s.overall_average !== null ? s.overall_average.toFixed(2) : '—'}
+                            </td>
+                            <td className={tdClass + ' max-w-xs'}>
+                              {s.comments?.length > 0
+                                ? s.comments.map((c, ci) => <p key={ci} className="text-xs text-slate-600 mb-1 last:mb-0">{c}</p>)
+                                : '—'}
                             </td>
                           </tr>
                         ))}

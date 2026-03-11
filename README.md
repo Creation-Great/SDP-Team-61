@@ -1,6 +1,6 @@
 # SDP Peer Review System – Integrated
 
-> AI-enhanced peer review platform for university courses. Built with **UConn Blue (#000E2F)** theme, featuring real-time notifications, global search, AI-powered writing tools, and instructor analytics. Integrated from `SDP-Team-61-main` and `SDP-Team-61-old-main`, keeping the strengths of each.
+> AI-enhanced peer review platform for university courses. Built with **UConn Blue (#000E2F)** theme, featuring **SSE real-time streaming**, review quality flags, global search, AI-powered writing tools, and instructor analytics. Integrated from `SDP-Team-61-main`, `SDP-Team-61-old-main`, and `SDP-Team-61-anish-dev`, keeping the strengths of each.
 
 ## Tech Stack
 
@@ -15,19 +15,19 @@
 ## Architecture
 
 ```
-┌──────────────────────┐      ┌──────────────────────┐      ┌──────────────┐
-│    Frontend          │────▶│  Backend (TS)        │────▶│ PostgreSQL   │
-│  React 19 / Vite     │      │  Express 5 + JWT     │      │  RLS + Audit │
-│  Tailwind + UConn    │      │  Pino + Zod + Helmet │      │  :5432       │
-│  :5173 (dev)         │      │  :8080               │      └──────────────┘
-│  :80  (prod/nginx)   │      └──────────┬───────────┘
-└──────────────────────┘                 │
-         │                       ┌───────▼────────┐
-         │  Notifications        │  AI Service    │
-         │  Search               │  Flask + OpenAI│
-         │  Feedback / Rewrite   │  :5001         │
-         │  Polish / Summarize   │                │
-         └───────proxy─────────▶└────────────────┘
+┌──────────────────────┐       ┌──────────────────────┐      ┌──────────────┐
+│    Frontend          │────▶ │  Backend (TS)        │────▶│ PostgreSQL   │
+│  React 19 / Vite     │       │  Express 5 + JWT     │      │  RLS + Audit │
+│  Tailwind + UConn    │◀─SSE─│  Pino + Zod + Helmet │      │  :5432       │
+│  :5173 (dev)         │       │  :8080               │      └──────────────┘
+│  :80  (prod/nginx)   │       └──────────┬───────────┘
+└──────────────────────┘                  │
+         │                        ┌───────▼────────┐
+         │  Notifications         │  AI Service    │
+         │  Search / SSE          │  Flask + OpenAI│
+         │  Feedback / Rewrite    │  :5001         │
+         │  Polish / Summarize    │                │
+         └───────proxy─────────▶ └────────────────┘
 ```
 
 ## Features
@@ -35,10 +35,16 @@
 ### Core Functionality
 - **File Submission & Review**: Students upload assignments; reviewers assigned automatically or manually
 - **Peer Review Sessions**: Instructor creates sessions with team chemistry + technical contribution scores
+- **Self-Review Support**: Students can review themselves as part of peer review — `is_self` flag is automatically set and displayed with an info badge
+- **Grading Rubric Panels**: Collapsible rubric descriptions shown alongside score selectors for both file reviews (5-level Excellent→Poor) and peer reviews (3 categories × 5 levels)
 - **Session Deadline**: Instructor can set an optional deadline when creating a session; expired sessions auto-close lazily on next access, and students see a live countdown timer
 - **Privacy-Isolated Reviews**: Students can only view their own peer review scores — other team members' data is filtered server-side
-- **CSV Aggregation**: Batch upload CSV peer review results with per-student/category breakdown
-- **Weekly Check-ins**: Students self-rate and rate teammates; instructors manage scores across weeks
+- **Score Release Control**: Instructor can release/hide aggregated peer review scores — students cannot see their scores until explicitly released after the assignment is completed
+- **Student Score Viewing**: Dedicated page where students view their released peer review scores (technical, interactions, management, chemistry)
+- **Self-Score Bias Analytics**: Instructor analytics showing per-student self-given vs peer-given score comparison with bias metric (Self Avg − Peer Avg); flags students with |bias| ≥ 1.0
+- **Instructor Review (All Students)**: Consolidated page where instructors can review all students in a session from one page, with score buttons and comments — supports non-student reviewers
+- **CSV Aggregation**: Batch upload CSV peer review results with per-student/category breakdown, **Individual Comments** extraction, and **Download Aggregate CSV** export
+- **Weekly Check-ins**: Students self-rate and rate teammates; instructors manage scores across weeks; CSV import auto-detects and displays Individual Comments
 - **Enrollment Management**: Multi-course support with team grouping
 
 ### AI-Powered Features
@@ -48,7 +54,11 @@
 - **AI Activity Logs**: Instructor dashboard tracks all AI usage (feedback/rewrite/polish/summarize) with user names and real-time display
 - **Global Search**: Full-text search across submissions and users via the header search bar
 
-### Notification System
+### Real-Time & Notification System
+- **SSE Live Streaming**: Server-Sent Events push `submission_created`, `review_submitted`, `peer_review_submitted` events to the instructor dashboard in real-time
+- **Live Indicator**: Green "Live" badge with pulse animation when SSE connection is active
+- **Live Events Feed**: Scrollable event feed on instructor dashboard with color-coded badges and timestamps
+- **Auto-Reconnect**: SSE hook with exponential backoff (max 30 s) and automatic reconnection
 - **Real-Time Bell**: Header notification bell with unread count badge (polls every 30 seconds)
 - **Notification Panel**: Dropdown panel showing recent notifications with mark-read and mark-all-read
 - **Notification Types**: `review_received`, `review_assigned`, `deadline`, `ai_complete`, `system`
@@ -56,14 +66,19 @@
 ### UI / UX
 - **UConn Blue Theme**: Primary color `#000E2F` applied throughout the application
 - **Sidebar Navigation**: Collapsible sidebar with role-based menu items (replaces top navbar)
-- **UI Component Library**: Reusable `Card`, `Button`, `Badge` components in `components/ui/`
-- **Background Images**: Login/register use `content.png`; main content area uses `background3.jpg`
+- **UI Component Library**: Reusable `Card`, `Button` (with `asChild` prop for link styling), `Badge` (with `className` support), `Skeleton`, `ConfirmDialog`, `ToastProvider` components
+- **Background Images**: Login/register use `content.png` with gradient overlay; main content area uses `background3.jpg` with animated grid overlay
+- **Text Reveal Animation**: Typewriter-style text reveal component
+- **Animated Table**: Row-by-row staggered table animation component
+- **Error Boundary**: Graceful error fallback UI with retry option
 - **Responsive Design**: Mobile-friendly layout with hidden sidebar and mobile header
 
 ### Instructor Tools
-- **Unified Dashboard**: Overview stats, active sessions, AI activity logs, and weekly trends
-- **Analytics Page**: Score distribution visualization, anomaly detection, and CSV export
-- **Class Check-ins**: 3-tab page (Insights comparison, Weekly Scores matrix, Students list)
+- **Unified Dashboard**: Overview stats, active sessions, AI activity logs, weekly trends, and SSE live events feed
+- **Analytics Page**: Score distribution, anomaly detection, **file review quality flags**, **peer review quality flags**, roster CSV export, and server-side file review CSV export
+- **Quality Flags — File Reviews**: Detects identical scores across multiple reviews by the same reviewer and short comments (<20 chars)
+- **Quality Flags — Peer Reviews**: Detects identical Likert scores across 3 categories (technical, teamwork, project management) and short individual comments
+- **Class Check-ins**: 3-tab page (Insights comparison, Weekly Scores matrix, Students list); CSV upload pre-fills scores and auto-shows comments panel when Individual Comments column is present
 
 ### Security
 - **Row-Level Security (RLS)**: PostgreSQL policies enforce data isolation per user
@@ -72,13 +87,15 @@
 - **Session Mismatch Detection**: Peer review form detects when the logged-in cookie no longer matches the React user state and blocks submission with a warning banner
 - **CAS SSO**: University single sign-on integration (production)
 - **RBAC Middleware**: `requireRole()` guards protect instructor/student-only routes
-- **Zod Validation**: All request bodies validated with Zod schemas
-- **Rate Limiting**: Global, auth-specific, upload-specific, and AI-specific rate limiters
+- **Zod Validation**: All request bodies validated with Zod schemas; admin role blocked from self-registration
+- **Rate Limiting**: Global (100/min), auth (100/15 min), upload (100/10 min), and AI-specific rate limiters
 - **Audit Trail**: All critical operations logged to `audit` table
 - **bcrypt**: Passwords hashed (10 rounds)
 - **Helmet**: HTTP security headers
 - **CORS**: Configurable origin whitelist
 - **File Validation**: Upload magic-byte checks + type/size limits
+- **SSL Keys Excluded**: `.gitignore` blocks `ssl/` and `*.pem` files from version control
+- **JWT_SECRET**: Required via `.env` — no hardcoded fallback in docker-compose
 
 ### Accessibility (WCAG 2.1)
 - **ARIA radiogroup**: Score selectors use `role="radiogroup/radio"` with full keyboard navigation
@@ -109,7 +126,7 @@
 docker compose up db -d
 ```
 
-PostgreSQL 16 starts and auto-runs `backend/sql/migrations.sql` + `seed.sql`.
+PostgreSQL 16 starts and auto-runs `backend/sql/migrations.sql` + `seed.sql` (includes `user_enrollments` sync).
 
 ### 2. Setup Backend
 
@@ -145,7 +162,7 @@ npm run install:all             # installs backend + frontend
 npm run dev                     # runs backend + frontend concurrently
 ```
 
-## API Routes (50 endpoints)
+## API Routes (54+ endpoints)
 
 ### Auth (`/auth`)
 
@@ -188,6 +205,10 @@ npm run dev                     # runs backend + frontend concurrently
 | POST | `/instructor/checkins/current` | ✓ | Save check-in records |
 | GET | `/instructor/checkins/students` | ✓ | Check-in student list |
 | GET | `/instructor/checkins/insights` | ✓ | Check-in AI insights |
+| GET | `/instructor/quality-flags` | ✓ | File review quality flags (identical scores, short comments) |
+| GET | `/instructor/peer-review-quality-flags` | ✓ | Peer review quality flags |
+| GET | `/instructor/export-csv` | ✓ | Server-side file review CSV export |
+| GET | `/instructor/events` | ✓ | SSE real-time event stream |
 
 ### Peer Review (`/peer-review`)
 
@@ -197,9 +218,14 @@ npm run dev                     # runs backend + frontend concurrently
 | GET | `/peer-review/sessions/:id/my-team` | ✓ | — | Student's team |
 | POST | `/peer-review/sessions/:id/submit` | ✓ | — | Submit peer reviews |
 | GET | `/peer-review/sessions/:id/team-reviews` | ✓ | — | Own reviews only (privacy-filtered) |
+| GET | `/peer-review/sessions/:id/student-scores` | ✓ | student | View released scores |
 | POST | `/peer-review/sessions` | ✓ | instructor | Create session (optional `deadline`) |
 | PATCH | `/peer-review/sessions/:id` | ✓ | instructor | Toggle open/closed |
+| PATCH | `/peer-review/sessions/:id/release-scores` | ✓ | instructor | Toggle score release |
 | GET | `/peer-review/sessions/:id/results` | ✓ | instructor | Session results |
+| GET | `/peer-review/sessions/:id/bias-analytics` | ✓ | instructor | Self vs peer score bias |
+| GET | `/peer-review/sessions/:id/all-students` | ✓ | instructor | All students for review |
+| POST | `/peer-review/sessions/:id/instructor-review` | ✓ | instructor | Submit instructor reviews |
 | GET | `/peer-review/sessions/:id/export-csv` | ✓ | instructor | Export CSV |
 
 ### Check-ins (`/checkins`)
@@ -317,7 +343,8 @@ SDP-Team-61-integrated/
 │   │       ├── userSchema.ts     # User validation
 │   │       ├── csvPeerReview.ts  # CSV parsing utilities
 │   │       ├── enrollment.ts     # Enrollment helpers
-│   │       └── mvRefresh.ts      # Materialized view refresh
+│   │       ├── mvRefresh.ts      # Materialized view refresh
+│   │       └── sse.ts            # SSE channel hub (Server-Sent Events)
 │   ├── tests/
 │   │   ├── envSetup.ts           # Test environment variables
 │   │   ├── helpers.ts            # Mock DB factories, JWT helpers
@@ -352,7 +379,8 @@ SDP-Team-61-integrated/
 │       ├── contexts/
 │       │   └── AuthContext.jsx    # Auth state provider
 │       ├── hooks/
-│       │   └── useFilteredList.js # Pagination + search + sort hook
+│       │   ├── useFilteredList.js # Pagination + search + sort hook
+│       │   └── useSSE.js          # SSE EventSource hook with auto-reconnect
 │       ├── services/
 │       │   └── api.js            # Axios instance + interceptors
 │       ├── utils/
@@ -365,12 +393,20 @@ SDP-Team-61-integrated/
 │       │   ├── InstructorRoute.jsx
 │       │   ├── StudentRoute.jsx
 │       │   ├── ScoreSelector.jsx     # Accessible 1–5 score radio group
+│       │   ├── RubricPanel.jsx       # Collapsible rubric panels (file + peer review)
 │       │   ├── SearchInput.jsx       # Debounced search input
 │       │   ├── Pagination.jsx        # Page navigation
 │       │   ├── ui/                   # Reusable UI primitives
 │       │   │   ├── Badge.jsx
 │       │   │   ├── Button.jsx
-│       │   │   └── Card.jsx
+│       │   │   ├── Card.jsx
+│       │   │   ├── Skeleton.jsx
+│       │   │   ├── ConfirmDialog.jsx
+│       │   │   └── ToastProvider.jsx
+│       │   ├── InfiniteGridBackground.jsx  # Animated grid background
+│       │   ├── TextReveal.jsx              # Typewriter animation
+│       │   ├── AnimatedTable.jsx           # Staggered row animation
+│       │   ├── ErrorBoundary.jsx           # Graceful error fallback
 │       │   └── checkins/             # Check-in sub-components
 │       │       ├── WeeklyScoresTable.jsx
 │       │       ├── RollingAveragesTable.jsx
@@ -383,8 +419,8 @@ SDP-Team-61-integrated/
 │           ├── LoginPage.jsx
 │           ├── RegisterPage.jsx
 │           ├── StudentDashboardPage.jsx
-│           ├── InstructorDashboardPage.jsx   # Stats + AI logs + weekly trends
-│           ├── InstructorAnalyticsPage.jsx   # Score distribution + anomalies
+│           ├── InstructorDashboardPage.jsx   # Stats + AI logs + SSE live events + weekly trends
+│           ├── InstructorAnalyticsPage.jsx   # Score distribution + anomalies + quality flags
 │           ├── InstructorPeerReviewPage.jsx
 │           ├── ClassCheckinsPage.jsx         # 3-tab: Insights / Scores / Students
 │           ├── UploadAssignment.jsx
@@ -393,7 +429,8 @@ SDP-Team-61-integrated/
 │           ├── ViewReviewPage.jsx            # AI Summarize + AI Feedback integration
 │           ├── PeerReviewSessionsPage.jsx
 │           ├── PeerReviewFormPage.jsx        # AI Polish integration
-│           ├── PeerReviewResultsPage.jsx
+│           ├── PeerReviewResultsPage.jsx     # Bias analytics + instructor review + score release
+│           ├── StudentScoresPage.jsx         # Student released score viewer
 │           ├── StudentCheckinsPage.jsx
 │           ├── EnrollmentManagementPage.jsx  # Instructor enrollment CRUD
 │           └── NotFoundPage.jsx
@@ -515,6 +552,11 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | AI activity logs | New | Track and display all AI usage for instructors |
 | Instructor analytics | New | Score distribution, anomaly detection, export |
 | Class check-ins page | Enhanced | 3-tab view: insights, weekly scores, students |
+| SSE real-time streaming | anish-dev | Live event push for submissions & reviews |
+| Review quality flags | anish-dev | Detect identical scores & short comments |
+| Server-side CSV export | anish-dev | File review per-submission breakdown |
+| Enhanced UI components | anish-dev | Skeleton, Toast, ConfirmDialog, animations |
+| Error Boundary | anish-dev | Graceful error fallback with retry |
 
 ## Database Schema (10 migrations)
 

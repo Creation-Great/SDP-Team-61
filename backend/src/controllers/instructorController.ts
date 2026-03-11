@@ -6,6 +6,7 @@ import { aggregatePeerReviewCsvFiles } from '../utils/csvPeerReview.js';
 import { getUsersTableSchema } from '../utils/userSchema.js';
 import { AppError } from '../utils/AppError.js';
 import { scheduleMvRefresh } from '../utils/mvRefresh.js';
+import { addSseClient } from '../utils/sse.js';
 
 /**
  * GET /instructor/overview
@@ -210,21 +211,33 @@ export async function getCheckinStudents(req: AuthRequest, res: Response): Promi
         ? "netid || '@uconn.edu'"
         : "''";
 
-    const result = await client.query(
-      `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email
-       FROM users
-       WHERE role = 'student'
-         AND (
-           -- enrollment-aware: check user_enrollments first, fallback to users columns
-           user_id IN (
-             SELECT ue.user_id FROM user_enrollments ue
-             WHERE ue.course_id = $1 AND ue.group_id = $2
+    // When group_id is absent, return all students in the course (instructor supervises whole course)
+    const hasGroup = Boolean(group_id);
+    const sql = hasGroup
+      ? `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email
+         FROM users
+         WHERE role = 'student'
+           AND (
+             user_id IN (
+               SELECT ue.user_id FROM user_enrollments ue
+               WHERE ue.course_id = $1 AND ue.group_id = $2
+             )
+             OR (course_id = $1 AND group_id = $2)
            )
-           OR (course_id = $1 AND group_id = $2)
-         )
-       ORDER BY ${displayExpr} ASC`,
-      [course_id || '', group_id || '']
-    );
+         ORDER BY ${displayExpr} ASC`
+      : `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email
+         FROM users
+         WHERE role = 'student'
+           AND (
+             user_id IN (
+               SELECT ue.user_id FROM user_enrollments ue
+               WHERE ue.course_id = $1
+             )
+             OR course_id = $1
+           )
+         ORDER BY ${displayExpr} ASC`;
+    const params = hasGroup ? [course_id || '', group_id] : [course_id || ''];
+    const result = await client.query(sql, params);
     return result.rows;
   });
 
@@ -305,4 +318,251 @@ export async function getUnifiedDashboard(req: AuthRequest, res: Response): Prom
   });
 
   res.json(data);
+}
+
+/**
+ * GET /instructor/quality-flags
+ * Detect low-quality file reviews: identical scores across a reviewer's reviews,
+ * or comments shorter than 20 characters.
+ * Query: ?course=xxx&group=yyy (optional filters)
+ */
+export async function getQualityFlags(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const course = req.query.course as string | undefined;
+  const group = req.query.group as string | undefined;
+
+  const flags = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT
+         u_reviewer.name AS reviewer_name,
+         u_author.name   AS author_name,
+         s.title          AS submission_title,
+         r.score,
+         r.comments,
+         r.created_at     AS review_date
+       FROM reviews r
+       JOIN users u_reviewer ON u_reviewer.user_id = r.reviewer_id
+       JOIN submissions s ON s.submission_id = r.submission_id
+       JOIN users u_author ON u_author.user_id = s.user_id
+       WHERE ($1::text IS NULL OR u_reviewer.course_id = $1)
+         AND ($2::text IS NULL OR u_reviewer.group_id  = $2)
+       ORDER BY r.reviewer_id, r.created_at DESC`,
+      [course || null, group || null]
+    );
+
+    // Group reviews by reviewer to detect identical scores
+    const byReviewer = new Map<string, any[]>();
+    for (const row of result.rows) {
+      const key = row.reviewer_name;
+      if (!byReviewer.has(key)) byReviewer.set(key, []);
+      byReviewer.get(key)!.push(row);
+    }
+
+    const flagged: Array<{
+      reviewer_name: string;
+      author_name: string;
+      submission_title: string;
+      flag_reason: string;
+      review_date: string;
+    }> = [];
+
+    for (const [, reviews] of byReviewer) {
+      // Check if all scores are identical (only flag if >= 2 reviews)
+      const scores = reviews.map((r: any) => Number(r.score));
+      const allIdentical = scores.length >= 2 && new Set(scores).size === 1;
+
+      for (const r of reviews) {
+        const reasons: string[] = [];
+        if (allIdentical) reasons.push('Identical scores across reviews');
+        if ((r.comments || '').length < 20) reasons.push('Short comment');
+        if (reasons.length > 0) {
+          flagged.push({
+            reviewer_name: r.reviewer_name,
+            author_name: r.author_name,
+            submission_title: r.submission_title,
+            flag_reason: reasons.join(', '),
+            review_date: r.review_date,
+          });
+        }
+      }
+    }
+
+    return flagged;
+  });
+
+  res.json(flags);
+}
+
+/**
+ * GET /instructor/peer-review-quality-flags
+ * Detect low-quality peer reviews: identical Likert scores across all three
+ * categories, or comments shorter than 20 characters.
+ * Query: ?session=xxx (optional filter)
+ */
+export async function getPeerReviewQualityFlags(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const sessionId = req.query.session as string | undefined;
+
+  const flags = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT
+         u_reviewer.name AS reviewer_name,
+         u_reviewee.name AS reviewee_name,
+         ps.title         AS session_title,
+         pr.technical_contributions,
+         pr.team_interactions,
+         pr.project_management,
+         pr.individual_comments,
+         pr.is_self,
+         pr.updated_at
+       FROM peer_reviews pr
+       JOIN users u_reviewer ON u_reviewer.user_id = pr.reviewer_id
+       JOIN users u_reviewee ON u_reviewee.user_id = pr.reviewee_id
+       JOIN peer_review_sessions ps ON ps.session_id = pr.session_id
+       WHERE pr.is_self = false
+         AND ($1::text IS NULL OR pr.session_id = $1)
+       ORDER BY pr.reviewer_id, pr.updated_at DESC`,
+      [sessionId || null]
+    );
+
+    const flagged: Array<{
+      reviewer_name: string;
+      reviewee_name: string;
+      session_title: string;
+      flag_reason: string;
+      review_date: string;
+    }> = [];
+
+    for (const row of result.rows) {
+      const reasons: string[] = [];
+
+      // Identical Likert scores across all three categories
+      const scores = [
+        Number(row.technical_contributions),
+        Number(row.team_interactions),
+        Number(row.project_management),
+      ];
+      if (new Set(scores).size === 1) {
+        reasons.push('Identical scores across categories');
+      }
+
+      // Short comment
+      if ((row.individual_comments || '').length < 20) {
+        reasons.push('Short comment');
+      }
+
+      if (reasons.length > 0) {
+        flagged.push({
+          reviewer_name: row.reviewer_name,
+          reviewee_name: row.reviewee_name,
+          session_title: row.session_title,
+          flag_reason: reasons.join(', '),
+          review_date: row.updated_at,
+        });
+      }
+    }
+
+    return flagged;
+  });
+
+  res.json(flags);
+}
+
+/**
+ * GET /instructor/export-csv
+ * Export file review analytics as a downloadable CSV.
+ * Query: ?course=xxx&group=yyy (optional filters)
+ */
+export async function exportFileReviewCsv(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const course = req.query.course as string | undefined;
+  const group = req.query.group as string | undefined;
+
+  const data = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT
+         u.name                AS student_name,
+         u.course_id,
+         u.group_id,
+         s.title               AS submission_title,
+         s.status              AS submission_status,
+         s.created_at          AS submission_date,
+         COUNT(a.assignment_id) FILTER (WHERE a.status <> 'canceled')  AS assigned_count,
+         COUNT(a.assignment_id) FILTER (WHERE a.status = 'completed')  AS completed_count,
+         ROUND(AVG(r.score)::numeric, 2) AS avg_score
+       FROM submissions s
+       JOIN users u ON u.user_id = s.user_id
+       LEFT JOIN assignments a ON a.submission_id = s.submission_id
+       LEFT JOIN reviews r ON r.submission_id = s.submission_id
+       WHERE ($1::text IS NULL OR u.course_id = $1)
+         AND ($2::text IS NULL OR u.group_id  = $2)
+       GROUP BY s.submission_id, u.name, u.course_id, u.group_id, s.title, s.status, s.created_at
+       ORDER BY u.name, s.created_at DESC`,
+      [course || null, group || null]
+    );
+    return result.rows;
+  });
+
+  // Build CSV
+  const escape = (val: string) => {
+    if (val && (val.includes(',') || val.includes('"') || val.includes('\n'))) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val || '';
+  };
+
+  const header = 'Student,Course,Group,Submission,Status,Date,Assigned,Completed,Avg Score';
+  const rows = data.map((r: any) =>
+    [
+      escape(r.student_name || ''),
+      escape(r.course_id || ''),
+      escape(r.group_id || ''),
+      escape(r.submission_title || ''),
+      escape(r.submission_status || ''),
+      r.submission_date ? new Date(r.submission_date).toISOString().slice(0, 10) : '',
+      r.assigned_count ?? '0',
+      r.completed_count ?? '0',
+      r.avg_score ?? '',
+    ].join(',')
+  );
+  const csv = [header, ...rows].join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename=file-review-analytics.csv');
+  res.send(csv);
+}
+
+/**
+ * GET /instructor/events
+ * SSE stream for real-time dashboard events (submissions, reviews, peer reviews).
+ * The instructor subscribes once; the channel is scoped to their course.
+ * Since EventSource cannot set headers, pass JWT via ?token= query param.
+ */
+export async function streamEvents(req: AuthRequest, res: Response): Promise<void> {
+  const channel = req.user.course_id
+    ? `course:${req.user.course_id}`
+    : `instructor:${req.user.user_id}`;
+
+  // SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // Register client
+  addSseClient(channel, res);
+
+  // Heartbeat every 30 s to keep connection alive
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(': heartbeat\n\n');
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 30_000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+  });
 }

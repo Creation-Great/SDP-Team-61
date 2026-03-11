@@ -3,7 +3,7 @@
  *
  * Types: success | warning | error | info | default
  */
-export default function Badge({ children, type = 'default' }) {
+export default function Badge({ children, type = 'default', className = '' }) {
   const types = {
     success: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
     warning: 'bg-amber-100 text-amber-700 border border-amber-200',
@@ -14,7 +14,7 @@ export default function Badge({ children, type = 'default' }) {
 
   return (
     <span
-      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${types[type] || types.default}`}
+      className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${types[type] || types.default} ${className}`}
     >
       {children}
     </span>

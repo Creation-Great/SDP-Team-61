@@ -87,7 +87,7 @@ export default function StudentDashboardPage() {
         </Card>
 
         {/* Avg Score */}
-        <Card className="p-6 cursor-pointer" onClick={() => submissions[0] ? navigate(`/view-review/${submissions[0].submission_id}`) : undefined}>
+        <Card className={`p-6 ${submissions[0] ? 'cursor-pointer' : ''}`} onClick={() => submissions[0] ? navigate(`/view-review/${submissions[0].submission_id}`) : undefined}>
           <div className="flex justify-between items-start">
             <div>
               <h3 className="text-slate-500 font-medium mb-1">Avg Score Received</h3>

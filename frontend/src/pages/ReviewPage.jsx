@@ -10,6 +10,7 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import ScoreSelector from '../components/ScoreSelector';
+import { FileReviewRubric } from '../components/RubricPanel';
 
 export default function ReviewPage() {
   const { id } = useParams(); // assignment_id
@@ -211,6 +212,9 @@ export default function ReviewPage() {
                     value={score}
                     onChange={setScore}
                   />
+                  <div className="mt-3">
+                    <FileReviewRubric currentScore={score} />
+                  </div>
                 </div>
 
                 <div>

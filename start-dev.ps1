@@ -14,6 +14,12 @@
       6. 启动前端 (Vite :5173)
       7. (可选) 启动 AI 服务 (Flask :5001)
 
+    功能亦包括：
+      - SSE 实时事件推送（提交/审阅/Peer Review 事件实时推送至 Instructor Dashboard）
+      - Review 质量标记（检测相同评分/过短评论）
+      - 服务端 CSV 导出、AI 反馈/改写/润色/摘要
+      - 限流：全局 100/min、认证 100/15min、上传 100/10min
+
     【Docker 全容器模式】（-Docker）
       一键 docker compose up 启动全部 4 个服务：
         db + backend + ai-service + frontend (nginx + HTTPS)
@@ -439,10 +445,17 @@ Write-Host "══════════════════════�
 Write-Host ""
 Write-Host "  前端界面：  " -NoNewline; Write-Host "http://localhost:5173" -ForegroundColor Cyan
 Write-Host "  后端 API：  " -NoNewline; Write-Host "http://localhost:8080" -ForegroundColor Cyan
+Write-Host "  SSE 实时：  " -NoNewline; Write-Host "http://localhost:8080/instructor/events" -ForegroundColor Cyan
 if ($WithAI) {
     Write-Host "  AI 服务：   " -NoNewline; Write-Host "http://localhost:5001" -ForegroundColor Cyan
 }
 Write-Host "  数据库：    " -NoNewline; Write-Host "localhost:5432" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "  新特性：" -ForegroundColor White
+Write-Host "    SSE 实时事件流    — Dashboard 实时接收提交/审阅事件"
+Write-Host "    Review 质量标记  — Analytics 页面检测异常评分和短评论"
+Write-Host "    服务端 CSV 导出  — 按提交维度的文件审阅报表"
+Write-Host "    限流配置        — 全局100/min 认证100/15min 上传100/10min"
 Write-Host ""
 Write-Host "  测试账号：" -ForegroundColor White
 Write-Host "    instructor@example.com / password123  (Instructor)"

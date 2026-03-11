@@ -3,6 +3,7 @@ import { withDb } from '../db.js';
 import { audit } from '../utils/audit.js';
 import { AppError } from '../utils/AppError.js';
 import { scheduleMvRefresh } from '../utils/mvRefresh.js';
+import { emitSseEvent } from '../utils/sse.js';
 import type { AuthRequest } from '../types.js';
 
 /**
@@ -120,6 +121,14 @@ export async function submitReview(req: AuthRequest, res: Response): Promise<voi
   });
 
   scheduleMvRefresh();
+
+  // Emit SSE event for real-time instructor dashboard
+  const sseChannel = req.user.course_id ? `course:${req.user.course_id}` : `instructor:global`;
+  emitSseEvent(sseChannel, 'review_submitted', {
+    review_id: result.review_id,
+    assignment_id: id,
+    reviewer_name: req.user.name,
+  });
 
   res.status(201).json({ message: 'Review submitted successfully', review: result });
 }

@@ -318,15 +318,19 @@ END $$;
 
 -- peer_review_sessions: instructor creates a review session
 CREATE TABLE IF NOT EXISTS peer_review_sessions (
-  session_id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title         TEXT NOT NULL,
-  created_by    UUID REFERENCES users(user_id) ON DELETE SET NULL,
-  course_id     TEXT,
-  is_open       BOOLEAN NOT NULL DEFAULT true,
-  deadline      TIMESTAMPTZ,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  closed_at     TIMESTAMPTZ
+  session_id       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title            TEXT NOT NULL,
+  created_by       UUID REFERENCES users(user_id) ON DELETE SET NULL,
+  course_id        TEXT,
+  is_open          BOOLEAN NOT NULL DEFAULT true,
+  scores_released  BOOLEAN NOT NULL DEFAULT false,
+  deadline         TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at        TIMESTAMPTZ
 );
+
+-- Idempotent migration: add scores_released if missing (existing installs)
+ALTER TABLE peer_review_sessions ADD COLUMN IF NOT EXISTS scores_released BOOLEAN NOT NULL DEFAULT false;
 
 -- peer_reviews: one row per reviewer-reviewee pair per session
 CREATE TABLE IF NOT EXISTS peer_reviews (

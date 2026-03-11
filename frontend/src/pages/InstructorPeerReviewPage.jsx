@@ -209,18 +209,42 @@ export default function InstructorPeerReviewPage() {
           const matched = studentOptions.find(
             (s) => normalizeName(s.display_name) === normalizeName(name)
           );
+          // Collect pre-filled scores from CSV row
+          const rowScores = {};
+          topicCols.forEach((topic) => {
+            const colIdx = parsed.headers.indexOf(topic);
+            if (colIdx >= 0) {
+              const val = toScore(row[colIdx]);
+              rowScores[topic] = val !== null ? String(val) : '';
+            }
+          });
+          // Collect pre-filled comment
+          const baseComment = commentsIdx >= 0 ? (row[commentsIdx] || '').trim() : '';
           return {
             id: `${team}::${name}::${idx}`,
             team,
             name,
             self: selfIdx >= 0 ? (row[selfIdx] || '').trim() : '',
-            base_comment: commentsIdx >= 0 ? (row[commentsIdx] || '').trim() : '',
+            base_comment: baseComment,
             mapped_user_id: matched?.user_id || null,
+            _csvScores: rowScores,
+            _csvComment: baseComment,
           };
         })
         .filter(Boolean);
 
-      const week1 = buildDefaultWeek('week-1', 'Week 1', mappedMembers, topicCols);
+      // Build Week 1 with pre-filled scores from CSV instead of empty defaults
+      const week1Scores = {};
+      const week1Comments = {};
+      mappedMembers.forEach((m) => {
+        week1Scores[m.id] = m._csvScores || {};
+        week1Comments[m.id] = m._csvComment || '';
+        // Fill any missing topics with empty string
+        topicCols.forEach((t) => {
+          if (!(t in week1Scores[m.id])) week1Scores[m.id][t] = '';
+        });
+      });
+      const week1 = { id: 'week-1', label: 'Week 1', scores: week1Scores, comments: week1Comments, additional_comments: '' };
       setFileName(file.name);
       setHeaders(parsed.headers);
       setTopics(topicCols);
@@ -228,7 +252,9 @@ export default function InstructorPeerReviewPage() {
       setWeeks([week1]);
       setSelectedWeekId('week-1');
       setTeamFilter('ALL');
-      setShowComments(false);
+      // Auto-show comments panel when CSV contains Individual Comments
+      const hasComments = mappedMembers.some((m) => m._csvComment);
+      setShowComments(hasComments);
       setMode('existing');
       setShowMappingPanel(true);
       setStatus('Template loaded');

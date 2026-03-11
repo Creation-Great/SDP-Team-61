@@ -4,6 +4,7 @@ import { audit } from '../utils/audit.js';
 import { AppError } from '../utils/AppError.js';
 import { scheduleMvRefresh } from '../utils/mvRefresh.js';
 import { getGroupForCourse } from '../utils/enrollment.js';
+import { emitSseEvent } from '../utils/sse.js';
 import type { AuthRequest } from '../types.js';
 
 /** Default reviewer count if not specified (zod schema enforces 1–3 range) */
@@ -85,6 +86,15 @@ export async function uploadSubmission(req: AuthRequest, res: Response): Promise
   });
 
   scheduleMvRefresh();
+
+  // Emit SSE event for real-time instructor dashboard
+  const sseChannel = course_id ? `course:${course_id}` : `instructor:global`;
+  emitSseEvent(sseChannel, 'submission_created', {
+    submission_id: result.submission.submission_id,
+    title: result.submission.title,
+    student_name: req.user.name,
+    assigned_reviewers: result.assignedReviewers.length,
+  });
 
   const count = result.assignedReviewers.length;
   res.status(201).json({

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Clock, Users, Loader2, AlertCircle, ChevronRight, Edit, Trash2 } from 'lucide-react';
+import { Plus, Clock, Users, Loader2, AlertCircle, ChevronRight, Edit, Trash2, Eye, EyeOff } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import useFilteredList from '../hooks/useFilteredList';
@@ -95,6 +95,15 @@ export default function PeerReviewSessionsPage() {
       fetchSessions();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to update session');
+    }
+  };
+
+  const handleReleaseScores = async (sessionId, currentReleased) => {
+    try {
+      await API.patch(`/peer-review/sessions/${sessionId}/release-scores`, { scores_released: !currentReleased });
+      fetchSessions();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update score release');
     }
   };
 
@@ -195,6 +204,7 @@ export default function PeerReviewSessionsPage() {
                     <th className={thClass}>Deadline</th>
                     <th className={thClass}>Completion Rate</th>
                     <th className={thClass}>Status</th>
+                    {isInstructor && <th className={thClass}>Scores</th>}
                     <th className={thClass}>Actions</th>
                   </tr>
                 </thead>
@@ -228,8 +238,15 @@ export default function PeerReviewSessionsPage() {
                         <td className={tdClass}>
                           {s.is_open ? <Badge type="success">Active</Badge> : <Badge type="default">Closed</Badge>}
                         </td>
+                        {isInstructor && (
+                          <td className={tdClass}>
+                            {s.scores_released
+                              ? <Badge type="info">Released</Badge>
+                              : <Badge type="warning">Hidden</Badge>}
+                          </td>
+                        )}
                         <td className={tdClass}>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             {isInstructor ? (
                               <>
                                 <Button
@@ -238,6 +255,14 @@ export default function PeerReviewSessionsPage() {
                                   onClick={() => handleToggle(s.session_id, s.is_open)}
                                 >
                                   {s.is_open ? 'Close' : 'Reopen'}
+                                </Button>
+                                <Button
+                                  variant={s.scores_released ? 'secondary' : 'primary'}
+                                  size="sm"
+                                  onClick={() => handleReleaseScores(s.session_id, s.scores_released)}
+                                  title={s.scores_released ? 'Hide scores from students' : 'Release scores to students'}
+                                >
+                                  {s.scores_released ? <><EyeOff className="w-3.5 h-3.5 mr-1" />Hide Scores</> : <><Eye className="w-3.5 h-3.5 mr-1" />Release Scores</>}
                                 </Button>
                                 <Button
                                   variant="secondary"
@@ -249,14 +274,25 @@ export default function PeerReviewSessionsPage() {
                                 </Button>
                               </>
                             ) : (
-                              <Button
-                                size="sm"
-                                disabled={!s.is_open || s.my_submitted}
-                                onClick={() => navigate(`/peer-review/${s.session_id}`)}
-                              >
-                                {s.my_submitted ? 'Submitted ✓' : 'Evaluate'}
-                                {!s.my_submitted && <ChevronRight className="w-3.5 h-3.5 ml-1" />}
-                              </Button>
+                              <>
+                                <Button
+                                  size="sm"
+                                  disabled={!s.is_open || s.my_submitted}
+                                  onClick={() => navigate(`/peer-review/${s.session_id}`)}
+                                >
+                                  {s.my_submitted ? 'Submitted ✓' : 'Evaluate'}
+                                  {!s.my_submitted && <ChevronRight className="w-3.5 h-3.5 ml-1" />}
+                                </Button>
+                                {s.scores_released && (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => navigate(`/peer-review/${s.session_id}/my-scores`)}
+                                  >
+                                    View Scores
+                                  </Button>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>

@@ -21,6 +21,7 @@ export interface StudentAggregate {
   student_name: string;
   per_category: Record<CategoryKey, { average: number | null; count: number }>;
   overall_average: number | null;
+  comments: string[];
 }
 
 export interface AggregateResult {
@@ -65,6 +66,7 @@ const CATEGORY_CONFIG: Array<{ key: CategoryKey; label: string; patterns: string
 
 const NAME_PATTERNS = ['name', 'student', 'member'];
 const TEAM_PATTERNS = ['team', 'group'];
+const COMMENT_PATTERNS = ['individual comments', 'comments', 'comment'];
 
 function normalizeHeader(input: string): string {
   return input.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -157,6 +159,7 @@ export function aggregatePeerReviewCsvFiles(files: Express.Multer.File[]): Aggre
       team: string;
       studentName: string;
       totals: Record<CategoryKey, { sum: number; count: number }>;
+      comments: string[];
     }
   >();
 
@@ -179,6 +182,7 @@ export function aggregatePeerReviewCsvFiles(files: Express.Multer.File[]): Aggre
 
     const teamIndex = findColumn(parsed.headers, TEAM_PATTERNS);
     const nameIndex = findColumn(parsed.headers, NAME_PATTERNS);
+    const commentIndex = findColumn(parsed.headers, COMMENT_PATTERNS);
     const categoryIndexes = CATEGORY_CONFIG.map((cfg) => ({
       ...cfg,
       index: findColumn(parsed.headers, cfg.patterns),
@@ -229,10 +233,18 @@ export function aggregatePeerReviewCsvFiles(files: Express.Multer.File[]): Aggre
             project_management: { sum: 0, count: 0 },
             team_chemistry: { sum: 0, count: 0 },
           },
+          comments: [],
         });
       }
 
       const studentEntry = studentTotals.get(studentKey)!;
+
+      // Collect individual comment
+      if (commentIndex !== -1) {
+        const comment = (row[commentIndex] || '').trim();
+        if (comment) studentEntry.comments.push(comment);
+      }
+
       categoryIndexes.forEach((cat) => {
         if (cat.index === -1) return;
         const score = parseScore(row[cat.index]);
@@ -274,7 +286,8 @@ export function aggregatePeerReviewCsvFiles(files: Express.Multer.File[]): Aggre
   });
 
   const students: StudentAggregate[] = Array.from(studentTotals.values())
-    .map(({ team, studentName, totals }) => {
+    .map((totals_entry) => {
+      const { team, studentName, totals } = totals_entry;
       let allSum = 0;
       let allCount = 0;
 
@@ -321,6 +334,7 @@ export function aggregatePeerReviewCsvFiles(files: Express.Multer.File[]): Aggre
         student_name: studentName,
         per_category: perCategory,
         overall_average: allCount > 0 ? Number((allSum / allCount).toFixed(2)) : null,
+        comments: totals_entry.comments,
       };
     })
     .sort((a, b) => {

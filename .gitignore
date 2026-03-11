@@ -4,5 +4,7 @@ dist/
 uploads/*
 !uploads/.gitkeep
 *.log
+*.pem
+ssl/
 
 cookies*.txt

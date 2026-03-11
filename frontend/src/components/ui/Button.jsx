@@ -1,3 +1,4 @@
+import { cloneElement, isValidElement } from 'react';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -5,6 +6,9 @@ import { Loader2 } from 'lucide-react';
  *
  * Variants: primary | secondary | danger | ghost | ai | success
  * Sizes: sm | default | lg
+ *
+ * Use `asChild` to render styles on the child element instead of a <button>.
+ * Example: <Button asChild><a href="...">Link</a></Button>
  */
 export default function Button({
   children,
@@ -16,6 +20,7 @@ export default function Button({
   loading = false,
   size = 'default',
   type = 'button',
+  asChild = false,
 }) {
   const base =
     'inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -41,12 +46,20 @@ export default function Button({
       'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm focus:ring-emerald-500',
   };
 
+  const combinedClass = `${base} ${variants[variant] || variants.primary} ${sizes[size] || sizes.default} ${className}`;
+
+  if (asChild && isValidElement(children)) {
+    return cloneElement(children, {
+      className: `${combinedClass} ${children.props.className || ''}`.trim(),
+    });
+  }
+
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled || loading}
-      className={`${base} ${variants[variant] || variants.primary} ${sizes[size] || sizes.default} ${className}`}
+      className={combinedClass}
     >
       {loading ? (
         <Loader2 className="w-4 h-4 mr-2 animate-spin" />

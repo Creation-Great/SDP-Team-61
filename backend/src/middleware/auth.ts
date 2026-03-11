@@ -12,6 +12,7 @@ import { isBlacklisted } from '../utils/tokenBlacklist.js';
  * Token resolution order:
  *   1. httpOnly cookie "token"  (browser sessions — XSS-safe)
  *   2. Authorization: Bearer … header (API clients / scripts)
+ *   3. ?token= query param (SSE/EventSource — cannot set headers)
  */
 export async function authenticate(
   req: AuthRequest,
@@ -28,6 +29,11 @@ export async function authenticate(
       if (authHeader?.startsWith('Bearer ')) {
         token = authHeader.split(' ')[1];
       }
+    }
+
+    // 3. Fallback to query param (for SSE / EventSource which cannot set headers)
+    if (!token && typeof req.query.token === 'string') {
+      token = req.query.token;
     }
 
     if (!token) {

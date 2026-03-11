@@ -66,10 +66,10 @@ app.use(express.json());
 app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => (req as any).url === '/healthz' } }));
 
 // ── Rate limiting ──
-// Global: 200 requests per minute per IP
+// Global: 100 requests per minute per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests', message: 'Too many requests, please try again later' },
@@ -79,16 +79,16 @@ app.use(globalLimiter);
 // Strict limiter for auth endpoints (login / register / CAS callback)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,   // 15 minutes
-  max: 30,                     // 30 attempts
+  max: 100,                    // 100 attempts
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests', message: 'Too many authentication attempts, try again in 15 minutes' },
 });
 
-// Upload limiter: 20 uploads per 10 minutes
+// Upload limiter: 100 uploads per 10 minutes
 const uploadLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
-  max: 20,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests', message: 'Upload rate limit exceeded' },

@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
-import { FileText, TrendingUp, AlertCircle, Loader2, Download } from 'lucide-react';
+import { FileText, TrendingUp, AlertCircle, Loader2, Download, Flag, ShieldAlert } from 'lucide-react';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import { API_BASE_URL } from '../config';
 
 export default function InstructorAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
+  const [qualityFlags, setQualityFlags] = useState([]);
+  const [peerQualityFlags, setPeerQualityFlags] = useState([]);
+  const [flagsLoading, setFlagsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,6 +27,21 @@ export default function InstructorAnalyticsPage() {
       }
     };
     load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load quality flags from backend
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      API.get('/instructor/quality-flags').then((r) => r.data).catch(() => []),
+      API.get('/instructor/peer-review-quality-flags').then((r) => r.data).catch(() => []),
+    ]).then(([fileFlags, peerFlags]) => {
+      if (!cancelled) {
+        setQualityFlags(Array.isArray(fileFlags) ? fileFlags : []);
+        setPeerQualityFlags(Array.isArray(peerFlags) ? peerFlags : []);
+      }
+    }).finally(() => { if (!cancelled) setFlagsLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -63,6 +82,11 @@ export default function InstructorAnalyticsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // Server-side file review CSV export (includes per-submission breakdown)
+  const exportFileReviewCsv = () => {
+    window.open(`${API_BASE_URL}/instructor/export-csv`, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -89,9 +113,14 @@ export default function InstructorAnalyticsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Review Analytics &amp; Reports</h1>
           <p className="text-slate-500 mt-1">Class-wide performance and anomaly detection.</p>
         </div>
-        <Button variant="secondary" icon={FileText} onClick={exportCsv}>
-          Export CSV
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" icon={FileText} onClick={exportCsv}>
+            Roster CSV
+          </Button>
+          <Button variant="secondary" icon={FileText} onClick={exportFileReviewCsv}>
+            File Review CSV
+          </Button>
+        </div>
       </div>
 
       {/* ── Charts row ── */}
@@ -135,6 +164,61 @@ export default function InstructorAnalyticsPage() {
               <p className="text-xs text-slate-500">+{flagged.length - 5} more flagged student(s)</p>
             )}
           </div>
+        </Card>
+      </div>
+
+      {/* ── Quality Flags ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* File Review Quality Flags */}
+        <Card className="p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+            <Flag className="w-5 h-5 mr-2 text-red-500" /> File Review Quality Flags
+          </h3>
+          {flagsLoading ? (
+            <p className="text-sm text-slate-400">Loading…</p>
+          ) : qualityFlags.length === 0 ? (
+            <p className="text-sm text-slate-500">No file review quality issues detected.</p>
+          ) : (
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {qualityFlags.map((f, i) => (
+                <div key={i} className="p-3 bg-red-50 border border-red-100 rounded-lg text-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-slate-900">{f.reviewer_name}</span>
+                    <Badge type="error">{f.flag_reason}</Badge>
+                  </div>
+                  <p className="text-slate-600 text-xs">
+                    Reviewed <span className="font-medium">{f.author_name}</span>'s "{f.submission_title}"
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Peer Review Quality Flags */}
+        <Card className="p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
+            <ShieldAlert className="w-5 h-5 mr-2 text-orange-500" /> Peer Review Quality Flags
+          </h3>
+          {flagsLoading ? (
+            <p className="text-sm text-slate-400">Loading…</p>
+          ) : peerQualityFlags.length === 0 ? (
+            <p className="text-sm text-slate-500">No peer review quality issues detected.</p>
+          ) : (
+            <div className="space-y-3 max-h-64 overflow-y-auto">
+              {peerQualityFlags.map((f, i) => (
+                <div key={i} className="p-3 bg-orange-50 border border-orange-100 rounded-lg text-sm">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-slate-900">{f.reviewer_name}</span>
+                    <Badge type="warning">{f.flag_reason}</Badge>
+                  </div>
+                  <p className="text-slate-600 text-xs">
+                    Reviewed <span className="font-medium">{f.reviewee_name}</span> in "{f.session_title}"
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
 

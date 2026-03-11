@@ -8,7 +8,7 @@ export const registerSchema = z.object({
   name: z.string().min(1, 'name is required'),
   email: z.string().email('Invalid email'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['student', 'instructor', 'admin']).optional(),
+  role: z.enum(['student', 'instructor']).optional(),
   group_id: z.string().optional(),
 });
 
@@ -55,6 +55,10 @@ export const toggleSessionSchema = z.object({
   is_open: z.boolean({ error: 'is_open (boolean) is required' }),
 });
 
+export const releaseScoresSchema = z.object({
+  scores_released: z.boolean({ error: 'scores_released (boolean) is required' }),
+});
+
 const peerReviewEntrySchema = z.object({
   reviewee_id: z.string().min(1, 'Each review must have a reviewee_id'),
   technical_contributions: score1to5,
@@ -66,6 +70,10 @@ const peerReviewEntrySchema = z.object({
 export const submitPeerReviewsSchema = z.object({
   reviews: z.array(peerReviewEntrySchema).nonempty('Reviews array is required'),
   teamChemistry: z.number().min(1, 'Team chemistry must be between 1 and 5').max(5, 'Team chemistry must be between 1 and 5').nullish(),
+});
+
+export const instructorSubmitReviewsSchema = z.object({
+  reviews: z.array(peerReviewEntrySchema).nonempty('Reviews array is required'),
 });
 
 // ── Checkins ────────────────────────────────────────────────
