@@ -7,6 +7,7 @@ import type { AuthRequest } from '../types.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from '../utils/jwtConfig.js';
 import { setTokenCookie, clearTokenCookie } from '../utils/cookieHelper.js';
 import { blacklistToken } from '../utils/tokenBlacklist.js';
+import { logger } from '../utils/logger.js';
 
 const SALT_ROUNDS = 10;
 const DEFAULT_COURSE_ID = process.env.DEFAULT_COURSE_ID || 'CSE4939W';
@@ -141,13 +142,11 @@ export async function casCallback(req: Request, res: Response): Promise<void> {
   const response = await fetch(validateUrl);
   const xml = await response.text();
 
-  // Log CAS response for debugging attribute availability
-  console.log('[CAS] serviceValidate response:', xml);
-
   const { netid, name, email } = parseCasProfile(xml);
-  console.log('[CAS] Parsed profile:', { netid, name, email });
+  logger.debug({ netid, hasName: !!name, hasEmail: !!email }, 'CAS profile parsed');
 
   if (!response.ok || !netid) {
+    logger.warn({ action: 'login_failed', reason: 'cas_validation' }, 'CAS validation failed');
     res.status(401).json({ error: 'unauthorized', message: 'CAS validation failed' });
     return;
   }
@@ -264,12 +263,14 @@ export async function login(req: Request, res: Response): Promise<void> {
   });
 
   if (!user) {
+    logger.warn({ action: 'login_failed' }, 'Invalid credentials (user not found)');
     res.status(401).json({ error: 'unauthorized', message: 'Invalid email or password' });
     return;
   }
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
+    logger.warn({ action: 'login_failed', userId: user.user_id }, 'Invalid credentials (wrong password)');
     res.status(401).json({ error: 'unauthorized', message: 'Invalid email or password' });
     return;
   }

@@ -49,9 +49,10 @@ function ScoreBadge({ value, label }) {
 }
 
 function useDeadlineCountdown(deadline) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
   useEffect(() => {
     if (!deadline) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [deadline]);
@@ -72,9 +73,16 @@ function useDeadlineCountdown(deadline) {
   }, [deadline, now]);
 }
 
+/**
+ * Peer review form for a session: load team (GET /peer-review/sessions/:sessionId/my-team),
+ * submit ratings and comments (POST /peer-review/sessions/:sessionId/submit).
+ * Uses visibility-aware polling for team/submission status. Rendered at /peer-review/session/:sessionId.
+ * @returns {JSX.Element}
+ */
 export default function PeerReviewFormPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const draftKey = `peer-review-draft:${sessionId}`;
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -92,6 +100,7 @@ export default function PeerReviewFormPage() {
 
   /* AI Polish state */
   const [polishingFor, setPolishingFor] = useState(null);
+  const [draftStatus, setDraftStatus] = useState('');
 
   const { user } = useAuth();
   const countdown = useDeadlineCountdown(session?.deadline);
@@ -124,11 +133,62 @@ export default function PeerReviewFormPage() {
             individual_comments: existing?.individual_comments || '',
           };
         });
-        setReviews(initial);
+        // Restore local draft on top of backend values if available.
+        let merged = initial;
+        try {
+          const raw = localStorage.getItem(draftKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.reviews && typeof parsed.reviews === 'object') {
+              merged = { ...initial, ...parsed.reviews };
+            }
+            if (parsed?.teamChemistry != null) {
+              setTeamChemistry(parsed.teamChemistry);
+            }
+          }
+        } catch {
+          // Ignore broken local draft content.
+        }
+        setReviews(merged);
+
+        // Then try backend draft and apply on top (cross-device source)
+        API.get(`/peer-review/sessions/${sessionId}/draft`)
+          .then((draftRes) => {
+            const payload = draftRes.data?.payload || {};
+            const backendReviews = payload?.reviews;
+            const backendChem = payload?.teamChemistry;
+            if (backendReviews && typeof backendReviews === 'object') {
+              setReviews((prev) => ({ ...prev, ...backendReviews }));
+            }
+            if (backendChem !== undefined) setTeamChemistry(backendChem);
+          })
+          .catch(() => {});
       })
       .catch((err) => setError(err.response?.data?.message || 'Failed to load team data'))
       .finally(() => setLoading(false));
-  }, [sessionId]);
+  }, [sessionId, draftKey]);
+
+  // Persist local draft while editing.
+  useEffect(() => {
+    if (!sessionId || success) return;
+    if (!teammates.length) return;
+    const timer = setTimeout(() => {
+      API.patch(`/peer-review/sessions/${sessionId}/draft`, {
+        reviews,
+        teamChemistry,
+      }).then(() => setDraftStatus('Draft saved')).catch(() => {});
+    }, 900);
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({
+        reviews,
+        teamChemistry,
+        updatedAt: Date.now(),
+      }));
+    } catch {
+      // Ignore storage quota / privacy mode errors.
+    }
+    return () => clearTimeout(timer);
+  }, [sessionId, teammates.length, reviews, teamChemistry, success, draftKey]);
 
   const updateReview = (userId, field, value) => {
     setReviews((prev) => ({ ...prev, [userId]: { ...prev[userId], [field]: value } }));
@@ -173,6 +233,7 @@ export default function PeerReviewFormPage() {
       };
       await API.post(`/peer-review/sessions/${sessionId}/submit`, payload);
       setSuccess('Peer reviews submitted successfully!');
+      localStorage.removeItem(draftKey);
       fetchTeamReviews();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to submit reviews');
@@ -331,6 +392,9 @@ export default function PeerReviewFormPage() {
 
       {/* Review Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
+        {draftStatus ? (
+          <div className="text-xs text-slate-400 text-right">{draftStatus}</div>
+        ) : null}
         {/* Team Chemistry */}
         <Card className="p-8">
           <h3 className="text-lg font-semibold text-slate-900 mb-1">Team Chemistry</h3>
@@ -392,7 +456,12 @@ export default function PeerReviewFormPage() {
                         </button>
                       ))}
                     </div>
-                    <PeerReviewRubric category={key} currentScore={r[key]} />
+                    <PeerReviewRubric
+                      category={key}
+                      currentScore={r[key]}
+                      courseId={session?.course_id}
+                      sessionId={sessionId}
+                    />
                   </div>
                 ))}
 

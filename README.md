@@ -10,7 +10,7 @@
 | **Backend** | TypeScript (ES2022) · Express 5 · PostgreSQL 16 · JWT httpOnly cookies · Zod 4 · Pino |
 | **AI Service** | Python · Flask · OpenAI GPT-4o-mini · psycopg2 |
 | **DevOps** | Docker Compose (4 services) · GitHub Actions CI · ESLint 9 · Prettier |
-| **Testing** | Jest 29 · ts-jest · Supertest |
+| **Testing** | Backend: Jest 29 · ts-jest · Supertest · Frontend: Vitest · @testing-library/react · Playwright E2E |
 
 ## Architecture
 
@@ -34,13 +34,20 @@
 
 ### Core Functionality
 - **File Submission & Review**: Students upload assignments; reviewers assigned automatically or manually
+- **Submission Edit/Withdraw**: Students can edit title/description or withdraw before reviews are submitted
+- **Submission File Replacement + Policy Controls**: Students can replace files; instructors can configure post-review edit/withdraw policy per course
 - **Peer Review Sessions**: Instructor creates sessions with team chemistry + technical contribution scores
+- **Session Edit & Duplicate**: Instructors can edit title/deadline/open-state and duplicate an existing session as a template
 - **Self-Review Support**: Students can review themselves as part of peer review — `is_self` flag is automatically set and displayed with an info badge
 - **Grading Rubric Panels**: Collapsible rubric descriptions shown alongside score selectors for both file reviews (5-level Excellent→Poor) and peer reviews (3 categories × 5 levels)
+- **Configurable Rubrics**: Rubrics can be configured by instructor (global/course/session scope) and loaded dynamically by the frontend
 - **Session Deadline**: Instructor can set an optional deadline when creating a session; expired sessions auto-close lazily on next access, and students see a live countdown timer
 - **Privacy-Isolated Reviews**: Students can only view their own peer review scores — other team members' data is filtered server-side
 - **Score Release Control**: Instructor can release/hide aggregated peer review scores — students cannot see their scores until explicitly released after the assignment is completed
 - **Student Score Viewing**: Dedicated page where students view their released peer review scores (technical, interactions, management, chemistry)
+- **Student Clarification/Appeal**: Students can submit appeal/clarification requests after score release; instructors can respond and update status
+- **My Grades Summary**: Dedicated student page consolidating file-review averages and released peer-review results
+- **Assignment Templates**: Instructors define reusable course assignment templates; students can select template when uploading
 - **Self-Score Bias Analytics**: Instructor analytics showing per-student self-given vs peer-given score comparison with bias metric (Self Avg − Peer Avg); flags students with |bias| ≥ 1.0
 - **Instructor Review (All Students)**: Consolidated page where instructors can review all students in a session from one page, with score buttons and comments — supports non-student reviewers
 - **CSV Aggregation**: Batch upload CSV peer review results with per-student/category breakdown, **Individual Comments** extraction, and **Download Aggregate CSV** export
@@ -62,6 +69,7 @@
 - **Real-Time Bell**: Header notification bell with unread count badge (polls every 30 seconds)
 - **Notification Panel**: Dropdown panel showing recent notifications with mark-read and mark-all-read
 - **Notification Types**: `review_received`, `review_assigned`, `deadline`, `ai_complete`, `system`
+- **Multi-channel Notifications**: Per-type notification preferences with in-app/email/push channels, plus browser push subscription support
 
 ### UI / UX
 - **UConn Blue Theme**: Primary color `#000E2F` applied throughout the application
@@ -75,12 +83,14 @@
 
 ### Instructor Tools
 - **Unified Dashboard**: Overview stats, active sessions, AI activity logs, weekly trends, and SSE live events feed
-- **Analytics Page**: Score distribution, anomaly detection, **file review quality flags**, **peer review quality flags**, roster CSV export, and server-side file review CSV export
+- **Analytics Page**: Score distribution, anomaly detection, **file review quality flags**, **peer review quality flags**, roster CSV export, server-side exports, rubric management, and appeals processing
+- **Bulk Reviewer Assignment**: Multi-select submissions and assign N reviewers per submission in one action
 - **Quality Flags — File Reviews**: Detects identical scores across multiple reviews by the same reviewer and short comments (<20 chars)
 - **Quality Flags — Peer Reviews**: Detects identical Likert scores across 3 categories (technical, teamwork, project management) and short individual comments
 - **Class Check-ins**: 3-tab page (Insights comparison, Weekly Scores matrix, Students list); CSV upload pre-fills scores and auto-shows comments panel when Individual Comments column is present
 
 ### Security
+- **SSE authentication**: Instructor live events (`GET /instructor/events`) use Server-Sent Events. In **same-origin** production (frontend and API under one domain, e.g. nginx proxy), the browser sends the httpOnly cookie automatically; ensure nginx forwards the `Cookie` header to the backend (default with `proxy_pass`). For **cross-origin** setups, the backend accepts JWT via query param `?token=…` (EventSource cannot set headers); the frontend hook `useSSE` supports an optional `getToken` callback to append the token to the URL when provided.
 - **Row-Level Security (RLS)**: PostgreSQL policies enforce data isolation per user
 - **JWT httpOnly Cookies**: Stateless auth with secure, httpOnly, SameSite cookies
 - **Cookie Identity Auto-Sync**: On tab focus/visibility change, frontend re-verifies the cookie identity and updates React state — prevents stale-session issues when multiple accounts are used in the same browser
@@ -108,8 +118,10 @@
 - **Structured Logging**: Pino with pino-pretty (dev) / JSON (production)
 - **ESLint 9 Flat Config**: TypeScript-ESLint for backend, React Hooks + Refresh for frontend
 - **Prettier**: Unified code formatting across the monorepo
-- **Jest Test Suite**: 7 suites / 36 tests covering utils, middleware, auth, and submissions
-- **GitHub Actions CI**: 4-job pipeline (backend, frontend, AI service, Docker build)
+- **Backend Tests**: Jest — 7 suites / 36 tests (utils, middleware, auth, submissions)
+- **Frontend Unit Tests**: Vitest + jsdom + Testing Library — `useFilteredList`, `useSSE`, etc.
+- **E2E**: Playwright — login page and key flows (runs Chromium in CI)
+- **GitHub Actions CI**: 4-job pipeline (backend / frontend / AI service / Docker), including dependency audit, frontend unit tests, and E2E
 - **Hot Reload**: tsx watch (backend) + Vite HMR (frontend)
 
 ## Quick Start
@@ -162,7 +174,13 @@ npm run install:all             # installs backend + frontend
 npm run dev                     # runs backend + frontend concurrently
 ```
 
-## API Routes (54+ endpoints)
+## Documentation
+
+- **API (OpenAPI 3.0)**: [docs/openapi.yaml](docs/openapi.yaml) — main routes, request/response shapes, and security (cookie/Bearer). View with [Swagger Editor](https://editor.swagger.io/) or any OpenAPI viewer.
+- **Swagger UI**: When the backend runs from the repo root (e.g. `cd backend && npm run dev`) and `docs/openapi.yaml` exists, open **http://localhost:8080/api-docs** in a browser for an interactive API explorer. (Docker builds that do not include `docs/` will not expose `/api-docs`.)
+- **Full doc index**: [docs/README.md](docs/README.md) — deployment ([DEPLOYMENT.md](docs/DEPLOYMENT.md)), user guide ([USER_GUIDE.md](docs/USER_GUIDE.md)), functional analysis ([FUNCTIONAL_IMPROVEMENTS_ANALYSIS.md](docs/FUNCTIONAL_IMPROVEMENTS_ANALYSIS.md)), and improvement plan ([IMPROVEMENT_AND_OPTIMIZATION_PLAN.md](docs/IMPROVEMENT_AND_OPTIMIZATION_PLAN.md)).
+
+## API Routes (expanded)
 
 ### Auth (`/auth`)
 
@@ -183,6 +201,10 @@ npm run dev                     # runs backend + frontend concurrently
 | POST | `/submissions/upload` | ✓ | — | Upload assignment (file + metadata) |
 | GET | `/submissions/mine` | ✓ | — | Student's own submissions |
 | GET | `/submissions/all` | ✓ | instructor | All submissions overview |
+| PATCH | `/submissions/:id` | ✓ | student | Edit own submission (before reviews) |
+| PATCH | `/submissions/:id/replace-file` | ✓ | student | Replace own submission file |
+| DELETE | `/submissions/:id` | ✓ | student | Withdraw own submission (before reviews) |
+| GET | `/submissions/my-grades` | ✓ | student | Consolidated grade summary |
 | GET | `/submissions/reviews/my-tasks` | ✓ | — | Assigned review tasks |
 
 ### Reviews (`/reviews`)
@@ -200,6 +222,10 @@ npm run dev                     # runs backend + frontend concurrently
 | GET | `/instructor/overview` | ✓ | Cohort overview (materialized view) |
 | GET | `/instructor/unified-dashboard` | ✓ | Unified dashboard data |
 | POST | `/instructor/assign` | ✓ | Manual reviewer assignment |
+| POST | `/instructor/assign/bulk` | ✓ | Bulk reviewer assignment |
+| GET | `/instructor/submission-policy` | ✓ | Get course submission edit/withdraw policy |
+| PUT | `/instructor/submission-policy` | ✓ | Upsert course submission edit/withdraw policy |
+| POST | `/instructor/announcements` | ✓ | Publish class-scoped system announcement |
 | POST | `/instructor/peer-review/aggregate` | ✓ | Aggregate peer review CSVs |
 | GET | `/instructor/checkins/current` | ✓ | Current check-in records |
 | POST | `/instructor/checkins/current` | ✓ | Save check-in records |
@@ -217,16 +243,30 @@ npm run dev                     # runs backend + frontend concurrently
 | GET | `/peer-review/sessions` | ✓ | — | List sessions |
 | GET | `/peer-review/sessions/:id/my-team` | ✓ | — | Student's team |
 | POST | `/peer-review/sessions/:id/submit` | ✓ | — | Submit peer reviews |
+| GET | `/peer-review/sessions/:id/draft` | ✓ | — | Load peer-review draft |
+| PATCH | `/peer-review/sessions/:id/draft` | ✓ | — | Save peer-review draft |
 | GET | `/peer-review/sessions/:id/team-reviews` | ✓ | — | Own reviews only (privacy-filtered) |
 | GET | `/peer-review/sessions/:id/student-scores` | ✓ | student | View released scores |
 | POST | `/peer-review/sessions` | ✓ | instructor | Create session (optional `deadline`) |
-| PATCH | `/peer-review/sessions/:id` | ✓ | instructor | Toggle open/closed |
+| PATCH | `/peer-review/sessions/:id` | ✓ | instructor | Update open state / title / deadline |
+| POST | `/peer-review/sessions/:id/duplicate` | ✓ | instructor | Duplicate session metadata |
 | PATCH | `/peer-review/sessions/:id/release-scores` | ✓ | instructor | Toggle score release |
 | GET | `/peer-review/sessions/:id/results` | ✓ | instructor | Session results |
 | GET | `/peer-review/sessions/:id/bias-analytics` | ✓ | instructor | Self vs peer score bias |
 | GET | `/peer-review/sessions/:id/all-students` | ✓ | instructor | All students for review |
 | POST | `/peer-review/sessions/:id/instructor-review` | ✓ | instructor | Submit instructor reviews |
 | GET | `/peer-review/sessions/:id/export-csv` | ✓ | instructor | Export CSV |
+| GET | `/peer-review/appeals/mine` | ✓ | student | List my clarification/appeal requests |
+| POST | `/peer-review/appeals` | ✓ | student | Create clarification/appeal request |
+| GET | `/peer-review/appeals` | ✓ | instructor | List appeals in instructor sessions |
+| PATCH | `/peer-review/appeals/:appealId` | ✓ | instructor | Resolve/reject and reply |
+
+### Rubrics (`/rubrics`)
+
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| GET | `/rubrics` | ✓ | — | Load best-match rubric by type/scope |
+| POST | `/rubrics` | ✓ | instructor | Create/update rubric configuration |
 
 ### Check-ins (`/checkins`)
 
@@ -265,8 +305,22 @@ npm run dev                     # runs backend + frontend concurrently
 |--------|------|------|-------------|
 | GET | `/notifications` | ✓ | List user's notifications |
 | GET | `/notifications/unread-count` | ✓ | Get unread notification count |
+| GET | `/notifications/preferences` | ✓ | Get per-type channel preferences |
+| PATCH | `/notifications/preferences` | ✓ | Update per-type channel preference |
+| GET | `/notifications/push/public-key` | ✓ | Get VAPID public key |
+| GET | `/notifications/push/subscriptions` | ✓ | List push subscriptions |
+| POST | `/notifications/push/subscriptions` | ✓ | Upsert push subscription |
+| DELETE | `/notifications/push/subscriptions` | ✓ | Remove push subscription(s) |
 | PATCH | `/notifications/read-all` | ✓ | Mark all notifications as read |
 | PATCH | `/notifications/:id/read` | ✓ | Mark one notification as read |
+
+### Assignment Templates (`/assignment-templates`)
+
+| Method | Path | Auth | Role | Description |
+|--------|------|------|------|-------------|
+| GET | `/assignment-templates` | ✓ | — | List assignment templates |
+| POST | `/assignment-templates` | ✓ | instructor | Create assignment template |
+| PATCH | `/assignment-templates/:id` | ✓ | instructor | Update assignment template |
 
 ## Project Structure
 
@@ -474,6 +528,8 @@ SDP-Team-61-integrated/
 |---------|-------------|
 | `npm run dev` | Vite dev server with HMR |
 | `npm run build` | Production build |
+| `npm run test` | Vitest unit tests (src only; E2E excluded) |
+| `npm run e2e` | Playwright E2E tests (requires `npm run preview` or dev server) |
 | `npm run lint` | ESLint check |
 | `npm run format` | Prettier format |
 
@@ -483,8 +539,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 
 | Job | Steps |
 |-----|-------|
-| **Backend CI** | `npm ci` → TypeScript type-check → Jest tests (with PostgreSQL service) |
-| **Frontend CI** | `npm ci` → ESLint → Vite build → Upload artifact |
+| **Backend CI** | `npm ci` → Dependency audit (high/critical) → TypeScript type-check → Jest tests (PostgreSQL service) |
+| **Frontend CI** | `npm ci` → Dependency audit → Lint → Build → Unit tests (Vitest) → Playwright E2E (Chromium) → Upload artifact |
 | **AI Service CI** | `pip install` → Python syntax check |
 | **Docker Build** | Build all 3 images → Validate docker-compose config |
 
@@ -525,7 +581,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | bob@example.com | student | password123 |
 | carol@example.com | student | password123 |
 
-> All seed accounts use real bcrypt hashes. Change passwords for any non-local deployment.
+> **Development only.** All seed accounts use real bcrypt hashes. **For production or any non-local deployment:** change these passwords immediately or do not run `seed.sql` (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
 
 ## Integration Decisions
 
@@ -558,7 +614,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | Enhanced UI components | anish-dev | Skeleton, Toast, ConfirmDialog, animations |
 | Error Boundary | anish-dev | Graceful error fallback with retry |
 
-## Database Schema (10 migrations)
+## Database Schema (18 migrations)
 
 | Migration | Tables / Changes |
 |-----------|-----------------|
@@ -572,6 +628,14 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | 008 | CASCADE delete policies across all FK relationships |
 | 009 | Tightened RLS policies |
 | 010 | `ai_activity_logs`, `notifications` tables |
+| 011 | `submissions.course_id` (explicit course scoping) |
+| 012 | `rubrics` table (configurable rubric definitions) |
+| 013 | `peer_review_appeals` table (clarification/appeal workflow) |
+| 014 | `notification_preferences` table (in-app/email/push per type) |
+| 015 | `push_subscriptions` table (browser push subscription storage) |
+| 016 | `file_review_drafts`, `peer_review_drafts` (backend draft persistence) |
+| 017 | `submission_policies` table (course-level edit/withdraw policy) |
+| 018 | `assignment_templates` + `submissions.assignment_template_id` |
 
 ## License
 

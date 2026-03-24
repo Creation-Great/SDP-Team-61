@@ -1,0 +1,548 @@
+openapi: 3.0.3
+info:
+  title: SDP Peer Review System API
+  description: AI-enhanced peer review platform. Auth via JWT httpOnly cookie or Bearer token; SSE at GET /instructor/events.
+  version: 2.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local backend
+  - url: https://www.peer.review.uconn.edu
+    description: Production (via nginx proxy)
+
+tags:
+  - name: Auth
+  - name: Submissions
+  - name: Reviews
+  - name: Instructor
+  - name: Peer Review
+  - name: Check-ins
+  - name: Enrollments
+  - name: AI
+  - name: Notifications
+
+paths:
+  /healthz:
+    get:
+      summary: Health check (with optional DB ping when DATABASE_URL is set)
+      responses:
+        '200':
+          description: OK; body `{ ok: true, db?: "ok" }` when DB is reachable
+        '503':
+          description: Service unavailable when DB ping fails; body `{ ok: false, db: "error" }`
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user (cookie or Bearer)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: User profile with enrollments
+        '401':
+          description: Unauthorized
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Local login (dev)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Sets httpOnly cookie, returns user
+        '401':
+          description: Invalid credentials
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Local registration (dev)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string }
+                role: { type: string, enum: [student, instructor] }
+      responses:
+        '201':
+          description: Registered
+        '409':
+          description: Email already registered
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout / clear cookie
+      responses:
+        '200':
+          description: Cookie cleared
+
+  /auth/profile:
+    patch:
+      tags: [Auth]
+      summary: Update current user profile (e.g. name)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        '200':
+          description: Profile updated
+        '400':
+          description: Validation error
+
+  /enrollments:
+    get:
+      tags: [Enrollments]
+      summary: List enrollments (instructor or own)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of enrollments
+    post:
+      tags: [Enrollments]
+      summary: Add enrollment (instructor)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, course_id]
+              properties:
+                user_id: { type: string }
+                course_id: { type: string }
+                group_id: { type: string }
+                is_primary: { type: boolean }
+      responses:
+        '201':
+          description: Enrollment created
+        '400':
+          description: Validation error
+        '403':
+          description: Instructor only
+
+  /enrollments/{enrollmentId}:
+    patch:
+      tags: [Enrollments]
+      summary: Update enrollment (instructor)
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          schema: { type: string }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                group_id: { type: string }
+                is_primary: { type: boolean }
+      responses:
+        '200':
+          description: Updated
+        '403':
+          description: Instructor only
+    delete:
+      tags: [Enrollments]
+      summary: Remove enrollment (instructor)
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          schema: { type: string }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Removed
+        '403':
+          description: Instructor only
+
+  /enrollments/course/{courseId}/members:
+    get:
+      tags: [Enrollments]
+      summary: List members in a course (instructor)
+      parameters:
+        - name: courseId
+          in: path
+          required: true
+          schema: { type: string }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of course members
+
+  /submissions/upload:
+    post:
+      tags: [Submissions]
+      summary: Upload assignment (multipart)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Submission created
+        '400':
+          description: Validation error
+
+  /submissions/mine:
+    get:
+      tags: [Submissions]
+      summary: Student's own submissions
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of submissions
+
+  /submissions/all:
+    get:
+      tags: [Submissions]
+      summary: All submissions (instructor). Optional server-side pagination.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+          description: Page number when pageSize is set
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+          description: Items per page (1–100). Omit for legacy array response.
+      responses:
+        '200':
+          description: With page/pageSize returns { submissions, total }; otherwise array of submissions
+
+  /reviews/{id}:
+    get:
+      tags: [Reviews]
+      summary: Single review detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Review detail
+        '404':
+          description: Not found
+    post:
+      tags: [Reviews]
+      summary: Submit a review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score]
+              properties:
+                score: { type: number, minimum: 1, maximum: 5 }
+                comments: { type: string }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Review submitted
+        '400':
+          description: Validation error
+
+  /instructor/overview:
+    get:
+      tags: [Instructor]
+      summary: Cohort overview (materialized view)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Overview data
+
+  /instructor/unified-dashboard:
+    get:
+      tags: [Instructor]
+      summary: Unified dashboard data
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Dashboard payload
+
+  /instructor/events:
+    get:
+      tags: [Instructor]
+      summary: SSE stream (submission_created, review_submitted, peer_review_submitted)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: token
+          in: query
+          description: JWT for EventSource (optional when cookie sent)
+          schema: { type: string }
+      responses:
+        '200':
+          description: text/event-stream
+
+  /instructor/checkins/students:
+    get:
+      tags: [Instructor]
+      summary: List students for check-ins (course/group scoped). Optional pagination.
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: With page/pageSize returns { students, total }; otherwise array
+
+  /peer-review/sessions:
+    get:
+      tags: [Peer Review]
+      summary: List sessions
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of sessions
+    post:
+      tags: [Peer Review]
+      summary: Create session (instructor)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string }
+                deadline: { type: string, format: date-time }
+                course_id: { type: string }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '201':
+          description: Session created
+
+  /peer-review/sessions/{sessionId}/submit:
+    post:
+      tags: [Peer Review]
+      summary: Submit peer reviews
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reviews]
+              properties:
+                reviews:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      reviewee_id: { type: string }
+                      technical_contributions: { type: number, minimum: 1, maximum: 5 }
+                      team_interactions: { type: number, minimum: 1, maximum: 5 }
+                      project_management: { type: number, minimum: 1, maximum: 5 }
+                      individual_comments: { type: string }
+                teamChemistry: { type: number, minimum: 1, maximum: 5 }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Submitted
+        '400':
+          description: Validation error
+
+  /submissions/reviews/my-tasks:
+    get:
+      tags: [Submissions]
+      summary: Student review tasks (assigned submissions to review)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of tasks with submission and reviewee info
+
+  /checkins/context:
+    get:
+      tags: [Check-ins]
+      summary: Student check-in context (weeks, topics, team)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Context with instructor_weeks, self_weeks, team_peers, etc.
+
+  /checkins/self:
+    post:
+      tags: [Check-ins]
+      summary: Submit student self check-in scores
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scores]
+              properties:
+                scores:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      week_id: { type: string }
+                      self_score: { type: number, minimum: 1, maximum: 5 }
+                      peer_scores: { type: object }
+      responses:
+        '200':
+          description: Saved
+        '400':
+          description: Validation error
+
+  /peer-review/sessions/{sessionId}/my-team:
+    get:
+      tags: [Peer Review]
+      summary: Current user's team for a session (student)
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Team members for peer review form
+        '404':
+          description: Session or team not found
+
+  /peer-review/sessions/{sessionId}/results:
+    get:
+      tags: [Peer Review]
+      summary: Session results (instructor): averages, details, bias analytics
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: session, averages, details, completion, etc.
+        '403':
+          description: Instructor only
+
+  /instructor/assign:
+    post:
+      tags: [Instructor]
+      summary: Assign reviewer to submission
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submission_id, reviewer_id]
+              properties:
+                submission_id: { type: string, format: uuid }
+                reviewer_id: { type: string }
+      responses:
+        '200':
+          description: Assigned
+        '400':
+          description: Validation error
+        '403':
+          description: Instructor only
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List user notifications
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of notifications
+
+  /notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Unread count
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: { count: number }
+
+  /notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: Mark all notifications as read
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: All marked read
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark one notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Marked read
+        '404':
+          description: Not found
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: JWT in httpOnly cookie (set by /auth/login or CAS callback)
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        details: { type: array, description: Optional validation details }

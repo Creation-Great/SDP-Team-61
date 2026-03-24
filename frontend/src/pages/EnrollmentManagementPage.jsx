@@ -8,6 +8,11 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 
+/**
+ * Enrollment management (instructor): list, add, edit, remove. GET/POST/PATCH/DELETE /enrollments.
+ * Optional GET /enrollments/course/:courseId/members for course-scoped members.
+ * @returns {JSX.Element}
+ */
 export default function EnrollmentManagementPage() {
   const [enrollments, setEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +33,10 @@ export default function EnrollmentManagementPage() {
   const [search, setSearch] = useState('');
   const [filterCourse, setFilterCourse] = useState('');
 
+  /* Course-scoped members (GET /enrollments/course/:courseId/members) */
+  const [courseMembers, setCourseMembers] = useState(null);
+  const [courseMembersLoading, setCourseMembersLoading] = useState(false);
+
   const loadEnrollments = useCallback(async () => {
     try {
       const res = await API.get('/enrollments');
@@ -41,16 +50,39 @@ export default function EnrollmentManagementPage() {
 
   useEffect(() => { loadEnrollments(); }, [loadEnrollments]);
 
+  /** When a course is selected, fetch its members via GET /enrollments/course/:courseId/members */
+  useEffect(() => {
+    if (!filterCourse) {
+      setCourseMembers(null);
+      return;
+    }
+    setCourseMembersLoading(true);
+    API.get(`/enrollments/course/${filterCourse}/members`)
+      .then((res) => setCourseMembers(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setCourseMembers([]))
+      .finally(() => setCourseMembersLoading(false));
+  }, [filterCourse]);
+
   /* Unique courses for filter dropdown */
   const courses = useMemo(() => {
     const set = new Set(enrollments.map((e) => e.course_id).filter(Boolean));
     return [...set].sort();
   }, [enrollments]);
 
-  /* Filtered list */
+  /* List: use courseMembers when a course is selected (with search filter), otherwise filter enrollments */
   const filtered = useMemo(() => {
+    const applySearch = (list) => {
+      if (!search.trim()) return list;
+      const q = search.toLowerCase();
+      return list.filter(
+        (e) =>
+          (e.name || '').toLowerCase().includes(q) ||
+          (e.email || '').toLowerCase().includes(q) ||
+          (e.group_id || '').toLowerCase().includes(q)
+      );
+    };
+    if (filterCourse) return applySearch(courseMembers ?? []);
     let list = enrollments;
-    if (filterCourse) list = list.filter((e) => e.course_id === filterCourse);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -61,7 +93,7 @@ export default function EnrollmentManagementPage() {
       );
     }
     return list;
-  }, [enrollments, filterCourse, search]);
+  }, [enrollments, filterCourse, search, courseMembers]);
 
   /* Add enrollment */
   const handleAdd = async () => {
@@ -253,14 +285,22 @@ export default function EnrollmentManagementPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filtered.length === 0 && (
+              {courseMembersLoading && filterCourse && (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-slate-500">
+                    <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" />
+                    Loading course members...
+                  </td>
+                </tr>
+              )}
+              {!courseMembersLoading && filtered.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-slate-400">
                     No enrollments found.
                   </td>
                 </tr>
               )}
-              {filtered.map((e) => (
+              {!courseMembersLoading && filtered.map((e) => (
                 <tr key={e.enrollment_id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-4 py-3 font-medium text-slate-900">{e.name || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{e.email || '—'}</td>

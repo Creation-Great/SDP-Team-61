@@ -9,6 +9,10 @@ export default [
   js.configs.recommended,
   eslintConfigPrettier,
   {
+    files: ['**/*.config.js', '**/postcss.config.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
       ecmaVersion: 2022,

@@ -7,6 +7,7 @@ import { getUsersTableSchema } from '../utils/userSchema.js';
 import { AppError } from '../utils/AppError.js';
 import { scheduleMvRefresh } from '../utils/mvRefresh.js';
 import { addSseClient } from '../utils/sse.js';
+import { createNotification, createNotifications } from '../utils/notifications.js';
 
 /**
  * GET /instructor/overview
@@ -73,10 +74,21 @@ export async function assignReviewer(req: AuthRequest, res: Response): Promise<v
     );
 
     if (ins.rowCount === 1) {
+      const submissionInfo = await client.query(
+        `SELECT title FROM submissions WHERE submission_id = $1`,
+        [submission_id]
+      );
       await audit(client, user_id, 'ASSIGN', 'assignment', ins.rows[0].assignment_id, {
         submission_id,
         reviewer_id,
         method: 'manual',
+      });
+      await createNotification(client, {
+        userId: reviewer_id,
+        type: 'review_assigned',
+        title: 'New review assignment',
+        body: `You have been assigned to review "${submissionInfo.rows[0]?.title || 'a submission'}".`,
+        link: '/assigned-reviews',
       });
       return { code: 201, body: ins.rows[0] };
     }
@@ -100,6 +112,17 @@ export async function assignReviewer(req: AuthRequest, res: Response): Promise<v
         reviewer_id,
         revived: true,
       });
+      const submissionInfo = await client.query(
+        `SELECT title FROM submissions WHERE submission_id = $1`,
+        [submission_id]
+      );
+      await createNotification(client, {
+        userId: reviewer_id,
+        type: 'review_assigned',
+        title: 'Review assignment restored',
+        body: `Your review task for "${submissionInfo.rows[0]?.title || 'a submission'}" is active again.`,
+        link: '/assigned-reviews',
+      });
       return { code: 201, body: upd.rows[0] };
     }
 
@@ -109,6 +132,172 @@ export async function assignReviewer(req: AuthRequest, res: Response): Promise<v
   scheduleMvRefresh();
 
   res.status(result.code).json(result.body);
+}
+
+/**
+ * POST /instructor/assign/bulk
+ * Instructor bulk-assigns N reviewers for each selected submission.
+ */
+export async function bulkAssignReviewers(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const submissionIds: string[] = req.body.submission_ids || [];
+  const reviewerCount: number = Number(req.body.reviewer_count || 1);
+
+  const result = await withDb(user_id, role, async (client) => {
+    const perSubmission: Array<{
+      submission_id: string;
+      assigned: number;
+      requested: number;
+      note?: string;
+    }> = [];
+
+    for (const submissionId of submissionIds) {
+      const submissionInfo = await client.query(
+        `SELECT s.submission_id, s.title, s.user_id AS author_id,
+                COALESCE(s.course_id, ue.course_id, u.course_id) AS course_id,
+                COALESCE(ue.group_id, u.group_id) AS group_id
+         FROM submissions s
+         JOIN users u ON u.user_id = s.user_id
+         LEFT JOIN user_enrollments ue ON ue.user_id = u.user_id
+         WHERE s.submission_id = $1
+         LIMIT 1`,
+        [submissionId]
+      );
+
+      if (submissionInfo.rows.length === 0) {
+        perSubmission.push({ submission_id: submissionId, assigned: 0, requested: reviewerCount, note: 'submission_not_found' });
+        continue;
+      }
+
+      const sub = submissionInfo.rows[0];
+      const candidates = await client.query(
+        `SELECT u.user_id,
+                COUNT(a.assignment_id) FILTER (WHERE a.status = 'pending') AS pending_count,
+                CASE WHEN COALESCE(ue.group_id, u.group_id) = $3 THEN 1 ELSE 0 END AS same_group
+         FROM users u
+         LEFT JOIN user_enrollments ue ON ue.user_id = u.user_id AND ue.course_id = $2
+         LEFT JOIN assignments a ON a.reviewer_id = u.user_id
+         WHERE u.user_id <> $1
+           AND u.role = 'student'
+           AND COALESCE(ue.course_id, u.course_id) IS NOT DISTINCT FROM $2
+           AND NOT EXISTS (
+             SELECT 1 FROM assignments x
+             WHERE x.submission_id = $4 AND x.reviewer_id = u.user_id AND x.status <> 'canceled'
+           )
+         GROUP BY u.user_id, COALESCE(ue.group_id, u.group_id)
+         ORDER BY same_group ASC, pending_count ASC
+         LIMIT $5`,
+        [sub.author_id, sub.course_id || null, sub.group_id || null, submissionId, reviewerCount]
+      );
+
+      let assigned = 0;
+      for (const row of candidates.rows) {
+        const ins = await client.query(
+          `INSERT INTO assignments (submission_id, reviewer_id, status)
+           VALUES ($1, $2, 'pending')
+           ON CONFLICT ON CONSTRAINT ux_assign_unique DO NOTHING
+           RETURNING assignment_id`,
+          [submissionId, row.user_id]
+        );
+        if (ins.rowCount !== 1) continue;
+
+        assigned += 1;
+        await audit(client, user_id, 'ASSIGN', 'assignment', ins.rows[0].assignment_id, {
+          submission_id: submissionId,
+          reviewer_id: row.user_id,
+          method: 'bulk',
+        });
+        await createNotification(client, {
+          userId: row.user_id,
+          type: 'review_assigned',
+          title: 'New review assignment',
+          body: `You have been assigned to review "${sub.title}".`,
+          link: '/assigned-reviews',
+        });
+      }
+
+      perSubmission.push({
+        submission_id: submissionId,
+        assigned,
+        requested: reviewerCount,
+        note: assigned < reviewerCount ? 'insufficient_available_reviewers' : undefined,
+      });
+    }
+
+    return perSubmission;
+  });
+
+  scheduleMvRefresh();
+  res.json({
+    ok: true,
+    summary: {
+      submissions: result.length,
+      assigned_total: result.reduce((sum, r) => sum + r.assigned, 0),
+      requested_per_submission: reviewerCount,
+    },
+    results: result,
+  });
+}
+
+/**
+ * POST /instructor/announcements
+ * Publish a system announcement to students in scope (course/group).
+ */
+export async function createAnnouncement(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role, course_id: instructorCourse, group_id: instructorGroup } = req.user;
+  const {
+    title,
+    body,
+    link,
+    course_id: requestedCourseId,
+    group_id: requestedGroupId,
+  } = req.body;
+
+  const targetCourseId = (requestedCourseId || instructorCourse || null) as string | null;
+  const targetGroupId = (requestedGroupId || null) as string | null;
+
+  const result = await withDb(user_id, role, async (client) => {
+    const users = await client.query(
+      `SELECT DISTINCT u.user_id
+       FROM users u
+       LEFT JOIN user_enrollments ue ON ue.user_id = u.user_id
+       WHERE u.role = 'student'
+         AND ($1::text IS NULL OR COALESCE(ue.course_id, u.course_id) = $1)
+         AND ($2::text IS NULL OR COALESCE(ue.group_id, u.group_id) = $2)`,
+      [targetCourseId, targetGroupId]
+    );
+
+    const recipientIds = users.rows.map((r: any) => r.user_id);
+    if (recipientIds.length === 0) {
+      return { recipients: 0 };
+    }
+
+    await createNotifications(
+      client,
+      recipientIds.map((id: string) => ({
+        userId: id,
+        type: 'system' as const,
+        title: String(title).trim(),
+        body: String(body).trim(),
+        link: link ? String(link).trim() : undefined,
+      }))
+    );
+
+    await audit(client, user_id, 'CREATE_ANNOUNCEMENT', 'notification', null, {
+      recipients: recipientIds.length,
+      course_id: targetCourseId,
+      group_id: targetGroupId,
+    });
+
+    return { recipients: recipientIds.length };
+  });
+
+  res.status(201).json({
+    ok: true,
+    message: 'Announcement published',
+    recipients: result.recipients,
+    scope: { course_id: targetCourseId, group_id: targetGroupId },
+  });
 }
 
 /**
@@ -191,14 +380,22 @@ export async function saveCurrentCheckins(req: AuthRequest, res: Response): Prom
   res.json({ message: 'Check-ins saved', ...saved });
 }
 
+const CHECKINS_STUDENTS_PAGE_SIZE_DEFAULT = 50;
+const CHECKINS_STUDENTS_PAGE_SIZE_MAX = 200;
+
 /**
  * GET /instructor/checkins/students
  * List students in instructor's current course/group for explicit template-row mapping.
+ * Query: page, pageSize (optional). When present, response is { students, total }; otherwise array (legacy).
  */
 export async function getCheckinStudents(req: AuthRequest, res: Response): Promise<void> {
   const { user_id, role, course_id, group_id } = req.user;
+  const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+  const rawSize = parseInt(String(req.query.pageSize || '0'), 10) || 0;
+  const pageSize = rawSize <= 0 ? 0 : Math.min(CHECKINS_STUDENTS_PAGE_SIZE_MAX, Math.max(1, rawSize));
+  const usePagination = pageSize > 0;
 
-  const students = await withDb(user_id, role, async (client) => {
+  const result = await withDb(user_id, role, async (client) => {
     const schema = await getUsersTableSchema(client as any);
     const displayExpr = schema.hasName
       ? 'name'
@@ -211,37 +408,48 @@ export async function getCheckinStudents(req: AuthRequest, res: Response): Promi
         ? "netid || '@uconn.edu'"
         : "''";
 
-    // When group_id is absent, return all students in the course (instructor supervises whole course)
     const hasGroup = Boolean(group_id);
-    const sql = hasGroup
-      ? `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email
-         FROM users
-         WHERE role = 'student'
+    const whereFragment = hasGroup
+      ? `WHERE role = 'student'
            AND (
              user_id IN (
                SELECT ue.user_id FROM user_enrollments ue
                WHERE ue.course_id = $1 AND ue.group_id = $2
              )
              OR (course_id = $1 AND group_id = $2)
-           )
-         ORDER BY ${displayExpr} ASC`
-      : `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email
-         FROM users
-         WHERE role = 'student'
+           )`
+      : `WHERE role = 'student'
            AND (
              user_id IN (
                SELECT ue.user_id FROM user_enrollments ue
                WHERE ue.course_id = $1
              )
              OR course_id = $1
-           )
-         ORDER BY ${displayExpr} ASC`;
-    const params = hasGroup ? [course_id || '', group_id] : [course_id || ''];
-    const result = await client.query(sql, params);
-    return result.rows;
+           )`;
+    const baseParams = hasGroup ? [course_id || '', group_id] : [course_id || ''];
+    const orderBy = `ORDER BY ${displayExpr} ASC`;
+
+    if (usePagination) {
+      const sql = `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email,
+                         COUNT(*) OVER() AS _total
+                   FROM users ${whereFragment} ${orderBy}
+                   LIMIT $${baseParams.length + 1} OFFSET $${baseParams.length + 2}`;
+      const result = await client.query(sql, [...baseParams, pageSize, (page - 1) * pageSize]);
+      const rows = result.rows.map(({ _total, ...r }) => r);
+      const total = result.rows[0] ? parseInt(String((result.rows[0] as any)._total), 10) : 0;
+      return { rows, total };
+    }
+
+    const sql = `SELECT user_id, ${displayExpr} AS display_name, ${emailExpr} AS email FROM users ${whereFragment} ${orderBy}`;
+    const result = await client.query(sql, baseParams);
+    return { rows: result.rows, total: result.rows.length };
   });
 
-  res.json(students);
+  if (usePagination) {
+    res.json({ students: result.rows, total: result.total });
+  } else {
+    res.json(result.rows);
+  }
 }
 
 /**
@@ -267,7 +475,7 @@ export async function getUnifiedDashboard(req: AuthRequest, res: Response): Prom
        FROM submissions s
        JOIN users u ON u.user_id = s.user_id
        LEFT JOIN assignments a ON a.submission_id = s.submission_id
-       WHERE ($1::text IS NULL OR u.course_id = $1)
+       WHERE ($1::text IS NULL OR COALESCE(s.course_id, u.course_id) = $1)
          AND ($2::text IS NULL OR u.group_id  = $2)`,
       [courseFilter, groupFilter]
     );
@@ -477,12 +685,15 @@ export async function exportFileReviewCsv(req: AuthRequest, res: Response): Prom
   const { user_id, role } = req.user;
   const course = req.query.course as string | undefined;
   const group = req.query.group as string | undefined;
+  const startDate = req.query.start_date as string | undefined;
+  const endDate = req.query.end_date as string | undefined;
+  const anonymized = String(req.query.anonymized || '').toLowerCase() === 'true';
 
   const data = await withDb(user_id, role, async (client) => {
     const result = await client.query(
       `SELECT
          u.name                AS student_name,
-         u.course_id,
+         COALESCE(s.course_id, u.course_id) AS course_id,
          u.group_id,
          s.title               AS submission_title,
          s.status              AS submission_status,
@@ -494,11 +705,13 @@ export async function exportFileReviewCsv(req: AuthRequest, res: Response): Prom
        JOIN users u ON u.user_id = s.user_id
        LEFT JOIN assignments a ON a.submission_id = s.submission_id
        LEFT JOIN reviews r ON r.submission_id = s.submission_id
-       WHERE ($1::text IS NULL OR u.course_id = $1)
+       WHERE ($1::text IS NULL OR COALESCE(s.course_id, u.course_id) = $1)
          AND ($2::text IS NULL OR u.group_id  = $2)
-       GROUP BY s.submission_id, u.name, u.course_id, u.group_id, s.title, s.status, s.created_at
+         AND ($3::timestamptz IS NULL OR s.created_at >= $3::timestamptz)
+         AND ($4::timestamptz IS NULL OR s.created_at <= $4::timestamptz)
+       GROUP BY s.submission_id, u.name, COALESCE(s.course_id, u.course_id), u.group_id, s.title, s.status, s.created_at
        ORDER BY u.name, s.created_at DESC`,
-      [course || null, group || null]
+      [course || null, group || null, startDate || null, endDate || null]
     );
     return result.rows;
   });
@@ -514,9 +727,9 @@ export async function exportFileReviewCsv(req: AuthRequest, res: Response): Prom
   const header = 'Student,Course,Group,Submission,Status,Date,Assigned,Completed,Avg Score';
   const rows = data.map((r: any) =>
     [
-      escape(r.student_name || ''),
+      escape(anonymized ? '' : (r.student_name || '')),
       escape(r.course_id || ''),
-      escape(r.group_id || ''),
+      escape(anonymized ? '' : (r.group_id || '')),
       escape(r.submission_title || ''),
       escape(r.submission_status || ''),
       r.submission_date ? new Date(r.submission_date).toISOString().slice(0, 10) : '',
@@ -553,10 +766,10 @@ export async function streamEvents(req: AuthRequest, res: Response): Promise<voi
   // Register client
   addSseClient(channel, res);
 
-  // Heartbeat every 30 s to keep connection alive
+  // Heartbeat every 30 s as a named event so the client can detect silence and reconnect
   const heartbeat = setInterval(() => {
     try {
-      res.write(': heartbeat\n\n');
+      res.write('event: heartbeat\ndata: {}\n\n');
     } catch {
       clearInterval(heartbeat);
     }
@@ -565,4 +778,59 @@ export async function streamEvents(req: AuthRequest, res: Response): Promise<voi
   req.on('close', () => {
     clearInterval(heartbeat);
   });
+}
+
+/**
+ * GET /instructor/submission-policy?course_id=...
+ * Get submission edit/withdraw policy for a course.
+ */
+export async function getSubmissionPolicy(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role, course_id } = req.user;
+  const targetCourse = (req.query.course_id as string | undefined) || course_id || null;
+  if (!targetCourse) throw new AppError(400, 'course_id is required');
+
+  const row = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT course_id, allow_edit_withdraw_after_reviews, updated_at
+       FROM submission_policies
+       WHERE course_id = $1
+       LIMIT 1`,
+      [targetCourse]
+    );
+    return result.rows[0] || {
+      course_id: targetCourse,
+      allow_edit_withdraw_after_reviews: false,
+      updated_at: null,
+    };
+  });
+  res.json(row);
+}
+
+/**
+ * PUT /instructor/submission-policy
+ * Upsert submission edit/withdraw policy for a course.
+ */
+export async function upsertSubmissionPolicy(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { course_id, allow_edit_withdraw_after_reviews } = req.body;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `INSERT INTO submission_policies (course_id, allow_edit_withdraw_after_reviews, updated_by, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (course_id)
+       DO UPDATE SET
+         allow_edit_withdraw_after_reviews = EXCLUDED.allow_edit_withdraw_after_reviews,
+         updated_by = EXCLUDED.updated_by,
+         updated_at = now()
+       RETURNING course_id, allow_edit_withdraw_after_reviews, updated_at`,
+      [course_id, allow_edit_withdraw_after_reviews, user_id]
+    );
+    await audit(client, user_id, 'UPSERT_SUBMISSION_POLICY', 'submission_policy', null, {
+      course_id,
+      allow_edit_withdraw_after_reviews,
+    });
+    return result.rows[0];
+  });
+  res.json(row);
 }

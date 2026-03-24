@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Loader2, Upload, UserPlus, Download, AlertCircle, BarChart3,
@@ -12,15 +12,29 @@ import Pagination from '../components/Pagination';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import Skeleton from '../components/ui/Skeleton';
 
 const TABS = ['overview', 'submissions', 'participation', 'csv aggregate'];
 
+/**
+ * Instructor dashboard: overview, submissions, participation, CSV aggregate. SSE /instructor/events.
+ * GET /instructor/unified-dashboard, /submissions/all (paginated), POST /instructor/assign, checkins.
+ * Rendered at /instructor.
+ * @returns {JSX.Element}
+ */
 export default function InstructorDashboardPage() {
   const navigate = useNavigate();
   const [submissions, setSubmissions] = useState([]);
+  const [totalSubmissions, setTotalSubmissions] = useState(0);
+  const [submissionsPage, setSubmissionsPage] = useState(1);
+  const SUBMISSIONS_PAGE_SIZE = 20;
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [filterCourse, setFilterCourse] = useState('');
+  const [filterGroup, setFilterGroup] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
 
   const [weeklyTrends, setWeeklyTrends] = useState([]);
   const [students, setStudents] = useState([]);
@@ -28,6 +42,17 @@ export default function InstructorDashboardPage() {
   const [assignReviewerId, setAssignReviewerId] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [assignMsg, setAssignMsg] = useState({ type: '', text: '' });
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState([]);
+  const [bulkReviewerCount, setBulkReviewerCount] = useState(1);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState({ type: '', text: '' });
+
+  const buildFilterParams = useCallback(() => ({
+    course: filterCourse || undefined,
+    group: filterGroup || undefined,
+    start_date: filterStartDate ? new Date(`${filterStartDate}T00:00:00`).toISOString() : undefined,
+    end_date: filterEndDate ? new Date(`${filterEndDate}T23:59:59`).toISOString() : undefined,
+  }), [filterCourse, filterGroup, filterStartDate, filterEndDate]);
 
   const csvInputRef = useRef(null);
   const [csvUploading, setCsvUploading] = useState(false);
@@ -41,13 +66,23 @@ export default function InstructorDashboardPage() {
   // SSE live events
   const [liveEvents, setLiveEvents] = useState([]);
   const { connected } = useSSE('/instructor/events', {
-    onEvent: useCallback((event) => {
-      setLiveEvents((prev) => [event, ...prev].slice(0, 20));
-      // Auto-refresh submissions list on new submission
-      if (event.type === 'submission_created') {
-        API.get('/submissions/all').then((r) => setSubmissions(r.data)).catch(() => {});
+    onEvent: useCallback((eventName, data) => {
+      setLiveEvents((prev) => [
+        { type: eventName, data: data || {}, timestamp: new Date().toISOString() },
+        ...prev,
+      ].slice(0, 20));
+      if (eventName === 'submission_created') {
+        API.get('/submissions/all', { params: { page: 1, pageSize: SUBMISSIONS_PAGE_SIZE, ...buildFilterParams() } })
+          .then((r) => {
+            const d = r.data;
+            const list = d.submissions ?? (Array.isArray(d) ? d : []);
+            setSubmissions(list);
+            setTotalSubmissions(d.total ?? list.length);
+            setSubmissionsPage(1);
+          })
+          .catch(() => {});
       }
-    }, []),
+    }, [buildFilterParams]),
   });
 
   const subSearchKeys = useCallback((s) => [s.title, s.student_name, s.student_email], []);
@@ -55,7 +90,7 @@ export default function InstructorDashboardPage() {
   const subs = useFilteredList(submissions, {
     searchKeys: subSearchKeys,
     filterFn: subFilterFn,
-    pageSize: 10,
+    pageSize: SUBMISSIONS_PAGE_SIZE,
   });
 
   const partSearchKeys = useCallback((s) => [s.name, s.group_id], []);
@@ -65,21 +100,48 @@ export default function InstructorDashboardPage() {
   });
 
   useEffect(() => {
+    const filterParams = buildFilterParams();
     Promise.all([
-      API.get('/submissions/all').then((r) => r.data),
-      API.get('/instructor/unified-dashboard').then((r) => r.data).catch(() => null),
-      API.get('/instructor/overview').then((r) => r.data).catch(() => []),
-      API.get('/instructor/checkins/students').then((r) => r.data).catch(() => []),
+      API.get('/instructor/unified-dashboard', { params: filterParams }).then((r) => r.data).catch(() => null),
+      API.get('/instructor/overview', { params: filterParams }).then((r) => r.data).catch(() => []),
+      API.get('/instructor/checkins/students').then((r) => (Array.isArray(r.data) ? r.data : (r.data?.students ?? []))).catch(() => []),
+      API.get('/submissions/all', { params: { page: 1, pageSize: SUBMISSIONS_PAGE_SIZE, ...filterParams } }).then((r) => {
+        const d = r.data;
+        const list = d.submissions ?? (Array.isArray(d) ? d : []);
+        const total = d.total ?? list.length;
+        return { list, total };
+      }),
     ])
-      .then(([subs, dash, trends, studs]) => {
-        setSubmissions(subs);
+      .then(([dash, trends, studs, subs]) => {
         setDashboard(dash);
         setWeeklyTrends(Array.isArray(trends) ? trends : []);
         setStudents(Array.isArray(studs) ? studs : []);
+        if (subs?.list) {
+          setSubmissions(subs.list);
+          setTotalSubmissions(subs.total);
+        }
       })
       .catch((err) => console.error('Error loading dashboard:', err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [buildFilterParams]);
+
+  const submissionsPageFetchedRef = useRef(false);
+  // Server-side pagination: refetch when page changes (skip first run; initial load already did page 1)
+  useEffect(() => {
+    if (!submissionsPageFetchedRef.current) {
+      submissionsPageFetchedRef.current = true;
+      return;
+    }
+    API.get('/submissions/all', { params: { page: submissionsPage, pageSize: SUBMISSIONS_PAGE_SIZE, ...buildFilterParams() } })
+      .then((r) => {
+        const d = r.data;
+        const list = d.submissions ?? (Array.isArray(d) ? d : []);
+        const total = d.total ?? list.length;
+        setSubmissions(Array.isArray(list) ? list : []);
+        setTotalSubmissions(total);
+      })
+      .catch(() => {});
+  }, [submissionsPage, buildFilterParams]);
 
   // Fetch AI activity logs
   useEffect(() => {
@@ -103,7 +165,13 @@ export default function InstructorDashboardPage() {
         setAssignMsg({ type: 'warn', text: `Already assigned (${res.data.status}).` });
       } else {
         setAssignMsg({ type: 'ok', text: 'Reviewer assigned successfully.' });
-        API.get('/submissions/all').then((r) => setSubmissions(r.data)).catch(() => {});
+        API.get('/submissions/all', { params: { page: submissionsPage, pageSize: SUBMISSIONS_PAGE_SIZE, ...buildFilterParams() } })
+          .then((r) => {
+            const d = r.data;
+            setSubmissions(d.submissions ?? (Array.isArray(d) ? d : []));
+            if (d.total != null) setTotalSubmissions(d.total);
+          })
+          .catch(() => {});
       }
     } catch (err) {
       setAssignMsg({ type: 'err', text: err.response?.data?.message || 'Assignment failed.' });
@@ -111,6 +179,68 @@ export default function InstructorDashboardPage() {
       setAssigning(false);
     }
   };
+
+  const handleToggleSubmissionSelect = (submissionId) => {
+    setSelectedSubmissionIds((prev) => (
+      prev.includes(submissionId)
+        ? prev.filter((id) => id !== submissionId)
+        : [...prev, submissionId]
+    ));
+  };
+
+  const handleToggleAllCurrentPage = () => {
+    const currentIds = subs.pageItems.map((s) => s.submission_id);
+    const allSelected = currentIds.length > 0 && currentIds.every((id) => selectedSubmissionIds.includes(id));
+    setSelectedSubmissionIds((prev) => {
+      if (allSelected) {
+        return prev.filter((id) => !currentIds.includes(id));
+      }
+      return Array.from(new Set([...prev, ...currentIds]));
+    });
+  };
+
+  const handleBulkAssign = async () => {
+    if (selectedSubmissionIds.length === 0) return;
+    setBulkAssigning(true);
+    setBulkMsg({ type: '', text: '' });
+    try {
+      const res = await API.post('/instructor/assign/bulk', {
+        submission_ids: selectedSubmissionIds,
+        reviewer_count: bulkReviewerCount,
+      });
+      const assignedTotal = res.data?.summary?.assigned_total ?? 0;
+      setBulkMsg({
+        type: 'ok',
+        text: `Bulk assignment completed. Assigned ${assignedTotal} reviewer(s).`,
+      });
+      setSelectedSubmissionIds([]);
+      API.get('/submissions/all', { params: { page: submissionsPage, pageSize: SUBMISSIONS_PAGE_SIZE, ...buildFilterParams() } })
+        .then((r) => {
+          const d = r.data;
+          setSubmissions(d.submissions ?? (Array.isArray(d) ? d : []));
+          if (d.total != null) setTotalSubmissions(d.total);
+        })
+        .catch(() => {});
+    } catch (err) {
+      setBulkMsg({ type: 'err', text: err.response?.data?.message || 'Bulk assignment failed.' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  const filterCourses = useMemo(() => {
+    const set = new Set();
+    (weeklyTrends || []).forEach((r) => { if (r.course_id) set.add(r.course_id); });
+    (dashboard?.student_participation || []).forEach((s) => { if (s.course_id) set.add(s.course_id); });
+    return Array.from(set).sort();
+  }, [weeklyTrends, dashboard?.student_participation]);
+
+  const filterGroups = useMemo(() => {
+    const set = new Set();
+    (weeklyTrends || []).forEach((r) => { if (r.group_id) set.add(r.group_id); });
+    (dashboard?.student_participation || []).forEach((s) => { if (s.group_id) set.add(s.group_id); });
+    return Array.from(set).sort();
+  }, [weeklyTrends, dashboard?.student_participation]);
 
   const exportAggregateCsv = () => {
     if (!csvResult?.students?.length) return;
@@ -165,9 +295,37 @@ export default function InstructorDashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
-        <span className="ml-3 text-slate-500">Loading dashboard...</span>
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <Skeleton variant="text" width="280px" height="32px" />
+          <div className="flex gap-3">
+            <Skeleton variant="text" width="120px" height="40px" className="rounded-lg" />
+            <Skeleton variant="text" width="100px" height="40px" className="rounded-lg" />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} variant="text" width="100px" height="40px" className="rounded-xl" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i} className="p-6">
+              <Skeleton variant="text" width="60%" height="14px" className="mb-2" />
+              <Skeleton variant="text" width="80px" height="32px" />
+            </Card>
+          ))}
+        </div>
+        <Card className="p-6">
+          <Skeleton variant="text" width="40%" height="20px" className="mb-4" />
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} variant="row" height="48px" className="mb-3 rounded-lg" />
+          ))}
+        </Card>
+        <div className="flex items-center justify-center py-4 text-slate-500 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin mr-2 inline" />
+          Loading dashboard…
+        </div>
       </div>
     );
   }
@@ -219,6 +377,65 @@ export default function InstructorDashboardPage() {
           </button>
         ))}
       </div>
+
+      {/* Global Filters */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[150px]">
+            <label className="block text-xs text-slate-500 mb-1">Course</label>
+            <select
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm"
+              value={filterCourse}
+              onChange={(e) => { setFilterCourse(e.target.value); setSubmissionsPage(1); }}
+            >
+              <option value="">All courses</option>
+              {filterCourses.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="min-w-[130px]">
+            <label className="block text-xs text-slate-500 mb-1">Group</label>
+            <select
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm"
+              value={filterGroup}
+              onChange={(e) => { setFilterGroup(e.target.value); setSubmissionsPage(1); }}
+            >
+              <option value="">All groups</option>
+              {filterGroups.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Start date</label>
+            <input
+              type="date"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm"
+              value={filterStartDate}
+              onChange={(e) => { setFilterStartDate(e.target.value); setSubmissionsPage(1); }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">End date</label>
+            <input
+              type="date"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm"
+              value={filterEndDate}
+              onChange={(e) => { setFilterEndDate(e.target.value); setSubmissionsPage(1); }}
+            />
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilterCourse('');
+              setFilterGroup('');
+              setFilterStartDate('');
+              setFilterEndDate('');
+              setSubmissionsPage(1);
+            }}
+          >
+            Clear Filters
+          </Button>
+        </div>
+      </Card>
 
       {/* ═══════ Overview Tab ═══════ */}
       {activeTab === 'overview' && dashboard && (
@@ -429,6 +646,27 @@ export default function InstructorDashboardPage() {
                   <option value="submitted">Submitted</option>
                   <option value="reviewed">Reviewed</option>
                 </select>
+                <select
+                  className="max-w-[150px] px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
+                  value={bulkReviewerCount}
+                  onChange={(e) => setBulkReviewerCount(Number(e.target.value))}
+                >
+                  <option value={1}>Assign 1 each</option>
+                  <option value={2}>Assign 2 each</option>
+                  <option value={3}>Assign 3 each</option>
+                </select>
+                <Button
+                  size="sm"
+                  disabled={selectedSubmissionIds.length === 0 || bulkAssigning}
+                  onClick={handleBulkAssign}
+                >
+                  {bulkAssigning ? 'Assigning...' : `Bulk Assign (${selectedSubmissionIds.length})`}
+                </Button>
+                {bulkMsg.text && (
+                  <span className={`text-xs ${bulkMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {bulkMsg.text}
+                  </span>
+                )}
               </div>
 
               <Card className="p-0 overflow-hidden">
@@ -436,6 +674,14 @@ export default function InstructorDashboardPage() {
                   <table className="w-full text-left">
                     <thead>
                       <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                        <th className={thClass}>
+                          <input
+                            type="checkbox"
+                            checked={subs.pageItems.length > 0 && subs.pageItems.every((s) => selectedSubmissionIds.includes(s.submission_id))}
+                            onChange={handleToggleAllCurrentPage}
+                            aria-label="Select all submissions on current page"
+                          />
+                        </th>
                         <th className={thClass}>Title</th>
                         <th className={thClass}>Student</th>
                         <th className={thClass}>Status</th>
@@ -448,6 +694,14 @@ export default function InstructorDashboardPage() {
                     <tbody className="divide-y divide-slate-100">
                       {subs.pageItems.map((s) => (
                         <tr key={s.submission_id} className="hover:bg-slate-50/50">
+                          <td className={tdClass}>
+                            <input
+                              type="checkbox"
+                              checked={selectedSubmissionIds.includes(s.submission_id)}
+                              onChange={() => handleToggleSubmissionSelect(s.submission_id)}
+                              aria-label={`Select submission ${s.title}`}
+                            />
+                          </td>
                           <td className={tdClass + ' font-medium text-slate-900'}>{s.title}</td>
                           <td className={tdClass}>{s.student_name}</td>
                           <td className={tdClass}>
@@ -482,7 +736,12 @@ export default function InstructorDashboardPage() {
                                   </Button>
                                   <Button size="sm" variant="ghost" onClick={() => { setAssignTarget(null); setAssignMsg({ type: '', text: '' }); }}>✕</Button>
                                   {assignMsg.text && assignTarget === s.submission_id && (
-                                    <span className={`text-xs ${assignMsg.type === 'ok' ? 'text-emerald-600' : assignMsg.type === 'warn' ? 'text-amber-600' : 'text-red-600'}`}>{assignMsg.text}</span>
+                                    <span className="inline-flex items-center gap-2" role={assignMsg.type === 'err' ? 'alert' : 'status'} aria-live={assignMsg.type === 'err' ? 'assertive' : 'polite'}>
+                                      <span className={`text-xs ${assignMsg.type === 'ok' ? 'text-emerald-600' : assignMsg.type === 'warn' ? 'text-amber-600' : 'text-red-600'}`}>{assignMsg.text}</span>
+                                      {assignMsg.type === 'err' && (
+                                        <Button size="sm" variant="ghost" onClick={handleAssign} disabled={assigning} aria-label="Retry assignment">Retry</Button>
+                                      )}
+                                    </span>
                                   )}
                                 </div>
                               ) : (
@@ -500,11 +759,11 @@ export default function InstructorDashboardPage() {
               </Card>
 
               <Pagination
-                page={subs.page}
-                totalPages={subs.totalPages}
-                onPageChange={subs.setPage}
-                filtered={subs.filtered.length}
-                total={subs.total}
+                page={submissionsPage}
+                totalPages={Math.max(1, Math.ceil(totalSubmissions / SUBMISSIONS_PAGE_SIZE))}
+                onPageChange={setSubmissionsPage}
+                filtered={submissions.length}
+                total={totalSubmissions}
                 noun="submissions"
               />
             </>

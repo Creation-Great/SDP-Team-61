@@ -1,6 +1,12 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
+/**
+ * Wraps content for student-only routes. Redirects to /login or /instructor if not student.
+ * @param {Object} props
+ * @param {React.ReactNode} props.children
+ * @returns {React.ReactNode}
+ */
 export default function StudentRoute({ children }) {
   const { user, loading, isInstructor } = useAuth();
 

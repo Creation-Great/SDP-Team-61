@@ -4,6 +4,8 @@ import { audit } from '../utils/audit.js';
 import { AppError } from '../utils/AppError.js';
 import { scheduleMvRefresh } from '../utils/mvRefresh.js';
 import { emitSseEvent } from '../utils/sse.js';
+import { logger } from '../utils/logger.js';
+import { createNotification } from '../utils/notifications.js';
 import type { AuthRequest } from '../types.js';
 
 /**
@@ -18,7 +20,7 @@ export async function getReviewById(req: AuthRequest, res: Response): Promise<vo
     const result = await client.query(
       `SELECT a.assignment_id, a.submission_id, a.reviewer_id,
               a.status AS assignment_status,
-              s.title, s.filename, s.file_url, s.description,
+              s.title, s.filename, s.file_url, s.description, s.course_id,
               s.user_id AS submission_owner_id,
               u.name AS student_name,
               r.review_id, r.score, r.comments, r.created_at AS review_date
@@ -96,6 +98,10 @@ export async function submitReview(req: AuthRequest, res: Response): Promise<voi
       `UPDATE assignments SET status = 'completed' WHERE assignment_id = $1`,
       [id]
     );
+    await client.query(
+      `DELETE FROM file_review_drafts WHERE assignment_id = $1 AND reviewer_id = $2`,
+      [id, user_id]
+    );
 
     // Update submission status if all assignments are completed
     const pending = await client.query(
@@ -109,6 +115,20 @@ export async function submitReview(req: AuthRequest, res: Response): Promise<voi
         `UPDATE submissions SET status = 'reviewed' WHERE submission_id = $1`,
         [assign.submission_id]
       );
+    }
+
+    const submissionOwner = await client.query(
+      `SELECT user_id, title FROM submissions WHERE submission_id = $1`,
+      [assign.submission_id]
+    );
+    if (submissionOwner.rows.length > 0 && submissionOwner.rows[0].user_id !== user_id) {
+      await createNotification(client, {
+        userId: submissionOwner.rows[0].user_id,
+        type: 'review_received',
+        title: 'Your submission received a new review',
+        body: `A new review was submitted for "${submissionOwner.rows[0].title}".`,
+        link: '/dashboard',
+      });
     }
 
     await audit(client, user_id, 'REVIEW', 'review', review.rows[0].review_id, {
@@ -130,7 +150,75 @@ export async function submitReview(req: AuthRequest, res: Response): Promise<voi
     reviewer_name: req.user.name,
   });
 
+  logger.info(
+    { action: 'review_submitted', userId: req.user.user_id, assignmentId: id, reviewId: result.review_id },
+    'Review submitted'
+  );
   res.status(201).json({ message: 'Review submitted successfully', review: result });
+}
+
+/**
+ * GET /reviews/:id/draft
+ * Get backend-saved draft for this assignment review.
+ */
+export async function getReviewDraft(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { id } = req.params;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const assignment = await client.query(
+      `SELECT assignment_id, reviewer_id, status
+       FROM assignments
+       WHERE assignment_id = $1`,
+      [id]
+    );
+    if (assignment.rows.length === 0) throw new AppError(404, 'Assignment not found');
+    if (assignment.rows[0].reviewer_id !== user_id) throw new AppError(403, 'You are not the assigned reviewer');
+
+    const draft = await client.query(
+      `SELECT score, comments, updated_at
+       FROM file_review_drafts
+       WHERE assignment_id = $1 AND reviewer_id = $2`,
+      [id, user_id]
+    );
+    return draft.rows[0] || null;
+  });
+
+  res.json(row || { score: null, comments: '', updated_at: null });
+}
+
+/**
+ * PATCH /reviews/:id/draft
+ * Save backend draft for this assignment review.
+ */
+export async function upsertReviewDraft(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { id } = req.params;
+  const { score, comments } = req.body;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const assignment = await client.query(
+      `SELECT assignment_id, reviewer_id, status
+       FROM assignments
+       WHERE assignment_id = $1`,
+      [id]
+    );
+    if (assignment.rows.length === 0) throw new AppError(404, 'Assignment not found');
+    if (assignment.rows[0].reviewer_id !== user_id) throw new AppError(403, 'You are not the assigned reviewer');
+    if (assignment.rows[0].status === 'completed') throw new AppError(400, 'Review already submitted');
+
+    const result = await client.query(
+      `INSERT INTO file_review_drafts (assignment_id, reviewer_id, score, comments, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (assignment_id, reviewer_id)
+       DO UPDATE SET score = EXCLUDED.score, comments = EXCLUDED.comments, updated_at = now()
+       RETURNING score, comments, updated_at`,
+      [id, user_id, score ?? null, comments || '']
+    );
+    return result.rows[0];
+  });
+
+  res.json(row);
 }
 
 /**

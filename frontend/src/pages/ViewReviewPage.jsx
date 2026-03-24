@@ -5,6 +5,11 @@ import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
+/**
+ * View submission and its reviews. GET /reviews/by-submission/:submissionId. Optional AI summary/feedback.
+ * Rendered at /view-review/:submissionId.
+ * @returns {JSX.Element}
+ */
 export default function ViewReviewPage() {
   const { submissionId } = useParams();
   const navigate = useNavigate();
@@ -36,6 +41,28 @@ export default function ViewReviewPage() {
     };
     load();
   }, [submissionId]);
+
+  /** Preload cached AI feedback per review (GET /api/ai/feedback/:reviewId) */
+  useEffect(() => {
+    if (reviews.length === 0) return;
+    const loadCachedFeedback = async () => {
+      const next = {};
+      await Promise.all(
+        reviews.map(async (r) => {
+          const reviewId = r.review_id ?? r.assignment_id ?? r.id;
+          if (!reviewId) return;
+          try {
+            const res = await API.get(`/api/ai/feedback/${reviewId}`);
+            if (res?.data) next[reviewId] = res.data;
+          } catch {
+            // Ignore when no cache
+          }
+        })
+      );
+      setFeedbackMap((m) => ({ ...m, ...next }));
+    };
+    loadCachedFeedback();
+  }, [submissionId, reviews.length]);
 
   /** Analyze a single review's tone via AI Feedback */
   const handleAnalyzeReview = async (reviewId, text) => {

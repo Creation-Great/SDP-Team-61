@@ -31,6 +31,11 @@ function normalizeWeeks(instructorWeeks, selfWeeks, topics, members) {
   });
 }
 
+/**
+ * Student weekly check-in: GET /checkins/context (weeks, topics, team), POST /checkins/self (scores).
+ * Rendered at /student/checkins.
+ * @returns {JSX.Element}
+ */
 export default function StudentCheckinsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

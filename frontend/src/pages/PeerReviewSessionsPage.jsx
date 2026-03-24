@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Clock, Users, Loader2, AlertCircle, ChevronRight, Edit, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Plus, Clock, Users, Loader2, AlertCircle, ChevronRight, Edit, Eye, EyeOff } from 'lucide-react';
 import API from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import useFilteredList from '../hooks/useFilteredList';
@@ -11,31 +11,31 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 
 function useCountdown(deadline) {
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
   useEffect(() => {
     if (!deadline) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [deadline]);
 
   return useMemo(() => {
-    if (!deadline) return null;
+    if (!deadline) return { text: null, now: 0 };
     const diff = new Date(deadline).getTime() - now;
-    if (diff <= 0) return 'Expired';
+    if (diff <= 0) return { text: 'Expired', now };
     const d = Math.floor(diff / 86400000);
     const h = Math.floor((diff % 86400000) / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     const s = Math.floor((diff % 60000) / 1000);
-    if (d > 0) return `${d}d ${h}h ${m}m`;
-    if (h > 0) return `${h}h ${m}m ${s}s`;
-    return `${m}m ${s}s`;
+    const text = d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+    return { text, now };
   }, [deadline, now]);
 }
 
 function DeadlineChip({ deadline }) {
-  const text = useCountdown(deadline);
+  const { text, now } = useCountdown(deadline);
   if (!text) return null;
-  const isUrgent = text === 'Expired' || (new Date(deadline).getTime() - Date.now() < 3600000);
+  const isUrgent = text === 'Expired' || (new Date(deadline).getTime() - now < 3600000);
   return (
     <Badge type={isUrgent ? 'error' : 'warning'} title={new Date(deadline).toLocaleString()}>
       <Clock className="w-3 h-3 mr-1 inline" />
@@ -44,6 +44,11 @@ function DeadlineChip({ deadline }) {
   );
 }
 
+/**
+ * Peer review sessions list and create (instructor). GET /peer-review/sessions, POST /peer-review/sessions.
+ * Rendered at /peer-review. Uses useFilteredList for search/pagination.
+ * @returns {JSX.Element}
+ */
 export default function PeerReviewSessionsPage() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -104,6 +109,34 @@ export default function PeerReviewSessionsPage() {
       fetchSessions();
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to update score release');
+    }
+  };
+
+  const handleEditSession = async (session) => {
+    const nextTitle = window.prompt('Edit session title', session.title || '');
+    if (nextTitle === null) return;
+    const currentDeadline = session.deadline
+      ? new Date(new Date(session.deadline).getTime() - new Date(session.deadline).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+      : '';
+    const nextDeadlineInput = window.prompt('Edit deadline (YYYY-MM-DDTHH:mm), leave blank to clear', currentDeadline);
+    if (nextDeadlineInput === null) return;
+    try {
+      await API.patch(`/peer-review/sessions/${session.session_id}`, {
+        title: nextTitle.trim(),
+        deadline: nextDeadlineInput.trim() ? new Date(nextDeadlineInput).toISOString() : null,
+      });
+      fetchSessions();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to edit session');
+    }
+  };
+
+  const handleDuplicateSession = async (sessionId) => {
+    try {
+      await API.post(`/peer-review/sessions/${sessionId}/duplicate`);
+      fetchSessions();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to duplicate session');
     }
   };
 
@@ -255,6 +288,21 @@ export default function PeerReviewSessionsPage() {
                                   onClick={() => handleToggle(s.session_id, s.is_open)}
                                 >
                                   {s.is_open ? 'Close' : 'Reopen'}
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleEditSession(s)}
+                                >
+                                  <Edit className="w-3.5 h-3.5 mr-1" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleDuplicateSession(s.session_id)}
+                                >
+                                  Duplicate
                                 </Button>
                                 <Button
                                   variant={s.scores_released ? 'secondary' : 'primary'}

@@ -11,6 +11,12 @@ import RollingAveragesTable from '../components/checkins/RollingAveragesTable';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
+/**
+ * Instructor peer-review CSV aggregate: load/save check-in template (GET/POST /instructor/checkins/current),
+ * students (GET /instructor/checkins/students), upload CSV (POST /instructor/peer-review/aggregate).
+ * Rendered at /instructor/peer-review.
+ * @returns {JSX.Element}
+ */
 export default function InstructorPeerReviewPage() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -38,7 +44,8 @@ export default function InstructorPeerReviewPage() {
       try {
         const studentsRes = await API.get('/instructor/checkins/students');
         if (!cancelled) {
-          setStudentOptions(Array.isArray(studentsRes.data) ? studentsRes.data : []);
+          const d = studentsRes.data;
+          setStudentOptions(Array.isArray(d) ? d : (d?.students ?? []));
         }
 
         const res = await API.get('/instructor/checkins/current');

@@ -7,10 +7,14 @@ import {
   getMySubmissions,
   getAllSubmissions,
   getMyReviewTasks,
+  updateSubmission,
+  replaceSubmissionFile,
+  withdrawSubmission,
+  getMyGradesSummary,
 } from '../controllers/submissionController.js';
 import { h } from '../utils/asyncHandler.js';
 import { validate } from '../middleware/validate.js';
-import { uploadSubmissionSchema } from '../schemas.js';
+import { uploadSubmissionSchema, updateSubmissionSchema } from '../schemas.js';
 
 const router = Router();
 
@@ -28,5 +32,11 @@ router.get('/all', h(requireRole('instructor')), h(getAllSubmissions));
 
 // Student: get my assigned review tasks
 router.get('/reviews/my-tasks', h(getMyReviewTasks));
+router.get('/my-grades', h(requireRole('student')), h(getMyGradesSummary));
+
+// Student: edit/withdraw own submission (before review exists)
+router.patch('/:id', h(requireRole('student')), validate(updateSubmissionSchema), h(updateSubmission));
+router.patch('/:id/replace-file', h(requireRole('student')), upload.single('file'), h(validateFileContent), h(replaceSubmissionFile));
+router.delete('/:id', h(requireRole('student')), h(withdrawSubmission));
 
 export default router;

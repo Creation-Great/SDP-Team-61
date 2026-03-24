@@ -23,6 +23,10 @@ import ClassCheckinsPage from './pages/ClassCheckinsPage';
 import EnrollmentManagementPage from './pages/EnrollmentManagementPage';
 import RegisterPage from './pages/RegisterPage';
 import StudentScoresPage from './pages/StudentScoresPage';
+import StudentGradesPage from './pages/StudentGradesPage';
+import NotificationPreferencesPage from './pages/NotificationPreferencesPage';
+import ExportCenterPage from './pages/ExportCenterPage';
+import AssignmentTemplatesPage from './pages/AssignmentTemplatesPage';
 import NotFoundPage from './pages/NotFoundPage';
 
 import HeaderSearchBar from './components/HeaderSearchBar';
@@ -115,6 +119,18 @@ export default function App() {
           <AppLayout><ViewReviewPage /></AppLayout>
         </ProtectedRoute>
       } />
+      <Route path="/my-grades" element={
+        <ProtectedRoute>
+          <StudentRoute>
+            <AppLayout><StudentGradesPage /></AppLayout>
+          </StudentRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/settings/notifications" element={
+        <ProtectedRoute>
+          <AppLayout><NotificationPreferencesPage /></AppLayout>
+        </ProtectedRoute>
+      } />
 
       {/* Peer Review routes (both roles) */}
       <Route path="/peer-review" element={
@@ -186,6 +202,20 @@ export default function App() {
         <ProtectedRoute>
           <InstructorRoute>
             <AppLayout><EnrollmentManagementPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/instructor/exports" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><ExportCenterPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+      <Route path="/instructor/assignment-templates" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><AssignmentTemplatesPage /></AppLayout>
           </InstructorRoute>
         </ProtectedRoute>
       } />

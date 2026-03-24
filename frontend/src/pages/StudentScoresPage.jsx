@@ -6,12 +6,20 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 
+/**
+ * Student view of peer-review scores for a session. GET /peer-review/sessions/:sessionId/student-scores.
+ * Rendered at /student/scores/:sessionId.
+ * @returns {JSX.Element}
+ */
 export default function StudentScoresPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [appeals, setAppeals] = useState([]);
+  const [appealMessage, setAppealMessage] = useState('');
+  const [appealLoading, setAppealLoading] = useState(false);
 
   useEffect(() => {
     API.get(`/peer-review/sessions/${sessionId}/student-scores`)
@@ -19,6 +27,31 @@ export default function StudentScoresPage() {
       .catch((err) => setError(err.response?.data?.message || 'Failed to load scores'))
       .finally(() => setLoading(false));
   }, [sessionId]);
+
+  useEffect(() => {
+    API.get('/peer-review/appeals/mine')
+      .then((res) => setAppeals(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setAppeals([]));
+  }, []);
+
+  const submitAppeal = async () => {
+    if (!appealMessage.trim()) return;
+    setAppealLoading(true);
+    try {
+      await API.post('/peer-review/appeals', {
+        session_id: sessionId,
+        target_type: 'session',
+        message: appealMessage.trim(),
+      });
+      setAppealMessage('');
+      const res = await API.get('/peer-review/appeals/mine');
+      setAppeals(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to submit request');
+    } finally {
+      setAppealLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -106,6 +139,41 @@ export default function StudentScoresPage() {
         ) : (
           <p className="text-slate-500 text-center py-8">No review scores available for you in this session.</p>
         )}
+      </Card>
+
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-3">Request Clarification / Appeal</h3>
+        <textarea
+          className="w-full min-h-[100px] p-3 rounded-xl border border-slate-200 text-sm"
+          placeholder="Describe the score/comment you want clarified..."
+          value={appealMessage}
+          onChange={(e) => setAppealMessage(e.target.value)}
+        />
+        <div className="mt-3">
+          <Button onClick={submitAppeal} disabled={appealLoading || !appealMessage.trim()}>
+            {appealLoading ? 'Submitting...' : 'Submit Request'}
+          </Button>
+        </div>
+
+        <div className="mt-5 space-y-2">
+          <h4 className="text-sm font-semibold text-slate-700">My Requests</h4>
+          {appeals.filter((a) => a.session_id === sessionId).length === 0 ? (
+            <p className="text-sm text-slate-500">No requests for this session.</p>
+          ) : appeals.filter((a) => a.session_id === sessionId).map((a) => (
+            <div key={a.appeal_id} className="p-3 rounded-lg border border-slate-200 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-slate-500">{new Date(a.created_at).toLocaleString()}</span>
+                <Badge type={a.status === 'resolved' ? 'success' : a.status === 'rejected' ? 'error' : 'warning'}>
+                  {a.status}
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-700">{a.message}</p>
+              {a.instructor_reply ? (
+                <p className="text-xs text-slate-500 mt-1">Instructor reply: {a.instructor_reply}</p>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   );

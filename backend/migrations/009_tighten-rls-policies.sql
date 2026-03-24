@@ -41,6 +41,7 @@ BEGIN;
 
 -- Drop the old broad ALL policy
 DROP POLICY IF EXISTS p_submissions_owner ON submissions;
+DROP POLICY IF EXISTS p_submissions_select ON submissions;
 
 -- (a) SELECT: owner, assigned reviewer (already has own policy), instructor/admin
 CREATE POLICY p_submissions_select ON submissions
@@ -60,6 +61,7 @@ WITH CHECK (
 );
 
 -- (c) UPDATE: owner only (student edits own submission title/description)
+DROP POLICY IF EXISTS p_submissions_update ON submissions;
 CREATE POLICY p_submissions_update ON submissions
 FOR UPDATE
 USING (
@@ -70,6 +72,7 @@ WITH CHECK (
 );
 
 -- (d) DELETE: owner + admin only (instructor cannot delete student work)
+DROP POLICY IF EXISTS p_submissions_delete ON submissions;
 CREATE POLICY p_submissions_delete ON submissions
 FOR DELETE
 USING (
@@ -83,6 +86,7 @@ USING (
 
 -- Drop the old broad ALL policy used for reading
 DROP POLICY IF EXISTS p_assignments_reader ON assignments;
+DROP POLICY IF EXISTS p_assignments_select ON assignments;
 
 -- (a) SELECT: reviewer, submission owner, instructor/admin
 CREATE POLICY p_assignments_select ON assignments
@@ -98,6 +102,7 @@ USING (
 
 -- (b) INSERT: instructor/admin/student (auto-assign) — re-create unchanged
 DROP POLICY IF EXISTS p_assignments_insert_instructor ON assignments;
+DROP POLICY IF EXISTS p_assignments_insert ON assignments;
 CREATE POLICY p_assignments_insert ON assignments
 FOR INSERT
 WITH CHECK (
@@ -114,6 +119,7 @@ USING (
 );
 
 -- (d) DELETE: admin only (assignments shouldn't be deleted, only canceled)
+DROP POLICY IF EXISTS p_assignments_delete ON assignments;
 CREATE POLICY p_assignments_delete ON assignments
 FOR DELETE
 USING (
@@ -126,6 +132,7 @@ USING (
 
 -- Drop the old broad ALL policy used for reading
 DROP POLICY IF EXISTS p_reviews_reader ON reviews;
+DROP POLICY IF EXISTS p_reviews_select ON reviews;
 
 -- (a) SELECT: reviewer, submission owner, instructor/admin
 CREATE POLICY p_reviews_select ON reviews
@@ -148,6 +155,7 @@ WITH CHECK (
 );
 
 -- (c) UPDATE: reviewer only (edit own review score/comments)
+DROP POLICY IF EXISTS p_reviews_update ON reviews;
 CREATE POLICY p_reviews_update ON reviews
 FOR UPDATE
 USING (
@@ -158,6 +166,7 @@ WITH CHECK (
 );
 
 -- (d) DELETE: reviewer + admin only
+DROP POLICY IF EXISTS p_reviews_delete ON reviews;
 CREATE POLICY p_reviews_delete ON reviews
 FOR DELETE
 USING (

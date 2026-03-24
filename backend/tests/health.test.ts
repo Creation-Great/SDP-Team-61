@@ -38,10 +38,11 @@ beforeAll(async () => {
 
 /* ---------- tests ---------- */
 describe('GET /healthz', () => {
-  it('should return { ok: true }', async () => {
+  it('should return 200 and { ok: true } (and optionally db)', async () => {
     const res = await request(app).get('/healthz');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true });
+    expect(res.body.ok).toBe(true);
+    if (res.body.db !== undefined) expect(res.body.db).toBe('ok');
   });
 });
 

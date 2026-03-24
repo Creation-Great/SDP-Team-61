@@ -4,6 +4,8 @@ import { audit } from '../utils/audit.js';
 import { AppError } from '../utils/AppError.js';
 import { getGroupForCourse, getTeammatesByCourse } from '../utils/enrollment.js';
 import { emitSseEvent } from '../utils/sse.js';
+import { logger } from '../utils/logger.js';
+import { createNotification } from '../utils/notifications.js';
 import type { AuthRequest } from '../types.js';
 import type { PoolClient } from 'pg';
 
@@ -55,6 +57,45 @@ export async function createSession(req: AuthRequest, res: Response): Promise<vo
 }
 
 /**
+ * POST /peer-review/sessions/:sessionId/duplicate
+ * Instructor duplicates a session's metadata into a new closed session.
+ */
+export async function duplicateSession(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const rawSessionId = req.params.sessionId;
+  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+
+  const duplicated = await withDb(user_id, role, async (client) => {
+    const source = await client.query(
+      `SELECT title, course_id, deadline
+       FROM peer_review_sessions
+       WHERE session_id = $1`,
+      [sessionId]
+    );
+    if (source.rows.length === 0) {
+      throw new AppError(404, 'Session not found');
+    }
+
+    const base = source.rows[0];
+    const result = await client.query(
+      `INSERT INTO peer_review_sessions
+         (title, created_by, course_id, deadline, is_open, scores_released, closed_at)
+       VALUES ($1, $2, $3, $4, false, false, now())
+       RETURNING *`,
+      [`${base.title} (Copy)`, user_id, base.course_id, base.deadline]
+    );
+
+    await audit(client, user_id, 'DUPLICATE_PR_SESSION', 'peer_review_session', result.rows[0].session_id, {
+      source_session_id: sessionId,
+    });
+
+    return result.rows[0];
+  });
+
+  res.status(201).json(duplicated);
+}
+
+/**
  * GET /peer-review/sessions
  * List all peer review sessions. Both students and instructors can view.
  */
@@ -99,7 +140,44 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
            WHERE session_id = $1 AND reviewer_id = $2`,
           [s.session_id, user_id]
         );
-        s.my_submitted = parseInt(myReviews.rows[0].cnt) > 0;
+        const hasSubmitted = parseInt(myReviews.rows[0].cnt) > 0;
+        s.my_submitted = hasSubmitted;
+
+        // Lazy deadline reminders: create in-app notification at 24h / 1h windows.
+        if (!hasSubmitted && s.is_open && s.deadline) {
+          const now = Date.now();
+          const deadlineMs = new Date(s.deadline).getTime();
+          const diffMs = deadlineMs - now;
+          const oneHour = 60 * 60 * 1000;
+          const twentyFourHours = 24 * oneHour;
+          const windows = [
+            { key: '24h', lower: twentyFourHours - oneHour, upper: twentyFourHours },
+            { key: '1h', lower: oneHour - 15 * 60 * 1000, upper: oneHour },
+          ];
+
+          for (const w of windows) {
+            if (diffMs <= w.upper && diffMs >= w.lower) {
+              const reminderLink = `/peer-review/${s.session_id}?deadline_reminder=${w.key}`;
+              const exists = await client.query(
+                `SELECT 1 FROM notifications
+                 WHERE user_id = $1
+                   AND type = 'deadline'
+                   AND link = $2
+                 LIMIT 1`,
+                [user_id, reminderLink]
+              );
+              if (exists.rows.length === 0) {
+                await createNotification(client, {
+                  userId: user_id,
+                  type: 'deadline',
+                  title: `Peer review deadline in ${w.key}`,
+                  body: `Session "${s.title}" is due soon. Submit your review before the deadline.`,
+                  link: reminderLink,
+                });
+              }
+            }
+          }
+        }
       }
 
       return result.rows;
@@ -129,29 +207,79 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
 
 /**
  * PATCH /peer-review/sessions/:sessionId
- * Toggle session open/closed. Instructor only.
+ * Update session state/metadata (is_open, title, deadline). Instructor only.
  */
 export async function toggleSession(req: AuthRequest, res: Response): Promise<void> {
   const { user_id, role } = req.user;
   const rawSessionId = req.params.sessionId;
   const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
-  const { is_open } = req.body;
+  const { is_open, title, deadline } = req.body;
 
   const session = await withDb(user_id, role, async (client) => {
-    const result = await client.query(
-      `UPDATE peer_review_sessions
-       SET is_open = $1, closed_at = CASE WHEN $1 = false THEN now() ELSE NULL END
-       WHERE session_id = $2
-       RETURNING *`,
-      [is_open, sessionId]
+    const existing = await client.query(
+      `SELECT session_id, title, deadline, is_open,
+              (SELECT COUNT(*)::int FROM peer_reviews pr WHERE pr.session_id = s.session_id) AS review_count
+       FROM peer_review_sessions s
+       WHERE session_id = $1`,
+      [sessionId]
     );
-
-    if (result.rows.length === 0) {
+    if (existing.rows.length === 0) {
       throw new AppError(404, 'Session not found');
     }
+    const current = existing.rows[0];
+    const hasSubmittedReviews = Number(current.review_count) > 0;
 
-    await audit(client, user_id, is_open ? 'OPEN_PR_SESSION' : 'CLOSE_PR_SESSION',
-      'peer_review_session', sessionId, {});
+    let parsedDeadline: Date | null | undefined = undefined;
+    if (deadline !== undefined) {
+      parsedDeadline = deadline ? new Date(deadline) : null;
+      if (parsedDeadline && Number.isNaN(parsedDeadline.getTime())) {
+        throw new AppError(400, 'Invalid deadline');
+      }
+    }
+    if (hasSubmittedReviews && parsedDeadline && current.deadline) {
+      const oldMs = new Date(current.deadline).getTime();
+      const newMs = parsedDeadline.getTime();
+      if (newMs < oldMs) {
+        throw new AppError(400, 'Cannot shorten deadline after reviews are submitted');
+      }
+    }
+
+    const updates: string[] = [];
+    const params: Array<string | boolean | Date | null> = [];
+    let idx = 1;
+    if (is_open !== undefined) {
+      updates.push(`is_open = $${idx++}`);
+      params.push(is_open);
+      updates.push(`closed_at = CASE WHEN $${idx - 1} = false THEN now() ELSE NULL END`);
+    }
+    if (title !== undefined) {
+      updates.push(`title = $${idx++}`);
+      params.push(title.trim());
+    }
+    if (parsedDeadline !== undefined) {
+      updates.push(`deadline = $${idx++}`);
+      params.push(parsedDeadline);
+    }
+    if (updates.length === 0) {
+      throw new AppError(400, 'No valid fields to update');
+    }
+
+    params.push(sessionId);
+    const result = await client.query(
+      `UPDATE peer_review_sessions
+       SET ${updates.join(', ')}
+       WHERE session_id = $${idx}
+       RETURNING *`,
+      params
+    );
+
+    const action = is_open !== undefined
+      ? (is_open ? 'OPEN_PR_SESSION' : 'CLOSE_PR_SESSION')
+      : 'UPDATE_PR_SESSION';
+    await audit(client, user_id, action, 'peer_review_session', sessionId, {
+      title_updated: title !== undefined,
+      deadline_updated: parsedDeadline !== undefined,
+    });
 
     return result.rows[0];
   });
@@ -165,7 +293,8 @@ export async function toggleSession(req: AuthRequest, res: Response): Promise<vo
  */
 export async function releaseScores(req: AuthRequest, res: Response): Promise<void> {
   const { user_id, role } = req.user;
-  const { sessionId } = req.params;
+  const rawSessionId = req.params.sessionId;
+  const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
   const { scores_released } = req.body;
 
   const session = await withDb(user_id, role, async (client) => {
@@ -187,6 +316,10 @@ export async function releaseScores(req: AuthRequest, res: Response): Promise<vo
     return result.rows[0];
   });
 
+  logger.info(
+    { action: scores_released ? 'scores_released' : 'scores_hidden', userId: user_id, sessionId },
+    scores_released ? 'Peer review scores released' : 'Peer review scores hidden'
+  );
   res.json(session);
 }
 
@@ -317,6 +450,10 @@ export async function submitPeerReviews(req: AuthRequest, res: Response): Promis
       review_count: reviews.length,
       team_chemistry: teamChemistry,
     });
+    await client.query(
+      `DELETE FROM peer_review_drafts WHERE session_id = $1 AND reviewer_id = $2`,
+      [sessionId, user_id]
+    );
   });
 
   res.json({ message: 'Peer reviews submitted successfully' });
@@ -331,12 +468,79 @@ export async function submitPeerReviews(req: AuthRequest, res: Response): Promis
 }
 
 /**
+ * GET /peer-review/sessions/:sessionId/draft
+ * Get backend-saved peer review draft for current reviewer.
+ */
+export async function getPeerReviewDraft(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { sessionId } = req.params;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const session = await client.query(
+      `SELECT session_id FROM peer_review_sessions WHERE session_id = $1`,
+      [sessionId]
+    );
+    if (session.rows.length === 0) throw new AppError(404, 'Session not found');
+
+    const result = await client.query(
+      `SELECT payload, updated_at
+       FROM peer_review_drafts
+       WHERE session_id = $1 AND reviewer_id = $2`,
+      [sessionId, user_id]
+    );
+    return result.rows[0] || null;
+  });
+
+  if (!row) {
+    res.json({ payload: { reviews: {}, teamChemistry: null }, updated_at: null });
+    return;
+  }
+  res.json(row);
+}
+
+/**
+ * PATCH /peer-review/sessions/:sessionId/draft
+ * Save backend peer review draft.
+ */
+export async function upsertPeerReviewDraft(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { sessionId } = req.params;
+  const { reviews, teamChemistry } = req.body;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const session = await client.query(
+      `SELECT session_id, is_open FROM peer_review_sessions WHERE session_id = $1`,
+      [sessionId]
+    );
+    if (session.rows.length === 0) throw new AppError(404, 'Session not found');
+    if (!session.rows[0].is_open) throw new AppError(400, 'This review session is closed');
+
+    const payload = JSON.stringify({
+      reviews: reviews || {},
+      teamChemistry: teamChemistry ?? null,
+    });
+    const result = await client.query(
+      `INSERT INTO peer_review_drafts (session_id, reviewer_id, payload, updated_at)
+       VALUES ($1, $2, $3::jsonb, now())
+       ON CONFLICT (session_id, reviewer_id)
+       DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+       RETURNING payload, updated_at`,
+      [sessionId, user_id, payload]
+    );
+    return result.rows[0];
+  });
+
+  res.json(row);
+}
+
+/**
  * GET /peer-review/sessions/:sessionId/results
  * Instructor gets aggregated results + raw details + completion status.
  */
 export async function getSessionResults(req: AuthRequest, res: Response): Promise<void> {
   const { user_id, role } = req.user;
   const { sessionId } = req.params;
+  const anonymized = String(req.query.anonymized || '').toLowerCase() === 'true';
 
   const data = await withDb(user_id, role, async (client) => {
     // Session info
@@ -397,11 +601,28 @@ export async function getSessionResults(req: AuthRequest, res: Response): Promis
       [sessionId]
     );
 
+    const detailRows = details.rows;
+    if (anonymized) {
+      const reviewerMap = new Map<string, string>();
+      let seq = 1;
+      for (const row of detailRows) {
+        const key = String(row.reviewer_name || '');
+        if (!reviewerMap.has(key)) {
+          reviewerMap.set(key, `Reviewer #${seq}`);
+          seq += 1;
+        }
+      }
+      for (const row of detailRows) {
+        row.reviewer_name = reviewerMap.get(String(row.reviewer_name || '')) || 'Reviewer';
+      }
+    }
+
     return {
       session: session.rows[0],
       averages: averages.rows,
-      details: details.rows,
+      details: detailRows,
       completion: completion.rows,
+      anonymized,
     };
   });
 
@@ -532,11 +753,31 @@ export async function getTeamReviews(req: AuthRequest, res: Response): Promise<v
 export async function exportCsv(req: AuthRequest, res: Response): Promise<void> {
   const { user_id, role } = req.user;
   const { sessionId } = req.params;
+  const group = req.query.group as string | undefined;
+  const startDate = req.query.start_date as string | undefined;
+  const endDate = req.query.end_date as string | undefined;
+  const anonymized = String(req.query.anonymized || '').toLowerCase() === 'true';
 
   const data = await withDb(user_id, role, async (client) => {
     const result = await client.query(
-      `SELECT * FROM v_peer_review_averages WHERE session_id = $1 ORDER BY team, student_name`,
-      [sessionId]
+      `SELECT *
+       FROM v_peer_review_averages
+       WHERE session_id = $1
+         AND ($2::text IS NULL OR team = $2)
+         AND ($3::timestamptz IS NULL OR EXISTS (
+           SELECT 1 FROM peer_reviews pr
+           WHERE pr.session_id = v_peer_review_averages.session_id
+             AND pr.reviewee_id = v_peer_review_averages.reviewee_id
+             AND pr.updated_at >= $3::timestamptz
+         ))
+         AND ($4::timestamptz IS NULL OR EXISTS (
+           SELECT 1 FROM peer_reviews pr
+           WHERE pr.session_id = v_peer_review_averages.session_id
+             AND pr.reviewee_id = v_peer_review_averages.reviewee_id
+             AND pr.updated_at <= $4::timestamptz
+         ))
+       ORDER BY team, student_name`,
+      [sessionId, group || null, startDate || null, endDate || null]
     );
     return result.rows;
   });
@@ -552,8 +793,8 @@ export async function exportCsv(req: AuthRequest, res: Response): Promise<void> 
   const header = 'Team,Name,Avg Technical Contributions,Avg Team Interactions,Avg Project Management,Avg Team Chemistry,Review Count';
   const rows = data.map((r: any) =>
     [
-      escape(r.team || ''),
-      escape(r.student_name || ''),
+      escape(anonymized ? '' : (r.team || '')),
+      escape(anonymized ? '' : (r.student_name || '')),
       r.avg_technical ?? '',
       r.avg_interactions ?? '',
       r.avg_management ?? '',
@@ -765,4 +1006,143 @@ export async function getAllStudentsForSession(req: AuthRequest, res: Response):
   });
 
   res.json(data);
+}
+
+/**
+ * POST /peer-review/appeals
+ * Student creates clarification/appeal request for a session/review/comment.
+ */
+export async function createAppeal(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { session_id, target_type, target_id, message } = req.body;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const session = await client.query(
+      `SELECT session_id, title, created_by FROM peer_review_sessions WHERE session_id = $1`,
+      [session_id]
+    );
+    if (session.rows.length === 0) throw new AppError(404, 'Session not found');
+
+    const result = await client.query(
+      `INSERT INTO peer_review_appeals
+         (session_id, student_id, target_type, target_id, message)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [session_id, user_id, target_type || 'session', target_id || null, message.trim()]
+    );
+
+    await audit(client, user_id, 'CREATE_PEER_REVIEW_APPEAL', 'peer_review_appeal', result.rows[0].appeal_id, {
+      session_id,
+      target_type: target_type || 'session',
+    });
+
+    const instructorId = session.rows[0].created_by;
+    if (instructorId) {
+      await createNotification(client, {
+        userId: instructorId,
+        type: 'system',
+        title: 'New peer-review clarification request',
+        body: `A student submitted a clarification request in "${session.rows[0].title}".`,
+        link: '/instructor/analytics',
+      });
+    }
+
+    return result.rows[0];
+  });
+
+  res.status(201).json(row);
+}
+
+/**
+ * GET /peer-review/appeals/mine
+ * Student lists own appeals.
+ */
+export async function getMyAppeals(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+
+  const rows = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT a.*, s.title AS session_title
+       FROM peer_review_appeals a
+       JOIN peer_review_sessions s ON s.session_id = a.session_id
+       WHERE a.student_id = $1
+       ORDER BY a.created_at DESC`,
+      [user_id]
+    );
+    return result.rows;
+  });
+
+  res.json(rows);
+}
+
+/**
+ * GET /peer-review/appeals
+ * Instructor lists appeals across their created sessions.
+ */
+export async function getAppealsForInstructor(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const status = req.query.status as string | undefined;
+
+  const rows = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT a.*, s.title AS session_title, u.name AS student_name
+       FROM peer_review_appeals a
+       JOIN peer_review_sessions s ON s.session_id = a.session_id
+       JOIN users u ON u.user_id = a.student_id
+       WHERE s.created_by = $1
+         AND ($2::text IS NULL OR a.status = $2)
+       ORDER BY a.created_at DESC`,
+      [user_id, status || null]
+    );
+    return result.rows;
+  });
+
+  res.json(rows);
+}
+
+/**
+ * PATCH /peer-review/appeals/:appealId
+ * Instructor updates status/reply.
+ */
+export async function updateAppealByInstructor(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const rawAppealId = req.params.appealId;
+  const appealId = Array.isArray(rawAppealId) ? rawAppealId[0] : rawAppealId;
+  const { status, instructor_reply } = req.body;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const check = await client.query(
+      `SELECT a.appeal_id, a.student_id, a.session_id, s.created_by, s.title
+       FROM peer_review_appeals a
+       JOIN peer_review_sessions s ON s.session_id = a.session_id
+       WHERE a.appeal_id = $1`,
+      [appealId]
+    );
+    if (check.rows.length === 0) throw new AppError(404, 'Appeal not found');
+    if (check.rows[0].created_by !== user_id) throw new AppError(403, 'You can only process appeals for your sessions');
+
+    const result = await client.query(
+      `UPDATE peer_review_appeals
+       SET status = $1, instructor_reply = $2, updated_at = now()
+       WHERE appeal_id = $3
+       RETURNING *`,
+      [status, instructor_reply || '', appealId]
+    );
+
+    await audit(client, user_id, 'UPDATE_PEER_REVIEW_APPEAL', 'peer_review_appeal', appealId, {
+      status,
+    });
+
+    await createNotification(client, {
+      userId: check.rows[0].student_id,
+      type: 'system',
+      title: 'Your clarification request was updated',
+      body: `Request in "${check.rows[0].title}" is now ${status}.`,
+      link: `/peer-review/${check.rows[0].session_id}/my-scores`,
+    });
+
+    return result.rows[0];
+  });
+
+  res.json(row);
 }

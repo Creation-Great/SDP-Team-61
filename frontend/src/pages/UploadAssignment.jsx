@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, FileUp, CheckCircle, AlertCircle } from 'lucide-react';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
+/**
+ * Student assignment upload: multipart POST /submissions/upload (title, description, file).
+ * Rendered at /upload.
+ * @returns {JSX.Element}
+ */
 export default function UploadAssignment() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
@@ -14,6 +19,41 @@ export default function UploadAssignment() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [enrollments, setEnrollments] = useState([]);
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+  useEffect(() => {
+    API.get('/enrollments')
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setEnrollments(rows);
+        const primary = rows.find((r) => r.is_primary) || rows[0];
+        if (primary?.course_id) setSelectedCourseId(primary.course_id);
+      })
+      .catch(() => setEnrollments([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCourseId) {
+      setTemplates([]);
+      setSelectedTemplateId('');
+      return;
+    }
+    API.get('/assignment-templates', {
+      params: { course_id: selectedCourseId, active: true },
+    })
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setTemplates(rows);
+        setSelectedTemplateId(rows[0]?.template_id || '');
+      })
+      .catch(() => {
+        setTemplates([]);
+        setSelectedTemplateId('');
+      });
+  }, [selectedCourseId]);
 
   const handleUpload = async (e) => {
     e.preventDefault();
@@ -28,11 +68,17 @@ export default function UploadAssignment() {
       setError('Please select a file to upload.');
       return;
     }
+    if (enrollments.length > 0 && !selectedCourseId) {
+      setError('Please select a course.');
+      return;
+    }
 
     const formData = new FormData();
     formData.append('title', title);
     formData.append('description', description);
     formData.append('file', file);
+    if (selectedCourseId) formData.append('course_id', selectedCourseId);
+    if (selectedTemplateId) formData.append('assignment_template_id', selectedTemplateId);
 
     setLoading(true);
     try {
@@ -99,6 +145,43 @@ export default function UploadAssignment() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+          {enrollments.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="course">Course</label>
+              <select
+                id="course"
+                className={inputClass}
+                value={selectedCourseId}
+                onChange={(e) => setSelectedCourseId(e.target.value)}
+                required
+              >
+                <option value="">Select a course</option>
+                {enrollments.map((en) => (
+                  <option key={en.enrollment_id} value={en.course_id}>
+                    {en.course_id}{en.group_id ? ` (Group ${en.group_id})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {selectedCourseId && templates.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="assignment-template">Assignment</label>
+              <select
+                id="assignment-template"
+                className={inputClass}
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+              >
+                <option value="">No template (custom submission)</option>
+                {templates.map((tpl) => (
+                  <option key={tpl.template_id} value={tpl.template_id}>
+                    {tpl.title}{tpl.due_at ? ` (Due ${new Date(tpl.due_at).toLocaleDateString()})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </Card>
 
         {/* Drag & Drop Zone (prototype style) */}

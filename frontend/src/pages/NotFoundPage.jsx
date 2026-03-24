@@ -3,6 +3,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { Home } from 'lucide-react';
 import Button from '../components/ui/Button';
 
+/**
+ * 404 fallback. Renders link to login (if unauthenticated) or instructor/dashboard (by role).
+ * No API calls. Used by router for unknown paths.
+ * @returns {JSX.Element}
+ */
 export default function NotFoundPage() {
   const { user, isInstructor } = useAuth();
   const home = !user ? '/login' : isInstructor ? '/instructor' : '/dashboard';

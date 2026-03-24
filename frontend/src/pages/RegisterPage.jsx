@@ -5,6 +5,10 @@ import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 
+/**
+ * Local registration. POST /auth/register (name, email, password, role, group_id). Rendered at /register.
+ * @returns {JSX.Element}
+ */
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [name, setName] = useState('');

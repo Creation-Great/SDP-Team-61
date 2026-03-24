@@ -13,6 +13,7 @@ import rateLimit from 'express-rate-limit';
 import { AppError } from './utils/AppError.js';
 import { ZodValidationError } from './middleware/validate.js';
 
+import swaggerUi from 'swagger-ui-express';
 import authRoutes from './routes/authRoutes.js';
 import submissionRoutes from './routes/submissionRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
@@ -22,6 +23,8 @@ import checkinRoutes from './routes/checkinRoutes.js';
 import enrollmentRoutes from './routes/enrollmentRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import rubricRoutes from './routes/rubricRoutes.js';
+import assignmentTemplateRoutes from './routes/assignmentTemplateRoutes.js';
 import { authenticate } from './middleware/auth.js';
 import { h } from './utils/asyncHandler.js';
 import fs from 'fs';
@@ -113,8 +116,37 @@ app.get('/uploads/:filename', h(authenticate), (req, res) => {
   res.sendFile(path.resolve(filePath));
 });
 
-// Health check
-app.get('/healthz', (_req, res) => res.json({ ok: true }));
+// API docs: serve OpenAPI spec and Swagger UI (dev / staging; can be disabled in production via env)
+const openApiPath = path.join(__dirname, '..', '..', 'docs', 'openapi.yaml');
+if (fs.existsSync(openApiPath)) {
+  app.get('/api-docs/openapi.yaml', (_req, res) => {
+    res.setHeader('Content-Type', 'application/yaml');
+    res.sendFile(path.resolve(openApiPath));
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(null, {
+    swaggerOptions: { url: '/api-docs/openapi.yaml' },
+    customSiteTitle: 'SDP Peer Review API',
+  }));
+}
+
+// Health check: liveness (process up) + optional DB connectivity for readiness
+app.get('/healthz', async (_req, res) => {
+  const out: { ok: boolean; db?: string } = { ok: true };
+  if (process.env.DATABASE_URL) {
+    try {
+      const { pool } = await import('./db.js');
+      await pool.query('SELECT 1');
+      out.db = 'ok';
+    } catch (e) {
+      logger.warn({ err: e }, 'Health check: DB ping failed');
+      out.ok = false;
+      out.db = 'error';
+      res.status(503).json(out);
+      return;
+    }
+  }
+  res.status(200).json(out);
+});
 
 // Routes
 app.use('/auth', authLimiter, authRoutes);
@@ -126,11 +158,27 @@ app.use('/checkins', checkinRoutes);
 app.use('/enrollments', enrollmentRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/notifications', notificationRoutes);
+app.use('/rubrics', rubricRoutes);
+app.use('/assignment-templates', assignmentTemplateRoutes);
 
+// Default error codes by status (used when AppError has no code)
+function defaultErrorCode(statusCode: number): string {
+  const map: Record<number, string> = {
+    400: 'bad_request',
+    401: 'unauthorized',
+    403: 'forbidden',
+    404: 'not_found',
+    409: 'conflict',
+  };
+  return map[statusCode] ?? 'app_error';
+}
+
+// Unified error response shape: { error, message, details? }
 // Global error handler — typed, handles AppError, ZodValidationError, and unknown errors
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ error: 'app_error', message: err.message });
+    const code = err.code ?? defaultErrorCode(err.statusCode);
+    res.status(err.statusCode).json({ error: code, message: err.message });
     return;
   }
 

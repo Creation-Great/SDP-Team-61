@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
-import { FileText, TrendingUp, AlertCircle, Loader2, Download, Flag, ShieldAlert } from 'lucide-react';
+import { FileText, TrendingUp, AlertCircle, Loader2, Download, Flag, ShieldAlert, Megaphone } from 'lucide-react';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import { API_BASE_URL } from '../config';
 
+/**
+ * Instructor analytics: cohort stats, quality flags, peer review flags.
+ * Fetches GET /instructor/unified-dashboard, /instructor/quality-flags, /instructor/peer-review-quality-flags.
+ * @returns {JSX.Element}
+ */
 export default function InstructorAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -13,12 +18,72 @@ export default function InstructorAnalyticsPage() {
   const [qualityFlags, setQualityFlags] = useState([]);
   const [peerQualityFlags, setPeerQualityFlags] = useState([]);
   const [flagsLoading, setFlagsLoading] = useState(true);
+  const [courseFilter, setCourseFilter] = useState('');
+  const [groupFilter, setGroupFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+  const [anonymizedExport, setAnonymizedExport] = useState(false);
+  const [rubricType, setRubricType] = useState('file_review');
+  const [rubricCourseId, setRubricCourseId] = useState('');
+  const [rubricSessionId, setRubricSessionId] = useState('');
+  const [rubricLevels, setRubricLevels] = useState([]);
+  const [rubricLoading, setRubricLoading] = useState(false);
+  const [rubricSaving, setRubricSaving] = useState(false);
+  const [rubricMsg, setRubricMsg] = useState('');
+  const [appeals, setAppeals] = useState([]);
+  const [appealsLoading, setAppealsLoading] = useState(true);
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementBody, setAnnouncementBody] = useState('');
+  const [announcementCourse, setAnnouncementCourse] = useState('');
+  const [announcementGroup, setAnnouncementGroup] = useState('');
+  const [announcementLink, setAnnouncementLink] = useState('');
+  const [announcementSending, setAnnouncementSending] = useState(false);
+  const [announcementMsg, setAnnouncementMsg] = useState('');
+  const [policyCourseId, setPolicyCourseId] = useState('');
+  const [allowAfterReview, setAllowAfterReview] = useState(false);
+  const [policyMsg, setPolicyMsg] = useState('');
+
+  const rubricDefaults = {
+    file_review: [
+      { score: 5, label: 'Excellent', desc: 'Exceptional quality. Well-structured, thorough, and demonstrates deep understanding.' },
+      { score: 4, label: 'Good', desc: 'Above average quality with minor issues.' },
+      { score: 3, label: 'Satisfactory', desc: 'Meets basic expectations with room for improvement.' },
+      { score: 2, label: 'Below Average', desc: 'Significant gaps in quality and completeness.' },
+      { score: 1, label: 'Poor', desc: 'Does not meet minimum standards.' },
+    ],
+    peer_technical: [
+      { score: 5, label: 'Outstanding', desc: 'Consistently high-quality technical contributions.' },
+      { score: 4, label: 'Strong', desc: 'Reliable technical contributor with good initiative.' },
+      { score: 3, label: 'Adequate', desc: 'Completes assigned technical tasks satisfactorily.' },
+      { score: 2, label: 'Developing', desc: 'Needs assistance with technical tasks.' },
+      { score: 1, label: 'Insufficient', desc: 'Rarely contributes technically.' },
+    ],
+    peer_interactions: [
+      { score: 5, label: 'Outstanding', desc: 'Excellent communicator and collaborator.' },
+      { score: 4, label: 'Strong', desc: 'Communicates and collaborates effectively.' },
+      { score: 3, label: 'Adequate', desc: 'Participates in team communication when needed.' },
+      { score: 2, label: 'Developing', desc: 'Limited participation or responsiveness.' },
+      { score: 1, label: 'Insufficient', desc: 'Poor collaboration and communication.' },
+    ],
+    peer_management: [
+      { score: 5, label: 'Outstanding', desc: 'Excellent planning, ownership, and deadline management.' },
+      { score: 4, label: 'Strong', desc: 'Reliable and organized with good deadline performance.' },
+      { score: 3, label: 'Adequate', desc: 'Generally meets deadlines and responsibilities.' },
+      { score: 2, label: 'Developing', desc: 'Occasional deadline misses and weak planning.' },
+      { score: 1, label: 'Insufficient', desc: 'Frequent deadline misses and poor task management.' },
+    ],
+  };
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await API.get('/instructor/unified-dashboard');
+        const res = await API.get('/instructor/unified-dashboard', {
+          params: {
+            course: courseFilter || undefined,
+            group: groupFilter || undefined,
+          },
+        });
         if (!cancelled) setData(res.data);
       } catch {
         if (!cancelled) setError('Failed to load analytics');
@@ -28,13 +93,122 @@ export default function InstructorAnalyticsPage() {
     };
     load();
     return () => { cancelled = true; };
+  }, [courseFilter, groupFilter]);
+
+  useEffect(() => {
+    const cid = (policyCourseId || courseFilter || '').trim();
+    if (!cid) return;
+    API.get('/instructor/submission-policy', { params: { course_id: cid } })
+      .then((res) => setAllowAfterReview(Boolean(res.data?.allow_edit_withdraw_after_reviews)))
+      .catch(() => {});
+  }, [policyCourseId, courseFilter]);
+
+  useEffect(() => {
+    setAppealsLoading(true);
+    API.get('/peer-review/appeals')
+      .then((res) => setAppeals(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setAppeals([]))
+      .finally(() => setAppealsLoading(false));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRubricLoading(true);
+    setRubricMsg('');
+    API.get('/rubrics', {
+      params: {
+        rubric_type: rubricType,
+        course_id: rubricCourseId || undefined,
+        session_id: rubricSessionId || undefined,
+      },
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const lv = Array.isArray(res.data?.levels) ? res.data.levels : [];
+        if (lv.length === 5) setRubricLevels(lv);
+        else setRubricLevels(rubricDefaults[rubricType] || []);
+      })
+      .catch(() => {
+        if (!cancelled) setRubricLevels(rubricDefaults[rubricType] || []);
+      })
+      .finally(() => { if (!cancelled) setRubricLoading(false); });
+    return () => { cancelled = true; };
+  }, [rubricType, rubricCourseId, rubricSessionId]);
+
+  const updateRubricLevel = (score, field, value) => {
+    setRubricLevels((prev) => prev.map((l) => (l.score === score ? { ...l, [field]: value } : l)));
+  };
+
+  const saveRubric = async () => {
+    setRubricSaving(true);
+    setRubricMsg('');
+    try {
+      await API.post('/rubrics', {
+        rubric_type: rubricType,
+        course_id: rubricCourseId || null,
+        session_id: rubricSessionId || null,
+        levels: rubricLevels,
+      });
+      setRubricMsg('Rubric saved successfully.');
+    } catch (err) {
+      setRubricMsg(err.response?.data?.message || 'Failed to save rubric.');
+    } finally {
+      setRubricSaving(false);
+    }
+  };
+
+  const updateAppeal = async (appealId, status) => {
+    const reply = window.prompt('Instructor reply (optional)', '') ?? '';
+    try {
+      await API.patch(`/peer-review/appeals/${appealId}`, {
+        status,
+        instructor_reply: reply,
+      });
+      const res = await API.get('/peer-review/appeals');
+      setAppeals(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update request');
+    }
+  };
+
+  const sendAnnouncement = async () => {
+    const title = announcementTitle.trim();
+    const body = announcementBody.trim();
+    if (!title || !body) {
+      setAnnouncementMsg('Title and body are required.');
+      return;
+    }
+    setAnnouncementSending(true);
+    setAnnouncementMsg('');
+    try {
+      const res = await API.post('/instructor/announcements', {
+        title,
+        body,
+        link: announcementLink.trim() || '',
+        course_id: announcementCourse.trim() || null,
+        group_id: announcementGroup.trim() || null,
+      });
+      setAnnouncementMsg(`Announcement sent to ${res.data?.recipients ?? 0} student(s).`);
+      setAnnouncementTitle('');
+      setAnnouncementBody('');
+      setAnnouncementLink('');
+    } catch (err) {
+      setAnnouncementMsg(err.response?.data?.message || 'Failed to send announcement.');
+    } finally {
+      setAnnouncementSending(false);
+    }
+  };
 
   // Load quality flags from backend
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      API.get('/instructor/quality-flags').then((r) => r.data).catch(() => []),
+      API.get('/instructor/quality-flags', {
+        params: {
+          course: courseFilter || undefined,
+          group: groupFilter || undefined,
+        },
+      }).then((r) => r.data).catch(() => []),
       API.get('/instructor/peer-review-quality-flags').then((r) => r.data).catch(() => []),
     ]).then(([fileFlags, peerFlags]) => {
       if (!cancelled) {
@@ -43,7 +217,7 @@ export default function InstructorAnalyticsPage() {
       }
     }).finally(() => { if (!cancelled) setFlagsLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [courseFilter, groupFilter]);
 
   const fr = data?.file_reviews || {};
   const pr = data?.peer_reviews || {};
@@ -84,7 +258,31 @@ export default function InstructorAnalyticsPage() {
 
   // Server-side file review CSV export (includes per-submission breakdown)
   const exportFileReviewCsv = () => {
-    window.open(`${API_BASE_URL}/instructor/export-csv`, '_blank');
+    const params = new URLSearchParams();
+    if (courseFilter) params.set('course', courseFilter);
+    if (groupFilter) params.set('group', groupFilter);
+    if (startDateFilter) params.set('start_date', new Date(`${startDateFilter}T00:00:00`).toISOString());
+    if (endDateFilter) params.set('end_date', new Date(`${endDateFilter}T23:59:59`).toISOString());
+    if (anonymizedExport) params.set('anonymized', 'true');
+    const query = params.toString();
+    window.open(`${API_BASE_URL}/instructor/export-csv${query ? `?${query}` : ''}`, '_blank');
+  };
+
+  const saveSubmissionPolicy = async () => {
+    const cid = (policyCourseId || courseFilter || '').trim();
+    if (!cid) {
+      setPolicyMsg('Please set a course id first.');
+      return;
+    }
+    try {
+      await API.put('/instructor/submission-policy', {
+        course_id: cid,
+        allow_edit_withdraw_after_reviews: allowAfterReview,
+      });
+      setPolicyMsg('Submission policy saved.');
+    } catch (err) {
+      setPolicyMsg(err.response?.data?.message || 'Failed to save submission policy.');
+    }
   };
 
   if (loading) {
@@ -122,6 +320,69 @@ export default function InstructorAnalyticsPage() {
           </Button>
         </div>
       </div>
+
+      <Card className="p-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Course</label>
+            <input
+              type="text"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              placeholder="e.g. CSE2100"
+              value={courseFilter}
+              onChange={(e) => setCourseFilter(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Group</label>
+            <input
+              type="text"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              placeholder="e.g. G1"
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Start date</label>
+            <input
+              type="date"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              value={startDateFilter}
+              onChange={(e) => setStartDateFilter(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">End date</label>
+            <input
+              type="date"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              value={endDateFilter}
+              onChange={(e) => setEndDateFilter(e.target.value)}
+            />
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setCourseFilter('');
+              setGroupFilter('');
+              setStartDateFilter('');
+              setEndDateFilter('');
+            }}
+          >
+            Clear Filters
+          </Button>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={anonymizedExport}
+              onChange={(e) => setAnonymizedExport(e.target.checked)}
+            />
+            Anonymized export
+          </label>
+        </div>
+      </Card>
 
       {/* ── Charts row ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -267,6 +528,188 @@ export default function InstructorAnalyticsPage() {
             </tbody>
           </table>
         </div>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="text-lg font-bold text-slate-900 mb-4">Rubric Configuration</h2>
+        <div className="flex flex-wrap gap-3 items-end mb-4">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Rubric Type</label>
+            <select
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
+              value={rubricType}
+              onChange={(e) => setRubricType(e.target.value)}
+            >
+              <option value="file_review">File Review</option>
+              <option value="peer_technical">Peer - Technical</option>
+              <option value="peer_interactions">Peer - Interactions</option>
+              <option value="peer_management">Peer - Management</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Course (optional)</label>
+            <input
+              type="text"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              placeholder="e.g. CSE2100"
+              value={rubricCourseId}
+              onChange={(e) => setRubricCourseId(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Session UUID (optional)</label>
+            <input
+              type="text"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm min-w-[320px]"
+              placeholder="peer review session id"
+              value={rubricSessionId}
+              onChange={(e) => setRubricSessionId(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {rubricLoading ? (
+          <p className="text-sm text-slate-500">Loading rubric...</p>
+        ) : (
+          <div className="space-y-3">
+            {rubricLevels.map((lvl) => (
+              <div key={lvl.score} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                <div className="text-xs font-semibold text-slate-500 mb-2">Score {lvl.score}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                    value={lvl.label}
+                    onChange={(e) => updateRubricLevel(lvl.score, 'label', e.target.value)}
+                    placeholder="Label"
+                  />
+                  <input
+                    type="text"
+                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
+                    value={lvl.desc}
+                    onChange={(e) => updateRubricLevel(lvl.score, 'desc', e.target.value)}
+                    placeholder="Description"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center gap-3">
+          <Button onClick={saveRubric} disabled={rubricSaving || rubricLoading}>
+            {rubricSaving ? 'Saving...' : 'Save Rubric'}
+          </Button>
+          {rubricMsg && <span className="text-sm text-slate-600">{rubricMsg}</span>}
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="text-lg font-bold text-slate-900 mb-4">Submission Edit/Withdraw Policy</h2>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Course</label>
+            <input
+              type="text"
+              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+              placeholder="e.g. CSE2100"
+              value={policyCourseId}
+              onChange={(e) => setPolicyCourseId(e.target.value)}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={allowAfterReview}
+              onChange={(e) => setAllowAfterReview(e.target.checked)}
+            />
+            Allow students to edit/withdraw even after reviews exist
+          </label>
+          <Button onClick={saveSubmissionPolicy}>Save Policy</Button>
+          {policyMsg ? <span className="text-sm text-slate-600">{policyMsg}</span> : null}
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <Megaphone className="w-5 h-5 text-[#000E2F]" />
+          System Announcements
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            type="text"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+            placeholder="Title"
+            value={announcementTitle}
+            onChange={(e) => setAnnouncementTitle(e.target.value)}
+          />
+          <input
+            type="text"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+            placeholder="Link (optional), e.g. /peer-review"
+            value={announcementLink}
+            onChange={(e) => setAnnouncementLink(e.target.value)}
+          />
+          <input
+            type="text"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+            placeholder="Course scope (optional)"
+            value={announcementCourse}
+            onChange={(e) => setAnnouncementCourse(e.target.value)}
+          />
+          <input
+            type="text"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
+            placeholder="Group scope (optional)"
+            value={announcementGroup}
+            onChange={(e) => setAnnouncementGroup(e.target.value)}
+          />
+        </div>
+        <textarea
+          className="mt-3 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm min-h-24"
+          placeholder="Announcement content"
+          value={announcementBody}
+          onChange={(e) => setAnnouncementBody(e.target.value)}
+        />
+        <div className="mt-3 flex items-center gap-3">
+          <Button onClick={sendAnnouncement} disabled={announcementSending}>
+            {announcementSending ? 'Sending...' : 'Publish Announcement'}
+          </Button>
+          {announcementMsg ? <span className="text-sm text-slate-600">{announcementMsg}</span> : null}
+        </div>
+      </Card>
+
+      <Card className="p-6">
+        <h2 className="text-lg font-bold text-slate-900 mb-4">Clarification / Appeal Requests</h2>
+        {appealsLoading ? (
+          <p className="text-sm text-slate-500">Loading requests...</p>
+        ) : appeals.length === 0 ? (
+          <p className="text-sm text-slate-500">No requests yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {appeals.map((a) => (
+              <div key={a.appeal_id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{a.student_name} · {a.session_title}</p>
+                    <p className="text-xs text-slate-500">{new Date(a.created_at).toLocaleString()}</p>
+                  </div>
+                  <Badge type={a.status === 'resolved' ? 'success' : a.status === 'rejected' ? 'error' : 'warning'}>
+                    {a.status}
+                  </Badge>
+                </div>
+                <p className="text-sm text-slate-700 mt-2">{a.message}</p>
+                {a.instructor_reply ? <p className="text-xs text-slate-500 mt-1">Reply: {a.instructor_reply}</p> : null}
+                {a.status === 'open' && (
+                  <div className="flex gap-2 mt-3">
+                    <Button size="sm" onClick={() => updateAppeal(a.appeal_id, 'resolved')}>Mark Resolved</Button>
+                    <Button size="sm" variant="danger" onClick={() => updateAppeal(a.appeal_id, 'rejected')}>Reject</Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

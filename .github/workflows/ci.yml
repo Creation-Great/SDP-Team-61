@@ -46,6 +46,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Dependency audit (high/critical)
+        run: npm audit --audit-level=high
+
       - name: TypeScript type-check
         run: npx tsc --noEmit
 
@@ -76,12 +79,23 @@ jobs:
 
       - run: npm ci
 
+      - name: Dependency audit (high/critical)
+        run: npm audit --audit-level=high
+
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Build
         run: npm run build
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run e2e
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

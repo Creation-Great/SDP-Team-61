@@ -4,22 +4,43 @@ import API from '../services/api';
 const AuthContext = createContext(null);
 
 /**
+ * @typedef {Object} AuthUser
+ * @property {string} id
+ * @property {string} name
+ * @property {string} email
+ * @property {string} role
+ * @property {string} [course_id]
+ * @property {string} [group_id]
+ * @property {Array<{enrollment_id:string,course_id:string,group_id:string,role:string,is_primary:boolean}>} [enrollments]
+ */
+
+/**
+ * @typedef {Object} AuthValue
+ * @property {AuthUser|null} user
+ * @property {boolean} loading
+ * @property {boolean} isInstructor
+ * @property {boolean} isStudent
+ * @property {() => Promise<AuthUser|null>} loginFromCas
+ * @property {(userData: AuthUser) => void} loginWithData
+ * @property {(newName: string) => void} updateUserName
+ * @property {() => Promise<void>} logout
+ */
+
+/**
  * AuthProvider – single source of truth for authentication.
  *
- * The JWT is stored in an httpOnly cookie managed entirely by the server.
- * On mount we call GET /auth/me (the browser sends the cookie automatically
- * thanks to `withCredentials: true` on the axios instance).  If the cookie
- * is valid the server returns the user profile; otherwise we treat the
- * session as unauthenticated.
+ * JWT is stored in an httpOnly cookie. On mount we call GET /auth/me; if valid
+ * the server returns the user profile. Route guards and UI use useAuth() — no
+ * token in localStorage or React state.
  *
- * Route guards and UI components consume `useAuth()` – there is NO token
- * stored in localStorage or React state.
+ * @param {Object} props
+ * @param {React.ReactNode} props.children
+ * @returns {JSX.Element}
  */
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);   // server-verified user object
-  const [loading, setLoading] = useState(true); // true until initial verify completes
+  const [user, setUser] = useState(/** @type {AuthUser|null} */ (null));
+  const [loading, setLoading] = useState(true);
 
-  // Fetch the real user profile from the server (cookie sent automatically)
   const fetchMe = useCallback(async () => {
     try {
       const { data } = await API.get('/auth/me');
@@ -84,9 +105,8 @@ export function AuthProvider({ children }) {
   }, [fetchMe]);
 
   /**
-   * Called after POST /auth/login succeeds (dev login).
-   * The httpOnly cookie was set by the login endpoint.
-   * The response body contains { user }, so we set it directly.
+   * Called after POST /auth/login succeeds (dev login). Cookie already set by backend.
+   * @param {AuthUser} userData – user object from response body { user }
    */
   const loginWithData = useCallback((userData) => {
     setUser(userData);
@@ -111,6 +131,7 @@ export function AuthProvider({ children }) {
   const isInstructor = user?.role === 'instructor' || user?.role === 'admin';
   const isStudent = !!user && !isInstructor;
 
+  /** @type {AuthValue} */
   const value = {
     user,
     loading,
@@ -130,8 +151,8 @@ export function AuthProvider({ children }) {
 }
 
 /**
- * Hook to consume authentication state.
- * Must be used within an <AuthProvider>.
+ * Hook to consume authentication state. Must be used within <AuthProvider>.
+ * @returns {AuthValue}
  */
 export function useAuth() {
   const ctx = useContext(AuthContext);

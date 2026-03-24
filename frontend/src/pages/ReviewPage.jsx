@@ -12,9 +12,15 @@ import Badge from '../components/ui/Badge';
 import ScoreSelector from '../components/ScoreSelector';
 import { FileReviewRubric } from '../components/RubricPanel';
 
+/**
+ * Single review form: load assignment (GET /reviews/:id), submit (POST /reviews/:id/submit).
+ * Optional AI feedback/rewrite via /api/ai. Rendered at /review/:id.
+ * @returns {JSX.Element}
+ */
 export default function ReviewPage() {
   const { id } = useParams(); // assignment_id
   const navigate = useNavigate();
+  const draftKey = `review-draft:${id}`;
   const [review, setReview] = useState(null);
   const [score, setScore] = useState(3);
   const [comments, setComments] = useState('');
@@ -32,6 +38,7 @@ export default function ReviewPage() {
   const [rewriteLoading, setRewriteLoading] = useState(false);
   const [rewriteError, setRewriteError] = useState('');
   const [rewriteAdopted, setRewriteAdopted] = useState(false);
+  const [draftStatus, setDraftStatus] = useState('');
 
   useEffect(() => {
     API.get(`/reviews/${id}`)
@@ -43,6 +50,66 @@ export default function ReviewPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // Restore local draft (score/comments) on first load.
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.score === 'number') setScore(parsed.score);
+      if (typeof parsed.comments === 'string') setComments(parsed.comments);
+    } catch {
+      // Ignore broken local draft content.
+    }
+  }, [id, draftKey]);
+
+  // Load backend draft (wins over local draft if exists)
+  useEffect(() => {
+    if (!id) return;
+    API.get(`/reviews/${id}/draft`)
+      .then((res) => {
+        const d = res.data || {};
+        if (typeof d.score === 'number') setScore(d.score);
+        if (typeof d.comments === 'string') setComments(d.comments);
+      })
+      .catch(() => {});
+  }, [id]);
+
+  // Persist draft while editing; skip when a review is already submitted.
+  useEffect(() => {
+    if (!id || review?.review_id) return;
+    const timer = setTimeout(() => {
+      API.patch(`/reviews/${id}/draft`, { score, comments }).then(() => {
+        setDraftStatus('Draft saved');
+      }).catch(() => {});
+    }, 700);
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ score, comments, updatedAt: Date.now() }));
+    } catch {
+      // Ignore storage quota / privacy mode errors.
+    }
+    return () => clearTimeout(timer);
+  }, [id, score, comments, review?.review_id, draftKey]);
+
+  /** Preload cached AI feedback and rewrite from backend (GET /api/ai/feedback/:reviewId, GET /api/ai/rewrite/:reviewId) */
+  useEffect(() => {
+    if (!id || !review) return;
+    const loadCachedAi = async () => {
+      try {
+        const [feedbackRes, rewriteRes] = await Promise.allSettled([
+          API.get(`/api/ai/feedback/${id}`),
+          API.get(`/api/ai/rewrite/${id}`),
+        ]);
+        if (feedbackRes.status === 'fulfilled' && feedbackRes.value?.data) setAiFeedback(feedbackRes.value.data);
+        if (rewriteRes.status === 'fulfilled' && rewriteRes.value?.data) setAiRewrite(rewriteRes.value.data);
+      } catch {
+        // Ignore when no cache or endpoint not implemented
+      }
+    };
+    loadCachedAi();
+  }, [id, review]);
+
   const handleSubmit = async () => {
     if (!comments.trim()) {
       setError('Please provide comments for your review.');
@@ -53,6 +120,7 @@ export default function ReviewPage() {
     setError('');
     try {
       await API.post(`/reviews/${id}/submit`, { score, comments });
+      localStorage.removeItem(draftKey);
       navigate('/reviews');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to submit review');
@@ -213,7 +281,7 @@ export default function ReviewPage() {
                     onChange={setScore}
                   />
                   <div className="mt-3">
-                    <FileReviewRubric currentScore={score} />
+                    <FileReviewRubric currentScore={score} courseId={review?.course_id} />
                   </div>
                 </div>
 
@@ -227,6 +295,7 @@ export default function ReviewPage() {
                     onChange={(e) => setComments(e.target.value)}
                     rows={6}
                   />
+                  {draftStatus ? <p className="text-xs text-slate-400 mt-1">{draftStatus}</p> : null}
                 </div>
 
                 {/* AI Action Buttons */}

@@ -6,6 +6,11 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 
+/**
+ * List of peer review tasks assigned to the current student (GET /submissions/reviews/my-tasks).
+ * Each task links to the review form. Shown when navigating to /reviews.
+ * @returns {JSX.Element}
+ */
 export default function AssignedReviewsPage() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -23,8 +28,13 @@ export default function AssignedReviewsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
+      <div
+        className="flex items-center justify-center py-20"
+        aria-busy="true"
+        aria-live="polite"
+        aria-label="Loading review tasks"
+      >
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" aria-hidden />
         <span className="ml-3 text-slate-500">Loading your review tasks...</span>
       </div>
     );
@@ -47,8 +57,9 @@ export default function AssignedReviewsPage() {
         </Card>
       ) : (
         <Card className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" role="region" aria-label="Assigned review tasks">
             <table className="w-full text-left">
+              <caption className="sr-only">Your assigned peer review tasks</caption>
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
                   <th className="p-4 font-medium">Target / Artifact</th>
@@ -68,7 +79,11 @@ export default function AssignedReviewsPage() {
                     </td>
                     <td className="p-4"><Badge type="warning">Pending</Badge></td>
                     <td className="p-4">
-                      <Button size="sm" onClick={() => navigate(`/review/${task.assignment_id}`)}>
+                      <Button
+                        size="sm"
+                        onClick={() => navigate(`/review/${task.assignment_id}`)}
+                        aria-label={`Evaluate review for ${task.title || 'submission'}`}
+                      >
                         Evaluate
                       </Button>
                     </td>

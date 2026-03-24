@@ -1,6 +1,8 @@
 import { Response } from 'express';
 import type { AuthRequest } from '../types.js';
 import { AppError } from '../utils/AppError.js';
+import { withDb } from '../db.js';
+import { createNotification } from '../utils/notifications.js';
 
 /**
  * AI Service URL – the Flask AI micro-service.
@@ -15,6 +17,24 @@ function aiHeaders(): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (AI_API_KEY) h['X-AI-API-Key'] = AI_API_KEY;
   return h;
+}
+
+async function notifyAiComplete(req: AuthRequest, title: string, body: string, link?: string): Promise<void> {
+  const user = req.user;
+  if (!user?.user_id) return;
+  try {
+    await withDb(user.user_id, user.role, async (client) => {
+      await createNotification(client, {
+        userId: user.user_id,
+        type: 'ai_complete',
+        title,
+        body,
+        link,
+      });
+    });
+  } catch {
+    // Non-blocking: AI response should not fail due to notification write errors
+  }
 }
 
 // ── POST /api/ai/feedback ───────────────────────────────────
@@ -35,6 +55,7 @@ export async function postFeedback(req: AuthRequest, res: Response): Promise<voi
     res.status(resp.status).json(data);
     return;
   }
+  await notifyAiComplete(req, 'AI feedback is ready', 'Your AI feedback analysis has completed.', '/assigned-reviews');
   res.json(data);
 }
 
@@ -51,6 +72,7 @@ export async function getFeedback(req: AuthRequest, res: Response): Promise<void
     res.status(resp.status).json(data);
     return;
   }
+  await notifyAiComplete(req, 'AI rewrite is ready', 'Your AI rewrite suggestion has completed.', '/assigned-reviews');
   res.json(data);
 }
 
@@ -121,6 +143,7 @@ export async function postPolish(req: AuthRequest, res: Response): Promise<void>
 
   const data = await resp.json();
   if (!resp.ok) { res.status(resp.status).json(data); return; }
+  await notifyAiComplete(req, 'AI polish is ready', 'Your AI polish result has completed.');
   res.json(data);
 }
 
@@ -139,6 +162,7 @@ export async function postSummarize(req: AuthRequest, res: Response): Promise<vo
 
   const data = await resp.json();
   if (!resp.ok) { res.status(resp.status).json(data); return; }
+  await notifyAiComplete(req, 'AI summary is ready', 'Your AI summary has completed.');
   res.json(data);
 }
 

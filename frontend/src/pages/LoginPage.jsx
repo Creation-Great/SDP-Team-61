@@ -5,7 +5,13 @@ import { motion } from 'framer-motion';
 import API from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import Button from '../components/ui/Button';
+import { strings } from '../i18n/strings';
 
+/**
+ * Login: local POST /auth/login or CAS redirect. On success, redirect by role (/instructor or /dashboard).
+ * Handles CAS callback via loginFromCas and loginWithData. Rendered at /login.
+ * @returns {JSX.Element}
+ */
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -28,7 +34,7 @@ export default function LoginPage() {
       loginFromCas()
         .then((user) => {
           if (!user) {
-            setError('Failed to verify CAS session. Please try again.');
+            setError(strings.login.casFailed);
             return;
           }
           navigateByRole(user);
@@ -58,7 +64,7 @@ export default function LoginPage() {
       loginWithData(data.user);
       navigateByRole(data.user);
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
+      setError(err.response?.data?.message || strings.login.loginFailed);
     } finally {
       setLoading(false);
     }
@@ -81,7 +87,7 @@ export default function LoginPage() {
           </div>
         </div>
         <div className="text-[11px] text-white/50 font-medium tracking-wider uppercase bg-white/5 px-4 py-1.5 rounded-full border border-white/10">
-          Sign In
+          {strings.login.signIn}
         </div>
       </nav>
 
@@ -125,11 +131,11 @@ export default function LoginPage() {
 
               {searchParams.get('registered') === 'true' && (
                 <p className="text-emerald-400 text-sm text-center mb-4 font-medium">
-                  Registration successful! Please sign in.
+                  {strings.login.registrationSuccess}
                 </p>
               )}
               {error && (
-                <p className="text-red-400 text-sm text-center mb-4 font-medium" role="alert" aria-live="assertive">
+                <p id="login-error" className="text-red-400 text-sm text-center mb-4 font-medium" role="alert" aria-live="assertive">
                   {error}
                 </p>
               )}
@@ -152,18 +158,18 @@ export default function LoginPage() {
                 ) : (
                   <Lock className="w-4 h-4" />
                 )}
-                Sign in with UConn NetID
+                {strings.login.signInWithNetId}
               </button>
 
               {/* Divider */}
               <div className="flex items-center gap-3 my-6">
                 <span className="flex-1 h-px bg-white/[0.06]" />
-                <span className="text-white/20 text-[10px] tracking-widest uppercase font-medium">or</span>
+                <span className="text-white/20 text-[10px] tracking-widest uppercase font-medium">{strings.login.orLabel}</span>
                 <span className="flex-1 h-px bg-white/[0.06]" />
               </div>
 
               {/* Local login */}
-              <form onSubmit={handleLocalLogin} className="space-y-3">
+              <form onSubmit={handleLocalLogin} className="space-y-3" aria-describedby={error ? 'login-error' : undefined}>
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
                   <input
@@ -174,7 +180,7 @@ export default function LoginPage() {
                       border: '1px solid rgba(255,255,255,0.08)',
                     }}
                     type="email"
-                    placeholder="Email address"
+                    placeholder={strings.login.emailPlaceholder}
                     required
                     autoComplete="email"
                     value={email}
@@ -191,7 +197,7 @@ export default function LoginPage() {
                       border: '1px solid rgba(255,255,255,0.08)',
                     }}
                     type="password"
-                    placeholder="Password"
+                    placeholder={strings.login.passwordPlaceholder}
                     required
                     autoComplete="current-password"
                     value={password}
@@ -207,7 +213,7 @@ export default function LoginPage() {
                     border: '1px solid rgba(255,255,255,0.08)',
                   }}
                 >
-                  {loading ? 'Signing in…' : 'Sign in with Email'}
+                  {loading ? strings.login.signingIn : strings.login.signInWithEmail}
                 </button>
               </form>
 
@@ -216,9 +222,9 @@ export default function LoginPage() {
               </p>
 
               <p className="text-center text-sm text-white/30 mt-4">
-                No account?{' '}
+                {strings.login.noAccount}{' '}
                 <Link to="/register" className="text-white/60 hover:text-white font-semibold transition-colors">
-                  Create one
+                  {strings.login.createOne}
                 </Link>
               </p>
             </div>

@@ -22,6 +22,15 @@ export const uploadSubmissionSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   description: z.string().optional().default(''),
   reviewerCount: z.coerce.number().int().min(1).max(3).optional(),
+  course_id: z.string().optional(),
+  assignment_template_id: z.string().uuid().optional().nullable(),
+});
+
+export const updateSubmissionSchema = z.object({
+  title: z.string().min(1, 'Title is required').optional(),
+  description: z.string().optional(),
+}).refine((data) => data.title !== undefined || data.description !== undefined, {
+  message: 'At least one of title or description is required',
 });
 
 // ── Reviews ─────────────────────────────────────────────────
@@ -30,10 +39,28 @@ export const submitReviewSchema = z.object({
   comments: z.string().optional().default(''),
 });
 
+export const upsertReviewDraftSchema = z.object({
+  score: z.coerce.number().int().min(1).max(5).optional().nullable(),
+  comments: z.string().optional().default(''),
+});
+
 // ── Instructor ──────────────────────────────────────────────
 export const assignReviewerSchema = z.object({
   submission_id: z.string().uuid('submission_id must be a UUID'),
   reviewer_id: z.string().uuid('reviewer_id must be a UUID'),
+});
+
+export const bulkAssignReviewersSchema = z.object({
+  submission_ids: z.array(z.string().uuid('submission id must be a UUID')).min(1, 'At least one submission is required'),
+  reviewer_count: z.coerce.number().int().min(1).max(3).optional().default(1),
+});
+
+export const createAnnouncementSchema = z.object({
+  title: z.string().min(1, 'title is required'),
+  body: z.string().min(1, 'body is required'),
+  link: z.string().optional().default(''),
+  course_id: z.string().optional().nullable(),
+  group_id: z.string().optional().nullable(),
 });
 
 export const saveCurrentCheckinsSchema = z.object({
@@ -44,6 +71,30 @@ export const saveCurrentCheckinsSchema = z.object({
   weeks: z.array(z.unknown()),
 });
 
+export const upsertSubmissionPolicySchema = z.object({
+  course_id: z.string().min(1, 'course_id is required'),
+  allow_edit_withdraw_after_reviews: z.boolean(),
+});
+
+export const createAssignmentTemplateSchema = z.object({
+  course_id: z.string().min(1, 'course_id is required'),
+  title: z.string().min(1, 'title is required'),
+  description: z.string().optional().default(''),
+  due_at: z.string().datetime({ offset: true }).optional().nullable(),
+  is_active: z.boolean().optional().default(true),
+});
+
+export const upsertRubricSchema = z.object({
+  rubric_type: z.enum(['file_review', 'peer_technical', 'peer_interactions', 'peer_management']),
+  course_id: z.string().optional().nullable(),
+  session_id: z.string().uuid().optional().nullable(),
+  levels: z.array(z.object({
+    score: z.coerce.number().int().min(1).max(5),
+    label: z.string().min(1),
+    desc: z.string().min(1),
+  })).length(5),
+});
+
 // ── Peer Review ─────────────────────────────────────────────
 export const createSessionSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -52,7 +103,11 @@ export const createSessionSchema = z.object({
 });
 
 export const toggleSessionSchema = z.object({
-  is_open: z.boolean({ error: 'is_open (boolean) is required' }),
+  is_open: z.boolean().optional(),
+  title: z.string().min(1, 'Title cannot be empty').optional(),
+  deadline: z.string().datetime({ offset: true }).nullable().optional(),
+}).refine((data) => data.is_open !== undefined || data.title !== undefined || data.deadline !== undefined, {
+  message: 'At least one of is_open, title, deadline is required',
 });
 
 export const releaseScoresSchema = z.object({
@@ -72,8 +127,30 @@ export const submitPeerReviewsSchema = z.object({
   teamChemistry: z.number().min(1, 'Team chemistry must be between 1 and 5').max(5, 'Team chemistry must be between 1 and 5').nullish(),
 });
 
+export const upsertPeerReviewDraftSchema = z.object({
+  reviews: z.record(z.string(), z.object({
+    technical_contributions: z.number().int().min(1).max(5).nullable().optional(),
+    team_interactions: z.number().int().min(1).max(5).nullable().optional(),
+    project_management: z.number().int().min(1).max(5).nullable().optional(),
+    individual_comments: z.string().optional().default(''),
+  })).optional().default({}),
+  teamChemistry: z.number().int().min(1).max(5).nullable().optional(),
+});
+
 export const instructorSubmitReviewsSchema = z.object({
   reviews: z.array(peerReviewEntrySchema).nonempty('Reviews array is required'),
+});
+
+export const createPeerReviewAppealSchema = z.object({
+  session_id: z.string().uuid('session_id must be a UUID'),
+  target_type: z.enum(['session', 'review', 'comment']).optional().default('session'),
+  target_id: z.string().optional().nullable(),
+  message: z.string().min(1, 'message is required'),
+});
+
+export const updatePeerReviewAppealSchema = z.object({
+  status: z.enum(['open', 'resolved', 'rejected']),
+  instructor_reply: z.string().optional().default(''),
 });
 
 // ── Checkins ────────────────────────────────────────────────

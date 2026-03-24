@@ -4,8 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import API from '../services/api';
 import {
-  BookOpen, Upload, Users, BarChart3, CheckSquare, ClipboardList, UserPlus,
-  LogOut, Sparkles, Menu, X, Pencil, Check, XCircle,
+  BookOpen, Upload, Users, BarChart3, CheckSquare, ClipboardList, UserPlus, GraduationCap,
+  LogOut, Sparkles, Menu, X, Pencil, Check, XCircle, BellRing, Download, FileText,
 } from 'lucide-react';
 
 const studentNav = [
@@ -13,7 +13,9 @@ const studentNav = [
   { to: '/upload', label: 'Submit Work', icon: Upload },
   { to: '/reviews', label: 'Assigned Reviews', icon: Users },
   { to: '/peer-review', label: 'Peer Review', icon: BarChart3 },
+  { to: '/my-grades', label: 'My Grades', icon: GraduationCap },
   { to: '/student/checkins', label: 'Weekly Check-ins', icon: CheckSquare },
+  { to: '/settings/notifications', label: 'Notification Prefs', icon: BellRing },
 ];
 
 const instructorNav = [
@@ -23,6 +25,9 @@ const instructorNav = [
   { to: '/instructor/analytics', label: 'Review Analytics', icon: BarChart3 },
   { to: '/instructor/class-checkins', label: 'Student Check-ins', icon: CheckSquare },
   { to: '/instructor/enrollments', label: 'Enrollments', icon: UserPlus },
+  { to: '/instructor/assignment-templates', label: 'Assignment Templates', icon: FileText },
+  { to: '/instructor/exports', label: 'Export Center', icon: Download },
+  { to: '/settings/notifications', label: 'Notification Prefs', icon: BellRing },
 ];
 
 export default function Sidebar() {

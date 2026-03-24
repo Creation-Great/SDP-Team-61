@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
+import { TableVirtuoso } from 'react-virtuoso';
 import { Download, ArrowLeft, Loader2, AlertCircle, ChevronDown, ChevronUp, LogIn, Eye, EyeOff, TrendingUp, Users } from 'lucide-react';
 import API from '../services/api';
 import { API_BASE_URL } from '../config';
@@ -10,7 +11,15 @@ import Pagination from '../components/Pagination';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import Skeleton from '../components/ui/Skeleton';
+import { strings } from '../i18n/strings';
 
+/**
+ * Instructor view of peer-review session results: GET /peer-review/sessions/:sessionId/results,
+ * optional bias-analytics, all-students, instructor-review, release-scores, export-csv.
+ * Rendered at /peer-review/session/:sessionId/results. Uses TableVirtuoso for Raw Review Details.
+ * @returns {JSX.Element}
+ */
 export default function PeerReviewResultsPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -24,6 +33,13 @@ export default function PeerReviewResultsPage() {
   const [showInstructorReview, setShowInstructorReview] = useState(false);
   const [instructorReviews, setInstructorReviews] = useState({});
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [releaseError, setReleaseError] = useState('');
+  const [submitReviewError, setSubmitReviewError] = useState('');
+  const [exportGroup, setExportGroup] = useState('');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [anonymizedExport, setAnonymizedExport] = useState(false);
+  const [anonymizedView, setAnonymizedView] = useState(false);
 
   /* ── Averages: search by student name / team ── */
   const avgSearchKeys = useCallback((r) => [r.student_name, r.team], []);
@@ -48,7 +64,11 @@ export default function PeerReviewResultsPage() {
   });
 
   useEffect(() => {
-    API.get(`/peer-review/sessions/${sessionId}/results`)
+    API.get(`/peer-review/sessions/${sessionId}/results`, {
+      params: {
+        anonymized: anonymizedView || undefined,
+      },
+    })
       .then((res) => setData(res.data))
       .catch((err) => {
         const status = err.response?.status;
@@ -62,7 +82,7 @@ export default function PeerReviewResultsPage() {
         }
       })
       .finally(() => setLoading(false));
-  }, [sessionId]);
+  }, [sessionId, anonymizedView]);
 
   /* ── Load bias analytics on demand ── */
   useEffect(() => {
@@ -95,6 +115,7 @@ export default function PeerReviewResultsPage() {
   }, [showInstructorReview, allStudents, sessionId]);
 
   const handleReleaseScores = async () => {
+    setReleaseError('');
     const current = data?.session?.scores_released;
     try {
       await API.patch(`/peer-review/sessions/${sessionId}/release-scores`, { scores_released: !current });
@@ -102,8 +123,8 @@ export default function PeerReviewResultsPage() {
         ...prev,
         session: { ...prev.session, scores_released: !current },
       }));
-    } catch {
-      alert('Failed to toggle score release');
+    } catch (err) {
+      setReleaseError(err.response?.data?.message || 'Failed to toggle score release. Please try again.');
     }
   };
 
@@ -125,12 +146,13 @@ export default function PeerReviewResultsPage() {
         project_management: Number(v.project_management),
       }));
     if (reviews.length === 0) return alert('Please fill scores for at least one student.');
+    setSubmitReviewError('');
     setSubmittingReview(true);
     try {
       await API.post(`/peer-review/sessions/${sessionId}/instructor-review`, { reviews });
       alert(`Submitted reviews for ${reviews.length} student(s).`);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to submit reviews');
+      setSubmitReviewError(err.response?.data?.message || 'Failed to submit reviews. Please try again.');
     } finally {
       setSubmittingReview(false);
     }
@@ -138,7 +160,12 @@ export default function PeerReviewResultsPage() {
 
   const handleExportCsv = () => {
     // Use credentials: 'include' to send the httpOnly cookie automatically
-    const url = `${API_BASE_URL}/peer-review/sessions/${sessionId}/export-csv`;
+    const params = new URLSearchParams();
+    if (exportGroup) params.set('group', exportGroup);
+    if (exportStartDate) params.set('start_date', new Date(`${exportStartDate}T00:00:00`).toISOString());
+    if (exportEndDate) params.set('end_date', new Date(`${exportEndDate}T23:59:59`).toISOString());
+    if (anonymizedExport) params.set('anonymized', 'true');
+    const url = `${API_BASE_URL}/peer-review/sessions/${sessionId}/export-csv${params.toString() ? `?${params.toString()}` : ''}`;
     fetch(url, { credentials: 'include' })
       .then((res) => {
         if (!res.ok) throw new Error('Download failed');
@@ -156,9 +183,43 @@ export default function PeerReviewResultsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
-        <span className="ml-3 text-slate-500">Loading results...</span>
+      <div className="space-y-6" aria-busy="true" aria-live="polite" aria-label="Loading results">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <Skeleton variant="text" width={280} height={28} className="mb-2" />
+            <div className="flex gap-2">
+              <Skeleton variant="text" width={64} height={24} />
+              <Skeleton variant="text" width={120} height={24} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Skeleton variant="text" width={120} height={40} />
+            <Skeleton variant="text" width={100} height={40} />
+            <Skeleton variant="text" width={72} height={40} />
+          </div>
+        </div>
+        <Card className="p-6">
+          <Skeleton variant="text" width={180} height={20} className="mb-2" />
+          <Skeleton variant="text" width="100%" height={10} className="mb-4" />
+          <Skeleton variant="row" width="100%" height={12} className="mb-2" />
+          <div className="flex flex-wrap gap-2 mt-3">
+            {[1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} variant="text" width={72} height={28} />
+            ))}
+          </div>
+        </Card>
+        <Card className="p-6">
+          <Skeleton variant="text" width={160} height={20} className="mb-4" />
+          <Skeleton variant="row" className="mb-1" />
+          <Skeleton variant="row" className="mb-1" />
+          <Skeleton variant="row" className="mb-1" />
+          <Skeleton variant="row" className="mb-1" />
+          <Skeleton variant="row" />
+        </Card>
+        <p className="text-sm text-slate-500 flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+          {strings.results.loading}
+        </p>
       </div>
     );
   }
@@ -167,15 +228,15 @@ export default function PeerReviewResultsPage() {
     return (
       <Card className="max-w-lg mx-auto mt-20 text-center px-6 py-12">
         <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-slate-900 mb-2">Error</h3>
+        <h3 className="text-lg font-semibold text-slate-900 mb-2">{strings.results.errorTitle}</h3>
         <p className="text-slate-500 mb-6">{error}</p>
         <div className="flex justify-center gap-3">
           <Button onClick={() => navigate('/login')}>
             <LogIn className="w-4 h-4 mr-2" />
-            Re-login
+            {strings.results.reLogin}
           </Button>
           <Button variant="secondary" onClick={() => navigate('/peer-review')}>
-            Back to Sessions
+            {strings.results.backToSessions}
           </Button>
         </div>
       </Card>
@@ -208,19 +269,76 @@ export default function PeerReviewResultsPage() {
             </span>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleReleaseScores} variant={session.scores_released ? 'primary' : 'secondary'}>
-            {session.scores_released ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
-            {session.scores_released ? 'Hide Scores' : 'Release Scores'}
-          </Button>
-          <Button onClick={handleExportCsv}>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Team</label>
+              <input
+                type="text"
+                className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs"
+                placeholder="e.g. G1"
+                value={exportGroup}
+                onChange={(e) => setExportGroup(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">Start</label>
+              <input
+                type="date"
+                className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs"
+                value={exportStartDate}
+                onChange={(e) => setExportStartDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">End</label>
+              <input
+                type="date"
+                className="px-2 py-1.5 rounded-lg border border-slate-200 text-xs"
+                value={exportEndDate}
+                onChange={(e) => setExportEndDate(e.target.value)}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-slate-600 pb-1">
+              <input
+                type="checkbox"
+                checked={anonymizedExport}
+                onChange={(e) => setAnonymizedExport(e.target.checked)}
+              />
+              Anonymized
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-600 pb-1">
+              <input
+                type="checkbox"
+                checked={anonymizedView}
+                onChange={(e) => setAnonymizedView(e.target.checked)}
+              />
+              Anonymous view
+            </label>
+          </div>
+          <div className="flex gap-2 flex-wrap items-center">
+            <Button onClick={handleReleaseScores} variant={session.scores_released ? 'primary' : 'secondary'} aria-label={session.scores_released ? 'Hide scores from students' : 'Release scores to students'}>
+              {session.scores_released ? <EyeOff className="w-4 h-4 mr-2" /> : <Eye className="w-4 h-4 mr-2" />}
+              {session.scores_released ? 'Hide Scores' : 'Release Scores'}
+            </Button>
+            <Button onClick={handleExportCsv}>
             <Download className="w-4 h-4 mr-2" />
             Export CSV
           </Button>
           <Button variant="secondary" onClick={() => navigate('/peer-review')}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back
-          </Button>
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
+            </Button>
+          </div>
+          {releaseError && (
+            <div className="flex items-center gap-2 text-sm text-red-600" role="alert">
+              <AlertCircle className="w-4 h-4 shrink-0" aria-hidden />
+              <span>{releaseError}</span>
+              <Button variant="secondary" size="sm" onClick={handleReleaseScores} aria-label="Retry release scores">
+                Retry
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -335,7 +453,7 @@ export default function PeerReviewResultsPage() {
               className="mt-4"
             >
               {details.length === 0 ? (
-                <p className="text-sm text-slate-400">No raw data available.</p>
+                <p className="text-sm text-slate-400">{strings.results.noRawData}</p>
               ) : (
                 <>
                   <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -364,10 +482,11 @@ export default function PeerReviewResultsPage() {
                       Self-reviews only
                     </label>
                   </div>
-                  <div className="overflow-x-auto -mx-6 px-6">
-                    <table className="w-full text-sm">
-                      <caption className="sr-only">Individual peer review detail records</caption>
-                      <thead>
+                  <div className="overflow-x-auto -mx-6 px-6" role="region" aria-label="Individual peer review detail records">
+                    <TableVirtuoso
+                      style={{ height: 'min(420px, 60vh)' }}
+                      data={detList.filtered}
+                      fixedHeaderContent={() => (
                         <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
                           <th scope="col" className={thClass}>Team</th>
                           <th scope="col" className={thClass}>Reviewer</th>
@@ -379,34 +498,29 @@ export default function PeerReviewResultsPage() {
                           <th scope="col" className={thClass + ' text-center'}>Chemistry</th>
                           <th scope="col" className={thClass}>Comments</th>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {detList.pageItems.map((d, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/50">
-                            <td className={tdClass}>{d.team || '—'}</td>
-                            <td className={tdClass}>{d.reviewer_name}</td>
-                            <td className={tdClass}>{d.reviewee_name}</td>
-                            <td className={tdCenter}>{d.is_self ? 'Y' : 'N'}</td>
-                            <td className={tdCenter}>{d.technical_contributions}</td>
-                            <td className={tdCenter}>{d.team_interactions}</td>
-                            <td className={tdCenter}>{d.project_management}</td>
-                            <td className={tdCenter}>{d.team_chemistry ?? '—'}</td>
-                            <td className={tdClass + ' max-w-[200px] truncate'}>
-                              {d.individual_comments || '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      )}
+                      itemContent={(index, d) => (
+                        <>
+                          <td className={tdClass}>{d.team || '—'}</td>
+                          <td className={tdClass}>{d.reviewer_name}</td>
+                          <td className={tdClass}>{d.reviewee_name}</td>
+                          <td className={tdCenter}>{d.is_self ? 'Y' : 'N'}</td>
+                          <td className={tdCenter}>{d.technical_contributions}</td>
+                          <td className={tdCenter}>{d.team_interactions}</td>
+                          <td className={tdCenter}>{d.project_management}</td>
+                          <td className={tdCenter}>{d.team_chemistry ?? '—'}</td>
+                          <td className={tdClass + ' max-w-[200px] truncate'}>
+                            {d.individual_comments || '—'}
+                          </td>
+                        </>
+                      )}
+                      defaultItemHeight={44}
+                      className="w-full text-sm border-collapse"
+                    />
                   </div>
-                  <Pagination
-                    page={detList.page}
-                    totalPages={detList.totalPages}
-                    onPageChange={detList.setPage}
-                    filtered={detList.filtered.length}
-                    total={detList.total}
-                    noun="reviews"
-                  />
+                  <p className="text-sm text-slate-500 mt-2" aria-live="polite">
+                    {strings.results.showingReviews(detList.filtered.length, detList.total)}
+                  </p>
                 </>
               )}
             </motion.div>
@@ -573,7 +687,16 @@ export default function PeerReviewResultsPage() {
                       );
                     })}
                   </div>
-                  <div className="flex justify-end pt-2">
+                  <div className="flex flex-col items-end gap-2 pt-2">
+                    {submitReviewError && (
+                      <div className="flex items-center gap-2 text-sm text-red-600 w-full" role="alert">
+                        <AlertCircle className="w-4 h-4 shrink-0" aria-hidden />
+                        <span>{submitReviewError}</span>
+                        <Button variant="secondary" size="sm" onClick={handleSubmitInstructorReviews} disabled={submittingReview} aria-label="Retry submit instructor reviews">
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                     <Button onClick={handleSubmitInstructorReviews} disabled={submittingReview}>
                       {submittingReview && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                       Submit Instructor Reviews

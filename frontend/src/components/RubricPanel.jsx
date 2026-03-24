@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import API from '../services/api';
 
 const FILE_REVIEW_RUBRIC = [
   { score: 5, label: 'Excellent', desc: 'Exceptional quality. Well-structured, thorough, and demonstrates deep understanding. No significant issues.' },
@@ -49,8 +50,24 @@ function ScoreRow({ score, label, desc, highlighted }) {
   );
 }
 
-export function FileReviewRubric({ currentScore }) {
+export function FileReviewRubric({ currentScore, courseId }) {
   const [open, setOpen] = useState(false);
+  const [items, setItems] = useState(FILE_REVIEW_RUBRIC);
+
+  useEffect(() => {
+    API.get('/rubrics', {
+      params: {
+        rubric_type: 'file_review',
+        course_id: courseId || undefined,
+      },
+    })
+      .then((res) => {
+        if (Array.isArray(res.data?.levels) && res.data.levels.length === 5) {
+          setItems(res.data.levels);
+        }
+      })
+      .catch(() => {});
+  }, [courseId]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/50 overflow-hidden">
@@ -67,7 +84,7 @@ export function FileReviewRubric({ currentScore }) {
       </button>
       {open && (
         <div className="px-4 pb-4 space-y-1">
-          {FILE_REVIEW_RUBRIC.map((r) => (
+          {items.map((r) => (
             <ScoreRow key={r.score} {...r} highlighted={currentScore === r.score} />
           ))}
         </div>
@@ -76,9 +93,33 @@ export function FileReviewRubric({ currentScore }) {
   );
 }
 
-export function PeerReviewRubric({ category, currentScore }) {
+export function PeerReviewRubric({ category, currentScore, courseId, sessionId }) {
   const [open, setOpen] = useState(false);
-  const rubric = PEER_REVIEW_RUBRIC[category];
+  const [rubric, setRubric] = useState(PEER_REVIEW_RUBRIC[category]);
+  useEffect(() => {
+    const typeMap = {
+      technical_contributions: 'peer_technical',
+      team_interactions: 'peer_interactions',
+      project_management: 'peer_management',
+    };
+    const rubricType = typeMap[category];
+    if (!rubricType) return;
+    setRubric(PEER_REVIEW_RUBRIC[category]);
+    API.get('/rubrics', {
+      params: {
+        rubric_type: rubricType,
+        course_id: courseId || undefined,
+        session_id: sessionId || undefined,
+      },
+    })
+      .then((res) => {
+        if (Array.isArray(res.data?.levels) && res.data.levels.length === 5) {
+          setRubric(res.data.levels);
+        }
+      })
+      .catch(() => {});
+  }, [category, courseId, sessionId]);
+
   if (!rubric) return null;
 
   const titles = {

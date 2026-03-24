@@ -68,6 +68,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_sync_primary_enrollment ON user_enrollments;
 CREATE TRIGGER trg_sync_primary_enrollment
 AFTER INSERT OR UPDATE OF is_primary, course_id, group_id
 ON user_enrollments

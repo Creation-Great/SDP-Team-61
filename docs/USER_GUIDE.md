@@ -75,6 +75,7 @@ After logging in, the application displays a **collapsible sidebar** on the left
 | Menu Item | Description |
 |-----------|-------------|
 | **Dashboard** | Overview of your submissions and review stats |
+| **My Grades** | Consolidated summary of file-review and released peer-review grades |
 | **Submit Work** | Upload new assignments for review |
 | **Assigned Reviews** | View and complete review tasks assigned to you |
 | **Peer Review** | Participate in peer review sessions |
@@ -89,6 +90,7 @@ After logging in, the application displays a **collapsible sidebar** on the left
 | **Review Analytics** | Score distributions, quality flags, anomaly detection |
 | **Student Check-ins** | View and manage student weekly check-ins |
 | **Enrollments** | Manage course enrollments and team assignments |
+| **Assignment Templates** | Create and manage reusable assignment definitions |
 
 #### Header Bar
 - **Search bar** (magnifying glass icon): Full-text search across submissions and users
@@ -109,6 +111,7 @@ After logging in as a student, you land on the **Dashboard** page, which shows:
 - **Average Score**: Your average file review score across all reviewed submissions
 - **Review Tasks**: The number of assigned reviews you still need to complete
 - **Recent Activity**: Your latest submissions and reviews
+- **My Submissions actions**: For submissions with no existing reviews, you can edit title/description or withdraw directly on dashboard
 
 ### Submitting Assignments
 
@@ -121,6 +124,11 @@ After logging in as a student, you land on the **Dashboard** page, which shows:
 4. You'll see a success message, and the submission will appear on your Dashboard.
 
 > **File size limit**: Files must not exceed the configured maximum (typically 10 MB). Only valid file types are accepted (the server verifies via magic-byte checks).
+>
+> **Edit/withdraw policy**: Before any review is submitted for your file, you can edit metadata or withdraw that submission from your dashboard.
+> In some courses, instructors may allow edit/withdraw even after reviews exist.
+>
+> **Assignment templates**: If your course has predefined assignments, select one in the upload form to link your submission.
 
 ### Completing Assigned Reviews
 
@@ -143,6 +151,9 @@ After logging in as a student, you land on the **Dashboard** page, which shows:
 5. Click **Submit Review** to finalize.
 
 > **Keyboard accessibility**: Use arrow keys to navigate between score options, and Enter/Space to select.
+>
+> **Draft protection**: In-progress score/comments are auto-saved in browser localStorage and restored when reopening the same review page on the same device/browser.
+> The system also stores backend drafts, so you can continue on another device/browser after logging in.
 
 ### Peer Review Sessions (Student)
 
@@ -168,6 +179,9 @@ After logging in as a student, you land on the **Dashboard** page, which shows:
 6. Click **Submit Peer Reviews** to finalize all reviews at once.
 
 > **Important**: You can re-submit to update your reviews while the session is open. Once the session closes (manually or via deadline), no further changes are accepted.
+>
+> **Draft protection**: In-progress peer review form content is auto-saved in browser localStorage and restored after refresh/reopen on the same device/browser.
+> The system also stores backend drafts, so your progress can be restored cross-device.
 
 ### Self-Review
 
@@ -192,6 +206,14 @@ Once your instructor releases scores for a session:
 4. If scores are **not yet released**, you'll see a lock icon with the message: *"Your instructor has not released scores for this session yet. Check back later."*
 
 > **Privacy**: You can only see your own aggregated scores. Individual reviewer identities and other students' scores are never visible to you.
+
+### My Grades
+
+1. Click **My Grades** in the sidebar.
+2. The page aggregates:
+   - **File Review Summary**: per-submission average score and review count
+   - **Peer Review Sessions (Released)**: released session-level averages for technical/interactions/management/chemistry
+3. Use this page as your semester-level grade history view.
 
 ### Weekly Check-ins (Student)
 
@@ -221,6 +243,9 @@ See the [AI Features](#4-ai-features) section for detailed instructions on:
 - Click a notification to mark it as read.
 - Click **Mark all as read** to clear all unread notifications.
 - Notifications refresh automatically every 30 seconds.
+- Event-triggered notifications currently include review assignment, review received, and deadline reminders.
+- Notification channels are configurable in **Notification Preferences** (in-app/email/push).
+- Browser push can be enabled/disabled from **Notification Preferences**.
 
 ---
 
@@ -262,6 +287,11 @@ After logging in as an instructor, you land on the **Overview** dashboard, which
 - **Open**: Students can submit and update their peer reviews.
 - **Closed**: No further peer review submissions are accepted.
 - Sessions with a deadline will **auto-close** when the deadline passes (checked lazily on the next API access).
+
+#### Editing or Duplicating a Session
+
+- Use **Edit** to update title/deadline/open state for an existing session.
+- Use **Duplicate** to create a metadata copy of an existing session, then adjust and open it.
 
 #### Session Table Columns
 
@@ -405,6 +435,20 @@ Navigate to **Review Analytics** in the sidebar:
 - **Anomaly Detection**: Statistical outliers in scoring patterns
 - **Roster CSV Export**: Download the full student roster as CSV
 - **File Review CSV Export**: Download a per-submission breakdown of all file review scores as CSV (server-side generated)
+- **Scoped filters**: Course/group/date-range filters are available and reused by dashboard/analytics/export workflows
+- **Anonymized export**: Enable anonymized mode when exporting peer-review/file-review data
+- **Rubric configuration**: Configure rubric levels by scope (global/course/session)
+- **Appeal queue**: Process student clarification/appeal requests (resolve/reject + reply)
+- **Submission policy**: Configure whether students may edit/withdraw after reviews exist (course-level)
+- **Export Center**: Unified export entry point for file-review, peer-review, and roster CSV exports
+
+### Assignment Templates
+
+Navigate to **Assignment Templates** in the sidebar:
+
+1. Set a **Course ID** and create templates with title/description/due time.
+2. Enable/disable templates for each course as needed.
+3. Students can select active templates during upload, which links submissions to assignment definitions.
 
 ### Class Check-ins Management
 
@@ -550,6 +594,11 @@ The application is built with **WCAG 2.1** compliance in mind:
 - An OpenAI API key must be configured in the AI service's environment variables.
 - If you see "AI unavailable" messages, contact your instructor or system administrator.
 
+### Mobile / Small Screen
+
+- Data tables support **horizontal scroll** — swipe or scroll horizontally to see all columns on small screens.
+- The sidebar collapses to a hamburger menu; the header remains usable. For complex tables, consider exporting CSV and viewing on a larger screen.
+
 ### Real-Time Events Not Updating
 
 - The green **"Live"** indicator on the instructor dashboard shows the SSE connection status.
@@ -600,4 +649,4 @@ The application is built with **WCAG 2.1** compliance in mind:
 
 ---
 
-*Document version: 1.0 — Last updated: March 2026*
+*Document version: 1.3 — Last updated: March 2026. For deployment and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).*

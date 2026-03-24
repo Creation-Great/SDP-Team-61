@@ -3,6 +3,11 @@ import { CheckSquare, Loader2, AlertCircle, Users, TrendingUp, BarChart3 } from 
 import API from '../services/api';
 import Card from '../components/ui/Card';
 
+/**
+ * Instructor view of class check-ins: students list, insights, and check-in template.
+ * Fetches GET /instructor/checkins/students, /instructor/checkins/insights, /instructor/checkins/current.
+ * @returns {JSX.Element}
+ */
 export default function ClassCheckinsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -22,7 +27,8 @@ export default function ClassCheckinsPage() {
           API.get('/instructor/checkins/current').catch(() => ({ data: null })),
         ]);
         if (!cancelled) {
-          setStudents(Array.isArray(studRes.data) ? studRes.data : []);
+          const d = studRes.data;
+          setStudents(Array.isArray(d) ? d : (d?.students ?? []));
           const insData = insRes.data || {};
           setInsights(Array.isArray(insData.insights) ? insData.insights : []);
           setStudentSubmissions(insData.student_submissions ?? 0);
