@@ -2,7 +2,8 @@ import type { PoolClient } from 'pg';
 import { sendNotificationEmail } from './mailer.js';
 import { sendWebPushToSubscriptions } from './push.js';
 
-type NotificationType = 'review_received' | 'review_assigned' | 'deadline' | 'ai_complete' | 'system';
+type NotificationType = 'review_received' | 'review_assigned' | 'deadline' | 'ai_complete' | 'system'
+  | 'similarity_alert' | 'grade_released' | 'extension_granted' | 'reminder';
 
 type CreateNotificationInput = {
   userId: string;
@@ -12,8 +13,8 @@ type CreateNotificationInput = {
   link?: string;
 };
 
-const EMAIL_TYPES: NotificationType[] = ['review_assigned', 'deadline', 'system'];
-const PUSH_TYPES: NotificationType[] = ['review_received', 'review_assigned', 'deadline', 'ai_complete', 'system'];
+const EMAIL_TYPES: NotificationType[] = ['review_assigned', 'deadline', 'system', 'similarity_alert', 'grade_released', 'extension_granted', 'reminder'];
+const PUSH_TYPES: NotificationType[] = ['review_received', 'review_assigned', 'deadline', 'ai_complete', 'system', 'similarity_alert', 'grade_released', 'extension_granted', 'reminder'];
 
 export async function createNotification(client: PoolClient, input: CreateNotificationInput): Promise<void> {
   await client.query(

@@ -207,3 +207,98 @@ export const saveStudentSelfCheckinsSchema = z.object({
   selected_member_id: z.string().min(1, 'selected_member_id is required'),
   weeks: z.array(z.unknown()),
 });
+
+// ── Semesters ──────────────────────────────────────────────
+export const createSemesterSchema = z.object({
+  name: z.string().min(1),
+  start_date: z.string().min(1),
+  end_date: z.string().min(1),
+});
+
+// ── Grades ─────────────────────────────────────────────────
+export const gradeWeightsSchema = z.object({
+  file_review_weight: z.number().min(0).max(100),
+  peer_review_weight: z.number().min(0).max(100),
+  checkin_weight: z.number().min(0).max(100),
+  drop_lowest: z.number().int().min(0).default(0),
+  drop_highest: z.number().int().min(0).default(0),
+});
+
+// ── Anonymity ──────────────────────────────────────────────
+export const anonymityConfigSchema = z.object({
+  anonymity: z.enum(['none', 'single_blind', 'double_blind']),
+});
+
+// ── Deadlines ──────────────────────────────────────────────
+export const deadlineExtensionSchema = z.object({
+  user_id: z.string().uuid(),
+  entity_type: z.string().min(1),
+  entity_id: z.string().uuid(),
+  extended_to: z.string().min(1),
+  reason: z.string().optional(),
+});
+
+export const reminderConfigSchema = z.object({
+  entity_type: z.string().min(1),
+  entity_id: z.string().uuid(),
+  reminder_hours: z.array(z.number().int().min(1)),
+});
+
+// ── Reviews (helpfulness) ──────────────────────────────────
+export const helpfulnessVoteSchema = z.object({
+  review_id: z.string().uuid(),
+  is_helpful: z.boolean(),
+});
+
+// ── LMS ────────────────────────────────────────────────────
+export const lmsConfigSchema = z.object({
+  provider: z.string().min(1),
+  api_url: z.string().optional(),
+  api_key: z.string().optional(),
+  config_json: z.record(z.string(), z.unknown()).optional(),
+});
+
+// ── User Preferences ───────────────────────────────────────
+export const userPreferencesSchema = z.object({
+  theme: z.enum(['light', 'dark']).optional(),
+  font_size: z.enum(['small', 'medium', 'large']).optional(),
+  high_contrast: z.boolean().optional(),
+  preferences: z.record(z.string(), z.unknown()).optional(),
+});
+
+// ── Review Exclusion ───────────────────────────────────────
+export const reviewExclusionSchema = z.object({
+  course_id: z.string().min(1),
+  user_a: z.string().uuid(),
+  user_b: z.string().uuid(),
+  reason: z.string().optional(),
+});
+
+// ── Assignment Strategy ────────────────────────────────────
+export const assignmentStrategySchema = z.object({
+  course_id: z.string().min(1),
+  assignment_strategy: z.enum(['random', 'load_balanced', 'reciprocal', 'manual_only']),
+  min_reviews_required: z.number().int().min(1).max(5).optional(),
+});
+
+// ── Clone Course ───────────────────────────────────────────
+export const cloneCourseSchema = z.object({
+  source_course_id: z.string().min(1),
+  target_course_id: z.string().min(1),
+  semester_id: z.string().uuid().optional(),
+});
+
+// ── Revisions ──────────────────────────────────────────────
+export const createRevisionSchema = z.object({
+  parent_submission_id: z.string().uuid(),
+  title: z.string().min(1),
+  description: z.string().optional(),
+});
+
+// ── AI Chat ────────────────────────────────────────────────
+export const aiChatSchema = z.object({
+  message: z.string().min(1),
+  context_type: z.enum(['writing_review', 'reading_review', 'teacher_summary']),
+  context_id: z.string().uuid().optional(),
+  conversation_id: z.string().uuid().optional(),
+});

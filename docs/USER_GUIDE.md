@@ -649,4 +649,80 @@ The application is built with **WCAG 2.1** compliance in mind:
 
 ---
 
-*Document version: 1.3 — Last updated: March 2026. For deployment and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).*
+## v3.0 Features Guide
+
+### Anonymous Reviews
+**For Instructors:**
+1. When creating a peer review session, select the **Anonymity Level** dropdown:
+   - **None**: Full names visible to all parties
+   - **Single Blind**: Author can see reviewer names, but reviewers see "Anonymous Reviewer #N"
+   - **Double Blind**: Both parties see pseudonyms instead of real names
+2. Instructors always see real names regardless of anonymity setting.
+
+**For Students:**
+- When anonymity is active, you'll see "Anonymous Reviewer #N" instead of real names
+- Your pseudonym number stays consistent within a session (same reviewer = same number)
+
+### Multi-Round Revisions
+**Submitting a Revision:**
+1. Go to **Dashboard** → find a submission with status "Reviewed"
+2. Click **Revise** to create a new version
+3. Upload the revised file with updated title/description
+4. Original reviewers are automatically reassigned to review the revision
+
+**Viewing History:**
+1. Click **View History** on any submission to see all revisions
+2. Use **Diff** to compare changes between versions
+
+### Grade Management (Instructor)
+1. Navigate to **Grade Management** from the sidebar
+2. Configure weight sliders: File Review %, Peer Review %, Check-in %
+3. Set Drop Lowest / Drop Highest counts
+4. View calculated final grades in the table below
+5. Click **Export CSV** to download grades
+
+### AI Assistant
+**During Review Writing:**
+- The AI Chat widget appears at the bottom-right of the review page
+- Ask for help writing constructive feedback
+- Context: `writing_review` mode
+
+**After Receiving Reviews:**
+- Visit `/ai-assistant` and select **Reading Review** context
+- Paste feedback you received and ask the AI to help interpret it
+
+**For Instructors:**
+- Select **Teacher Summary** context to analyze student performance patterns
+
+### Calendar & Deadlines
+- Visit **Calendar** from the sidebar to see all upcoming deadlines
+- Color coding: Blue = peer review sessions, Green = assignments, Orange = extensions
+- Click any date to see details
+
+### Dark Mode & Preferences
+1. Toggle dark mode via the **moon/sun icon** in the sidebar
+2. Visit **Settings → Preferences** for font size and high contrast options
+3. Settings persist across sessions
+
+### Data Export (GDPR)
+1. Visit **Settings → Data Export**
+2. Click **Export My Data** to download all your data as JSON
+3. To request account deletion, click **Request Deletion** (requires confirmation)
+
+### Similarity Detection (Instructor)
+1. Navigate to **Similarity Check** from the sidebar
+2. Click **Run Similarity Check** to analyze all submissions in a course
+3. Results show pairwise similarity scores with color coding:
+   - Green (< 30%): Low similarity
+   - Yellow (30-50%): Moderate similarity
+   - Red (> 50%): High similarity — investigate
+
+### Semester Management (Instructor)
+1. Navigate to **Semesters** from the sidebar
+2. Create semesters with name, start date, end date
+3. Toggle active/inactive status
+4. Use **Clone Course** to copy settings from a previous semester
+
+---
+
+*Document version: 2.0 — Last updated: March 2026. For deployment and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).*

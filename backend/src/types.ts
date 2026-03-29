@@ -5,7 +5,7 @@ export interface Enrollment {
   enrollment_id: string;
   course_id: string;
   group_id: string | null;
-  role: 'student' | 'instructor' | 'admin';
+  role: 'student' | 'instructor' | 'admin' | 'ta';
   is_primary: boolean;
   enrolled_at: string;
 }
@@ -14,7 +14,7 @@ export interface AuthUser {
   user_id: string;
   email: string;
   name: string;
-  role: 'student' | 'instructor' | 'admin';
+  role: 'student' | 'instructor' | 'admin' | 'ta';
   /** @deprecated Use enrollments[].course_id — kept for backward compat (primary enrollment). */
   course_id?: string;
   /** @deprecated Use enrollments[].group_id — kept for backward compat (primary enrollment). */

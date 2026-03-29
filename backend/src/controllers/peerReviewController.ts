@@ -6,6 +6,8 @@ import { getGroupForCourse, getTeammatesByCourse } from '../utils/enrollment.js'
 import { emitSseEvent } from '../utils/sse.js';
 import { logger } from '../utils/logger.js';
 import { createNotification } from '../utils/notifications.js';
+import { computePeerReviewHash } from '../utils/hashIntegrity.js';
+import { anonymizeReviews, getAnonymousId } from '../utils/anonymizer.js';
 import type { AuthRequest } from '../types.js';
 import type { PoolClient } from 'pg';
 
@@ -17,7 +19,8 @@ async function autoCloseExpiredSessions(client: PoolClient): Promise<void> {
   await client.query(
     `UPDATE peer_review_sessions
      SET is_open = false, closed_at = now()
-     WHERE is_open = true AND deadline IS NOT NULL AND deadline <= now()`
+     WHERE is_open = true AND deadline IS NOT NULL
+       AND deadline + COALESCE(grace_period_hours, 0) * interval '1 hour' <= now()`
   );
 }
 
@@ -417,7 +420,7 @@ export async function submitPeerReviews(req: AuthRequest, res: Response): Promis
     // Upsert each review
     for (const r of reviews) {
       const isSelf = r.reviewee_id === user_id;
-      await client.query(
+      const insertResult = await client.query(
         `INSERT INTO peer_reviews
            (session_id, reviewer_id, reviewee_id, is_self,
             technical_contributions, team_interactions, project_management, individual_comments)
@@ -428,10 +431,23 @@ export async function submitPeerReviews(req: AuthRequest, res: Response): Promis
            team_interactions = EXCLUDED.team_interactions,
            project_management = EXCLUDED.project_management,
            individual_comments = EXCLUDED.individual_comments,
-           updated_at = now()`,
+           updated_at = now()
+         RETURNING peer_review_id`,
         [sessionId, user_id, r.reviewee_id, isSelf,
          r.technical_contributions, r.team_interactions, r.project_management,
          r.individual_comments || '']
+      );
+
+      // Compute and store integrity hash
+      const peerReviewHash = computePeerReviewHash(
+        r.technical_contributions,
+        r.team_interactions,
+        r.project_management,
+        r.individual_comments || ''
+      );
+      await client.query(
+        `UPDATE peer_reviews SET review_hash = $1 WHERE peer_review_id = $2`,
+        [peerReviewHash, insertResult.rows[0].peer_review_id]
       );
     }
 
@@ -601,7 +617,7 @@ export async function getSessionResults(req: AuthRequest, res: Response): Promis
       [sessionId]
     );
 
-    const detailRows = details.rows;
+    let detailRows = details.rows;
     if (anonymized) {
       const reviewerMap = new Map<string, string>();
       let seq = 1;
@@ -615,6 +631,20 @@ export async function getSessionResults(req: AuthRequest, res: Response): Promis
       for (const row of detailRows) {
         row.reviewer_name = reviewerMap.get(String(row.reviewer_name || '')) || 'Reviewer';
       }
+    }
+
+    // Apply anonymity-level filtering for students
+    const anonymityLevel = session.rows[0].anonymity || 'none';
+    if (anonymityLevel !== 'none' && role === 'student') {
+      const mappings = new Map<string, number>();
+      for (const row of detailRows) {
+        const reviewerId = row.reviewer_id || row.reviewer_name;
+        if (reviewerId && !mappings.has(reviewerId)) {
+          const anonId = await getAnonymousId(client, reviewerId, String(sessionId), null);
+          mappings.set(reviewerId, anonId);
+        }
+      }
+      detailRows = anonymizeReviews(detailRows, anonymityLevel, mappings, role);
     }
 
     return {

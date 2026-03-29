@@ -1,6 +1,6 @@
 {
   "name": "sdp-team-61-peer-review",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "AI Integrated Peer Review System",
   "private": true,
   "scripts": {

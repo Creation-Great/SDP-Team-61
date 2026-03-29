@@ -10,6 +10,7 @@ import functools
 import logging
 import time
 import random
+import uuid as _uuid
 
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
@@ -20,6 +21,8 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 from openai import OpenAI, APIConnectionError, RateLimitError, APITimeoutError
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine_similarity
 
 load_dotenv()
 
@@ -744,6 +747,518 @@ def adopt_rewrite(review_id):
         return jsonify(error="not_found", message="No rewrite suggestion found for this review"), 404
     conn.commit()
     return jsonify({"review_id": review_id, "adopted": True})
+
+
+# ---------------------------------------------------------------------------
+# AI Review Depth – evaluate quality of a peer review comment
+# ---------------------------------------------------------------------------
+REVIEW_DEPTH_SYSTEM_PROMPT = """You are an AI that evaluates the depth and quality of peer review comments. Given a review comment, return JSON with: constructiveness (0-1), specificity (0-1), actionability (0-1), explanation (string). constructiveness measures how much the review helps the author improve. specificity measures concrete vs vague feedback. actionability measures whether clear next steps are suggested. Return ONLY valid JSON."""
+
+
+@app.route("/api/ai/review-depth", methods=["POST"])
+@require_api_key
+@limiter.limit("30 per minute")
+def review_depth():
+    """
+    Evaluate depth and quality of a peer review comment.
+    Body: { "review_id": str(uuid), "text": str }
+    """
+    data = request.get_json(silent=True) or {}
+    review_id = data.get("review_id")
+    text = data.get("text", "").strip()
+
+    if not review_id or not text:
+        return jsonify(error="validation", message="review_id and text are required"), 400
+
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify(error="validation", message=f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. Review depth analysis is unavailable.",
+        ), 503
+
+    try:
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.2,
+            system_prompt=REVIEW_DEPTH_SYSTEM_PROMPT,
+            user_message=f"Evaluate this peer review comment:\n\n{text}",
+            action="review_depth",
+        )
+    except json.JSONDecodeError:
+        return jsonify(error="ai_error", message="AI returned invalid response"), 502
+    except Exception as e:
+        log.error("OpenAI review-depth call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    # Persist to review_depth_scores (UPSERT)
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO review_depth_scores
+                   (review_id, constructiveness, specificity, actionability, model_version)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (review_id) DO UPDATE SET
+                     constructiveness = EXCLUDED.constructiveness,
+                     specificity = EXCLUDED.specificity,
+                     actionability = EXCLUDED.actionability,
+                     model_version = EXCLUDED.model_version
+                """,
+                (
+                    review_id,
+                    result.get("constructiveness", 0),
+                    result.get("specificity", 0),
+                    result.get("actionability", 0),
+                    OPENAI_MODEL,
+                ),
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.warning("Failed to persist review_depth_scores for review %s: %s", review_id, e)
+
+    return jsonify({
+        "review_id": review_id,
+        "constructiveness": result.get("constructiveness", 0),
+        "specificity": result.get("specificity", 0),
+        "actionability": result.get("actionability", 0),
+        "explanation": result.get("explanation", ""),
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI Score Suggestion – suggest score range for a submission
+# ---------------------------------------------------------------------------
+SCORE_SUGGESTION_SYSTEM_PROMPT = """You are an AI grading assistant. Given the text content of a student submission and a rubric with scoring criteria, suggest an appropriate score range. Return JSON with: suggested_min (float), suggested_max (float), reasoning (string explaining your assessment), confidence (0-1). Be calibrated and fair. Return ONLY valid JSON."""
+
+
+@app.route("/api/ai/score-suggestion", methods=["POST"])
+@require_api_key
+@limiter.limit("20 per minute")
+def score_suggestion():
+    """
+    Suggest a score range for a submission based on rubric.
+    Body: { "submission_text": str, "rubric_json": str|object }
+    """
+    data = request.get_json(silent=True) or {}
+    submission_text = data.get("submission_text", "").strip()
+    rubric_json = data.get("rubric_json", "")
+
+    if not submission_text or not rubric_json:
+        return jsonify(error="validation", message="submission_text and rubric_json are required"), 400
+
+    if len(submission_text) > MAX_TEXT_LENGTH:
+        return jsonify(error="validation", message=f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. Score suggestion is unavailable.",
+        ), 503
+
+    rubric_str = rubric_json if isinstance(rubric_json, str) else json.dumps(rubric_json, indent=2)
+
+    try:
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.3,
+            system_prompt=SCORE_SUGGESTION_SYSTEM_PROMPT,
+            user_message=f"Submission text:\n\n{submission_text}\n\nRubric:\n{rubric_str}",
+            action="score_suggestion",
+        )
+    except json.JSONDecodeError:
+        return jsonify(error="ai_error", message="AI returned invalid response"), 502
+    except Exception as e:
+        log.error("OpenAI score-suggestion call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    return jsonify({
+        "suggested_min": result.get("suggested_min", 0),
+        "suggested_max": result.get("suggested_max", 0),
+        "reasoning": result.get("reasoning", ""),
+        "confidence": result.get("confidence", 0),
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI Calibration – advise reviewer on score deviation
+# ---------------------------------------------------------------------------
+CALIBRATION_SYSTEM_PROMPT = """You are a peer review calibration assistant. Given a reviewer's score for a submission, the peer average score for the same submission, and the deviation, provide calibration advice. Return JSON with: is_significant (boolean, true if |deviation| >= 1.0), recommendation (string with advice for the reviewer), severity ('low'|'medium'|'high'). Return ONLY valid JSON."""
+
+
+@app.route("/api/ai/calibration", methods=["POST"])
+@require_api_key
+@limiter.limit("20 per minute")
+def calibration():
+    """
+    Provide calibration advice for a reviewer's score.
+    Body: { "reviewer_score": float, "peer_avg_score": float, "submission_context": str (optional) }
+    """
+    data = request.get_json(silent=True) or {}
+    reviewer_score = data.get("reviewer_score")
+    peer_avg_score = data.get("peer_avg_score")
+    submission_context = data.get("submission_context", "").strip()
+
+    if reviewer_score is None or peer_avg_score is None:
+        return jsonify(error="validation", message="reviewer_score and peer_avg_score are required"), 400
+
+    try:
+        reviewer_score = float(reviewer_score)
+        peer_avg_score = float(peer_avg_score)
+    except (TypeError, ValueError):
+        return jsonify(error="validation", message="reviewer_score and peer_avg_score must be numeric"), 400
+
+    deviation = reviewer_score - peer_avg_score
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. Calibration is unavailable.",
+        ), 503
+
+    user_msg = (
+        f"Reviewer score: {reviewer_score}\n"
+        f"Peer average score: {peer_avg_score}\n"
+        f"Deviation: {deviation}"
+    )
+    if submission_context:
+        user_msg += f"\n\nSubmission context:\n{submission_context}"
+
+    try:
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.3,
+            system_prompt=CALIBRATION_SYSTEM_PROMPT,
+            user_message=user_msg,
+            action="calibration",
+        )
+    except json.JSONDecodeError:
+        return jsonify(error="ai_error", message="AI returned invalid response"), 502
+    except Exception as e:
+        log.error("OpenAI calibration call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    return jsonify({
+        "reviewer_score": reviewer_score,
+        "peer_avg_score": peer_avg_score,
+        "deviation": deviation,
+        "is_significant": result.get("is_significant", abs(deviation) >= 1.0),
+        "recommendation": result.get("recommendation", ""),
+        "severity": result.get("severity", "low"),
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI Score Reasoning – articulate scoring rationale
+# ---------------------------------------------------------------------------
+SCORE_REASONING_SYSTEM_PROMPT = """You are a peer review assistant that helps reviewers articulate their scoring rationale. Given a score (1-5) and the context of the submission being reviewed, generate a well-structured explanation for why this score was given. Return JSON with: reasoning (string, 2-3 sentences), strengths (array of strings), improvements (array of strings). Return ONLY valid JSON."""
+
+
+@app.route("/api/ai/score-reasoning", methods=["POST"])
+@require_api_key
+@limiter.limit("20 per minute")
+def score_reasoning():
+    """
+    Generate reasoning for a peer review score.
+    Body: { "score": int, "submission_context": str }
+    """
+    data = request.get_json(silent=True) or {}
+    score = data.get("score")
+    submission_context = data.get("submission_context", "").strip()
+
+    if score is None or not submission_context:
+        return jsonify(error="validation", message="score and submission_context are required"), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. Score reasoning is unavailable.",
+        ), 503
+
+    try:
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.4,
+            system_prompt=SCORE_REASONING_SYSTEM_PROMPT,
+            user_message=f"Score: {score}\n\nSubmission context:\n{submission_context}",
+            action="score_reasoning",
+        )
+    except json.JSONDecodeError:
+        return jsonify(error="ai_error", message="AI returned invalid response"), 502
+    except Exception as e:
+        log.error("OpenAI score-reasoning call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    return jsonify({
+        "score": score,
+        "reasoning": result.get("reasoning", ""),
+        "strengths": result.get("strengths", []),
+        "improvements": result.get("improvements", []),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Similarity – TF-IDF pairwise cosine similarity (no OpenAI)
+# ---------------------------------------------------------------------------
+@app.route("/api/ai/similarity", methods=["POST"])
+@require_api_key
+@limiter.limit("10 per minute")
+def similarity():
+    """
+    Compute pairwise similarity between submissions using TF-IDF + cosine similarity.
+    Body: { "submissions": [{ "submission_id": str, "text": str }, ...] }
+    """
+    data = request.get_json(silent=True) or {}
+    submissions = data.get("submissions", [])
+
+    if not isinstance(submissions, list) or len(submissions) < 2:
+        return jsonify(error="validation", message="At least 2 submissions are required"), 400
+
+    for sub in submissions:
+        if not sub.get("submission_id") or not sub.get("text", "").strip():
+            return jsonify(error="validation", message="Each submission must have submission_id and non-empty text"), 400
+
+    texts = [sub["text"].strip() for sub in submissions]
+    ids = [sub["submission_id"] for sub in submissions]
+
+    try:
+        vectorizer = TfidfVectorizer(stop_words="english")
+        tfidf_matrix = vectorizer.fit_transform(texts)
+        cos_sim = sklearn_cosine_similarity(tfidf_matrix)
+    except Exception as e:
+        log.error("Similarity computation failed: %s", e)
+        return jsonify(error="computation_error", message=str(e)), 500
+
+    pairs = []
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            score = float(cos_sim[i][j])
+            if score > 0.1:
+                pairs.append({
+                    "id_a": ids[i],
+                    "id_b": ids[j],
+                    "similarity_score": round(score, 4),
+                })
+
+    # Persist results to similarity_reports (UPSERT)
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            for pair in pairs:
+                cur.execute(
+                    """INSERT INTO similarity_reports
+                       (submission_id_a, submission_id_b, similarity_score, method)
+                       VALUES (%s, %s, %s, 'tfidf_cosine')
+                       ON CONFLICT (submission_id_a, submission_id_b, method) DO UPDATE SET
+                         similarity_score = EXCLUDED.similarity_score
+                    """,
+                    (pair["id_a"], pair["id_b"], pair["similarity_score"]),
+                )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.warning("Failed to persist similarity_reports: %s", e)
+
+    return jsonify({"pairs": pairs})
+
+
+# ---------------------------------------------------------------------------
+# Similarity / Turnitin Mock – simulated plagiarism check
+# ---------------------------------------------------------------------------
+@app.route("/api/ai/similarity/turnitin", methods=["POST"])
+@require_api_key
+@limiter.limit("10 per minute")
+def similarity_turnitin():
+    """
+    Mock Turnitin endpoint — returns simulated plagiarism results.
+    Body: { "submission_id": str, "text": str }
+    """
+    data = request.get_json(silent=True) or {}
+    submission_id = data.get("submission_id")
+    text = data.get("text", "").strip()
+
+    if not submission_id or not text:
+        return jsonify(error="validation", message="submission_id and text are required"), 400
+
+    return jsonify({
+        "provider": "turnitin_mock",
+        "submission_id": submission_id,
+        "originality_score": random.randint(5, 30),
+        "internet_matches": random.randint(2, 15),
+        "publication_matches": random.randint(0, 5),
+        "student_paper_matches": random.randint(1, 10),
+        "status": "complete",
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI Chat – multi-turn conversational assistant
+# ---------------------------------------------------------------------------
+CHAT_SYSTEM_PROMPTS = {
+    "writing_review": (
+        "You are a peer review writing assistant. Help the student write constructive, "
+        "specific, and actionable peer review feedback. Ask clarifying questions if needed. "
+        "Guide them toward providing evidence-based feedback."
+    ),
+    "reading_review": (
+        "You are a peer review interpretation assistant. Help the student understand the "
+        "feedback they received in a peer review. Explain what the reviewer likely meant, "
+        "suggest concrete steps for improvement, and provide encouragement."
+    ),
+    "teacher_summary": (
+        "You are an instructor's assistant for peer review analysis. Help the instructor "
+        "understand aggregate patterns in student reviews. Provide insights about common "
+        "themes, scoring trends, and areas where students may need guidance."
+    ),
+}
+
+
+def call_openai_chat(*, model: str, temperature: float, system_prompt: str,
+                     messages: list, action: str) -> str:
+    """Call OpenAI with a multi-turn messages array (no JSON response format).
+    Returns the assistant reply as a plain string."""
+    client = _get_openai()
+    last_error = None
+    full_messages = [{"role": "system", "content": system_prompt}] + messages
+    for attempt in range(MAX_RETRIES):
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                temperature=temperature,
+                messages=full_messages,
+            )
+            reply = completion.choices[0].message.content or ""
+
+            usage = completion.usage
+            if usage:
+                log.info("OpenAI usage", extra={"extra_data": {
+                    "action": action,
+                    "model": model,
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                }})
+
+            return reply
+        except RETRYABLE_ERRORS as e:
+            last_error = e
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            log.warning("OpenAI %s attempt %d/%d failed (%s), retrying in %.1fs",
+                        action, attempt + 1, MAX_RETRIES, type(e).__name__, wait)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(wait)
+    raise last_error  # type: ignore[misc]
+
+
+@app.route("/api/ai/chat", methods=["POST"])
+@require_api_key
+@limiter.limit("30 per minute")
+def ai_chat():
+    """
+    Multi-turn conversational AI assistant for peer review.
+    Body: { "message": str, "context_type": str, "context_id": str?,
+            "conversation_id": str?, "user_id": str? }
+    """
+    data = request.get_json(silent=True) or {}
+    message = data.get("message", "").strip()
+    context_type = data.get("context_type", "")
+    context_id = data.get("context_id")
+    conversation_id = data.get("conversation_id")
+    user_id = data.get("user_id")
+
+    if not message:
+        return jsonify(error="validation", message="message is required"), 400
+
+    if context_type not in CHAT_SYSTEM_PROMPTS:
+        return jsonify(
+            error="validation",
+            message=f"context_type must be one of: {', '.join(CHAT_SYSTEM_PROMPTS.keys())}",
+        ), 400
+
+    if not OPENAI_API_KEY:
+        return jsonify(
+            error="not_configured",
+            message="OpenAI API key is not configured. AI chat is unavailable.",
+        ), 503
+
+    system_prompt = CHAT_SYSTEM_PROMPTS[context_type]
+    messages = []
+
+    # Load existing conversation if conversation_id provided
+    conn = get_db()
+    if conversation_id:
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT messages FROM ai_conversations WHERE id = %s",
+                    (conversation_id,),
+                )
+                row = cur.fetchone()
+            if row and row["messages"]:
+                stored = row["messages"]
+                messages = stored if isinstance(stored, list) else json.loads(stored)
+        except Exception as e:
+            log.warning("Failed to load conversation %s: %s", conversation_id, e)
+
+    # Append user message
+    messages.append({"role": "user", "content": message})
+
+    # Use only last 20 messages for the OpenAI call
+    recent_messages = messages[-20:]
+
+    try:
+        reply = call_openai_chat(
+            model=OPENAI_MODEL, temperature=0.5,
+            system_prompt=system_prompt,
+            messages=recent_messages,
+            action="chat",
+        )
+    except Exception as e:
+        log.error("OpenAI chat call failed: %s", e)
+        return jsonify(error="ai_error", message=str(e)), 502
+
+    # Append assistant reply
+    messages.append({"role": "assistant", "content": reply})
+
+    # Persist conversation (INSERT or UPDATE) — only when user_id is a valid UUID
+    if not conversation_id:
+        conversation_id = str(_uuid.uuid4())
+
+    if not user_id:
+        # Cannot persist without valid user_id (FK constraint)
+        return jsonify({
+            "conversation_id": conversation_id,
+            "reply": reply,
+            "messages_count": len(messages),
+        })
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO ai_conversations
+                   (id, user_id, context_type, context_id, messages, updated_at)
+                   VALUES (%s, %s, %s, %s, %s, now())
+                   ON CONFLICT (id) DO UPDATE SET
+                     messages = EXCLUDED.messages,
+                     updated_at = now()
+                """,
+                (
+                    conversation_id,
+                    user_id,  # must be a valid UUID FK
+                    context_type,
+                    context_id,
+                    json.dumps(messages),
+                ),
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        log.warning("Failed to persist ai_conversations for %s: %s", conversation_id, e)
+
+    return jsonify({
+        "conversation_id": conversation_id,
+        "reply": reply,
+        "messages_count": len(messages),
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -146,3 +146,59 @@ export async function getSearch(req: AuthRequest, res: Response): Promise<void> 
   const data = await aiFetch(`${AI_SERVICE_URL}/api/search?q=${encodeURIComponent(q)}`, { headers: aiHeaders() });
   res.json(data);
 }
+
+// ── POST /api/ai/review-depth ──────────────────────────────
+export async function postReviewDepth(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/review-depth`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify(req.body),
+  });
+  res.json(data);
+}
+
+// ── POST /api/ai/score-suggestion ──────────────────────────
+export async function postScoreSuggestion(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/score-suggestion`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify(req.body),
+  });
+  res.json(data);
+}
+
+// ── POST /api/ai/calibration ───────────────────────────────
+export async function postCalibration(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/calibration`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify(req.body),
+  });
+  res.json(data);
+}
+
+// ── POST /api/ai/score-reasoning ───────────────────────────
+export async function postScoreReasoning(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/score-reasoning`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify(req.body),
+  });
+  res.json(data);
+}
+
+// ── POST /api/ai/similarity ────────────────────────────────
+export async function postSimilarity(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/similarity`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify(req.body),
+  });
+  res.json(data);
+}
+
+// ── POST /api/ai/similarity/turnitin ───────────────────────
+export async function postSimilarityTurnitin(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/similarity/turnitin`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify(req.body),
+  });
+  res.json(data);
+}
+
+// ── POST /api/ai/chat ──────────────────────────────────────
+export async function postChat(req: AuthRequest, res: Response): Promise<void> {
+  const data = await aiFetch(`${AI_SERVICE_URL}/api/ai/chat`, {
+    method: 'POST', headers: aiHeaders(), body: JSON.stringify({ ...req.body, user_id: req.user?.user_id }),
+  });
+  res.json(data);
+}

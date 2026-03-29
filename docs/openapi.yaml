@@ -646,6 +646,431 @@ paths:
         '400':
           $ref: '#/components/responses/ValidationError'
 
+  # ══════════════════════════════════════════════════════════
+  # v3.0 Endpoints (added in migrations 021-036)
+  # ══════════════════════════════════════════════════════════
+
+  /anonymity/sessions/{sessionId}/anonymity:
+    get:
+      tags: [Anonymity]
+      summary: Get session anonymity configuration
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Anonymity level for session }
+    patch:
+      tags: [Anonymity]
+      summary: Update session anonymity level
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                anonymity: { type: string, enum: [none, single_blind, double_blind] }
+      responses:
+        '200': { description: Updated anonymity config }
+
+  /revisions:
+    post:
+      tags: [Revisions]
+      summary: Create a new revision of a submission
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                parent_submission_id: { type: string, format: uuid }
+                title: { type: string }
+                description: { type: string }
+                file: { type: string, format: binary }
+      responses:
+        '201': { description: Revision created }
+
+  /revisions/{submissionId}/history:
+    get:
+      tags: [Revisions]
+      summary: Get revision chain for a submission
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Array of revisions in chain }
+
+  /revisions/{submissionId}/diff:
+    get:
+      tags: [Revisions]
+      summary: Compare current revision with previous
+      parameters:
+        - name: submissionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Diff between versions }
+
+  /grades/weights/{courseId}:
+    get:
+      tags: [Grades]
+      summary: Get grade weight configuration
+      responses:
+        '200': { description: Grade weights }
+    put:
+      tags: [Grades]
+      summary: Set grade weight configuration
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                file_review_weight: { type: number }
+                peer_review_weight: { type: number }
+                checkin_weight: { type: number }
+                drop_lowest: { type: integer }
+                drop_highest: { type: integer }
+      responses:
+        '200': { description: Updated weights }
+
+  /grades/final/{courseId}:
+    get:
+      tags: [Grades]
+      summary: Calculate final grades for all students
+      responses:
+        '200': { description: Array of student grades }
+
+  /grades/export/{courseId}:
+    get:
+      tags: [Grades]
+      summary: Export final grades as CSV
+      responses:
+        '200': { description: CSV file download }
+
+  /semesters:
+    get:
+      tags: [Semesters]
+      summary: List all semesters
+      responses:
+        '200': { description: Array of semesters }
+    post:
+      tags: [Semesters]
+      summary: Create a semester
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, start_date, end_date]
+              properties:
+                name: { type: string }
+                start_date: { type: string, format: date }
+                end_date: { type: string, format: date }
+      responses:
+        '201': { description: Semester created }
+
+  /semesters/{id}:
+    patch:
+      tags: [Semesters]
+      summary: Update a semester
+      responses:
+        '200': { description: Updated semester }
+
+  /semesters/clone:
+    post:
+      tags: [Semesters]
+      summary: Clone course configuration to new semester
+      responses:
+        '201': { description: Clone result }
+
+  /deadlines/calendar:
+    get:
+      tags: [Deadlines]
+      summary: Get all upcoming deadlines for current user
+      responses:
+        '200': { description: Array of deadline objects }
+
+  /deadlines/extensions:
+    get:
+      tags: [Deadlines]
+      summary: Get deadline extensions
+      responses:
+        '200': { description: Array of extensions }
+    post:
+      tags: [Deadlines]
+      summary: Grant a deadline extension
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, entity_type, entity_id, extended_to]
+              properties:
+                user_id: { type: string, format: uuid }
+                entity_type: { type: string }
+                entity_id: { type: string, format: uuid }
+                extended_to: { type: string, format: date-time }
+                reason: { type: string }
+      responses:
+        '201': { description: Extension granted }
+
+  /deadlines/reminders:
+    post:
+      tags: [Deadlines]
+      summary: Configure reminder hours for an entity
+      responses:
+        '200': { description: Reminders configured }
+
+  /preferences:
+    get:
+      tags: [Preferences]
+      summary: Get user preferences
+      responses:
+        '200': { description: User preferences }
+    patch:
+      tags: [Preferences]
+      summary: Update user preferences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                theme: { type: string, enum: [light, dark] }
+                font_size: { type: string, enum: [small, medium, large] }
+                high_contrast: { type: boolean }
+      responses:
+        '200': { description: Updated preferences }
+
+  /compliance/export/{userId}:
+    get:
+      tags: [Compliance]
+      summary: Export all user data (GDPR)
+      responses:
+        '200': { description: JSON with all user data }
+
+  /compliance/deletion-request:
+    post:
+      tags: [Compliance]
+      summary: Request account data deletion
+      responses:
+        '201': { description: Deletion request created }
+
+  /compliance/audit:
+    get:
+      tags: [Compliance]
+      summary: View audit log (admin only)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        '200': { description: Array of audit events }
+
+  /similarity/report/{submissionId}:
+    get:
+      tags: [Similarity]
+      summary: Get similarity report for a submission
+      responses:
+        '200': { description: Similarity matches }
+
+  /similarity/dashboard:
+    get:
+      tags: [Similarity]
+      summary: Get similarity dashboard for a course
+      parameters:
+        - name: course_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: All similarity reports }
+
+  /lms/{courseId}:
+    get:
+      tags: [LMS]
+      summary: Get LMS configuration
+      responses:
+        '200': { description: LMS config }
+    put:
+      tags: [LMS]
+      summary: Update LMS configuration
+      responses:
+        '200': { description: Updated config }
+
+  /lms/lti/launch:
+    post:
+      tags: [LMS]
+      summary: Mock LTI launch
+      responses:
+        '200': { description: Mock launch result }
+
+  /lms/lti/grades:
+    post:
+      tags: [LMS]
+      summary: Mock grade passback
+      responses:
+        '200': { description: Mock passback result }
+
+  /lms/lti/roster:
+    post:
+      tags: [LMS]
+      summary: Mock roster import
+      responses:
+        '200': { description: Mock roster }
+
+  /quality/helpfulness:
+    post:
+      tags: [Quality]
+      summary: Vote on review helpfulness
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [review_id, is_helpful]
+              properties:
+                review_id: { type: string, format: uuid }
+                is_helpful: { type: boolean }
+      responses:
+        '200': { description: Vote recorded }
+
+  /quality/reputation/{userId}:
+    get:
+      tags: [Quality]
+      summary: Get reviewer reputation metrics
+      responses:
+        '200': { description: Reputation scores }
+
+  /quality/consistency:
+    get:
+      tags: [Quality]
+      summary: Get consistency alerts for a course
+      parameters:
+        - name: course_id
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: Consistency alert list }
+
+  /assignment-strategy/strategy:
+    patch:
+      tags: [Assignment Strategy]
+      summary: Update assignment strategy for a course
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [course_id, assignment_strategy]
+              properties:
+                course_id: { type: string }
+                assignment_strategy: { type: string, enum: [random, load_balanced, reciprocal, manual_only] }
+                min_reviews_required: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        '200': { description: Strategy updated }
+
+  /assignment-strategy/exclusions:
+    get:
+      tags: [Assignment Strategy]
+      summary: List exclusion rules
+      responses:
+        '200': { description: Array of exclusions }
+    post:
+      tags: [Assignment Strategy]
+      summary: Add exclusion rule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [course_id, user_a, user_b]
+              properties:
+                course_id: { type: string }
+                user_a: { type: string, format: uuid }
+                user_b: { type: string, format: uuid }
+                reason: { type: string }
+      responses:
+        '201': { description: Exclusion added }
+
+  /assignment-strategy/exclusions/{id}:
+    delete:
+      tags: [Assignment Strategy]
+      summary: Remove exclusion rule
+      responses:
+        '204': { description: Exclusion removed }
+
+  /api/ai/review-depth:
+    post:
+      tags: [AI]
+      summary: Analyze review depth (constructiveness, specificity, actionability)
+      responses:
+        '200': { description: Depth scores }
+
+  /api/ai/score-suggestion:
+    post:
+      tags: [AI]
+      summary: Get AI score suggestion based on rubric
+      responses:
+        '200': { description: Suggested score range }
+
+  /api/ai/calibration:
+    post:
+      tags: [AI]
+      summary: Get score calibration advice
+      responses:
+        '200': { description: Calibration recommendation }
+
+  /api/ai/score-reasoning:
+    post:
+      tags: [AI]
+      summary: Generate scoring rationale
+      responses:
+        '200': { description: Reasoning text }
+
+  /api/ai/similarity:
+    post:
+      tags: [AI]
+      summary: Run TF-IDF similarity detection between submissions
+      responses:
+        '200': { description: Pairwise similarity scores }
+
+  /api/ai/similarity/turnitin:
+    post:
+      tags: [AI]
+      summary: Mock Turnitin plagiarism check
+      responses:
+        '200': { description: Mock plagiarism report }
+
+  /api/ai/chat:
+    post:
+      tags: [AI]
+      summary: Multi-turn AI conversation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, context_type]
+              properties:
+                message: { type: string }
+                context_type: { type: string, enum: [writing_review, reading_review, teacher_summary] }
+                context_id: { type: string, format: uuid }
+                conversation_id: { type: string, format: uuid }
+      responses:
+        '200': { description: AI reply with conversation_id }
+
 components:
   securitySchemes:
     cookieAuth:

@@ -41,8 +41,11 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:5173}
       AI_SERVICE_URL: http://ai-service:5001
       AI_API_KEY: ${AI_API_KEY:-}
+      REDIS_URL: redis://redis:6379
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     volumes:
@@ -88,6 +91,26 @@ services:
           cpus: "1"
           memory: 1G
 
+  # ── Redis (cache, token blacklist, rate limiting) ────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
   # ── React Frontend (nginx) ───────────────────────────────
   frontend:
     build:
@@ -113,3 +136,4 @@ services:
 volumes:
   dbdata: {}
   backend_uploads: {}
+  redisdata: {}

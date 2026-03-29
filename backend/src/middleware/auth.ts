@@ -49,7 +49,7 @@ export async function authenticate(
     };
 
     // Reject blacklisted (logged-out) tokens
-    if (decoded.jti && isBlacklisted(decoded.jti)) {
+    if (decoded.jti && await isBlacklisted(decoded.jti)) {
       res.status(401).json({ error: 'token_revoked', message: 'Token has been revoked' });
       return;
     }

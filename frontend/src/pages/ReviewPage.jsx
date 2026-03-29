@@ -12,6 +12,12 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import ScoreSelector from '../components/ScoreSelector';
 import { FileReviewRubric } from '../components/RubricPanel';
+import ScoreSuggestionPanel from '../components/ai/ScoreSuggestionPanel';
+import CalibrationAlert from '../components/ai/CalibrationAlert';
+import AiChatWidget from '../components/ai/AiChatWidget';
+import useAutoSave from '../hooks/useAutoSave';
+import RichTextEditor from '../components/editor/RichTextEditor';
+import PdfViewer from '../components/editor/PdfViewer';
 
 /**
  * Single review form: load assignment (GET /reviews/:id), submit (POST /reviews/:id/submit).
@@ -40,6 +46,9 @@ export default function ReviewPage() {
   const [rewriteError, setRewriteError] = useState('');
   const [rewriteAdopted, setRewriteAdopted] = useState(false);
   const [draftStatus, setDraftStatus] = useState('');
+
+  /* Calibration deviation data */
+  const [deviationData, setDeviationData] = useState(null);
 
   useEffect(() => {
     API.get(`/reviews/${id}`)
@@ -109,6 +118,25 @@ export default function ReviewPage() {
     };
     loadCachedAi();
   }, [id, review]);
+
+  /* useAutoSave: periodically saves draft to backend */
+  const autoSaveFn = async (data) => {
+    await API.patch(`/reviews/${id}/draft`, data);
+  };
+  const { saving: autoSaving, lastSaved: autoSavedAt } = useAutoSave({
+    data: { score, comments },
+    saveFn: autoSaveFn,
+    intervalMs: 30000,
+    enabled: !!id && !review?.review_id,
+  });
+
+  /* Fetch calibration deviation data */
+  useEffect(() => {
+    if (!id) return;
+    API.get(`/api/ai/calibration/${id}`)
+      .then((res) => setDeviationData(res.data))
+      .catch(() => {});
+  }, [id]);
 
   const handleSubmit = async () => {
     if (!comments.trim()) {
@@ -225,11 +253,7 @@ export default function ReviewPage() {
             </h3>
             {review?.file_url ? (
               review.file_url.endsWith('.pdf') ? (
-                <iframe
-                  src={review.file_url}
-                  title="Document Preview"
-                  className="w-full h-[450px] border-0 rounded-lg bg-white"
-                />
+                <PdfViewer url={review.file_url} className="w-full h-[450px] rounded-lg" />
               ) : (
                 <div className="mt-3">
                   <p className="text-sm text-slate-500">This file type cannot be previewed inline.</p>
@@ -283,19 +307,22 @@ export default function ReviewPage() {
                   <div className="mt-3">
                     <FileReviewRubric currentScore={score} courseId={review?.course_id} />
                   </div>
+                  <ScoreSuggestionPanel reviewId={id} currentScore={score} onAccept={(s) => setScore(s)} />
+                  {deviationData && <CalibrationAlert deviation={deviationData} />}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="comments">Comments</label>
-                  <textarea
-                    id="comments"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#000E2F]/40 focus:border-[#000E2F]/30 resize-y"
-                    placeholder="Provide detailed feedback on this submission..."
+                  <RichTextEditor
                     value={comments}
-                    onChange={(e) => setComments(e.target.value)}
-                    rows={6}
+                    onChange={setComments}
+                    placeholder="Write your review..."
                   />
-                  {draftStatus ? <p className="text-xs text-slate-400 mt-1">{draftStatus}</p> : null}
+                  {(draftStatus || autoSaving || autoSavedAt) && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {autoSaving ? 'Auto-saving...' : autoSavedAt ? `Auto-saved at ${autoSavedAt.toLocaleTimeString()}` : draftStatus}
+                    </p>
+                  )}
                 </div>
 
                 {/* AI Action Buttons */}
@@ -416,6 +443,8 @@ export default function ReviewPage() {
           </Card>
         </motion.div>
       </div>
+
+      <AiChatWidget contextType="writing_review" contextId={id} />
     </div>
   );
 }

@@ -214,4 +214,64 @@ The production nginx.conf includes these security headers:
 
 ---
 
-*Document version: 2.0 — 2026-03*
+## v3.0 Deployment Notes
+
+### Redis Service
+- Docker Compose includes `redis:7-alpine` on port 6379
+- Backend connects via `REDIS_URL` env var (defaults to `redis://redis:6379` in Docker)
+- Redis is **optional**: system degrades gracefully to in-memory caching/blacklisting
+- Recommended: 256MB maxmemory with `allkeys-lru` eviction policy
+
+### New Database Migrations (021-036)
+Run automatically on backend startup via `migrateUp()`. Key tables added:
+- `semesters` — Academic semester management
+- `announcements` — Enhanced announcements with pinned/scheduled/attachments
+- `anonymous_reviewer_map` — Stable pseudonyms for anonymous reviews
+- `review_exclusions` — Conflict-of-interest rules for reviewer assignment
+- `review_helpfulness` — Student votes on review usefulness
+- `reviewer_reputation` — Aggregate reviewer quality metrics
+- `review_depth_scores` — AI-computed review depth metrics
+- `grade_weights` — Per-course grading weight configuration
+- `similarity_reports` — Plagiarism/similarity detection results
+- `ai_conversations` — Multi-turn AI chat history
+- `lms_config` — LMS integration configuration (mock)
+- `deadline_reminders` / `deadline_extensions` — Reminder and extension management
+- `review_attachments` — Rich text review file attachments
+- `user_preferences` — User theme/font/contrast settings
+- `data_deletion_requests` — GDPR account deletion requests
+- `ai_score_suggestions` / `ai_calibration_results` — AI scoring assistant data
+
+### New Environment Variables
+| Variable | Service | Default | Description |
+|----------|---------|---------|-------------|
+| `REDIS_URL` | Backend | _(none)_ | Redis connection URL |
+| `OBJECT_STORAGE_TYPE` | Backend | `local` | `local` or `mock-s3` |
+| `REMINDER_CHECK_INTERVAL_MS` | Backend | `900000` | Deadline reminder check interval (ms) |
+
+### AI Service Dependencies
+- New pip package: `scikit-learn>=1.3.0` (for TF-IDF similarity detection)
+- 7 new AI endpoints added (review-depth, score-suggestion, calibration, score-reasoning, similarity, similarity/turnitin, chat)
+
+### Frontend Changes
+- 11 new pages (33 total, all lazy-loaded)
+- PWA support via vite-plugin-pwa (generates sw.js + workbox runtime caching)
+- Dark mode (Tailwind `darkMode: 'class'` + CSS variables)
+- New npm packages: recharts, @tiptap/react, react-pdf, vite-plugin-pwa, diff, react-virtuoso
+
+### Nginx Configuration
+Ensure all new route prefixes have proxy `location` blocks:
+`/anonymity`, `/assignment-strategy`, `/quality`, `/semesters`, `/revisions`, `/grades`, `/lms`, `/deadlines`, `/preferences`, `/compliance`, `/similarity`, `/rubrics`, `/assignment-templates`
+
+### Scheduler
+- Deadline reminder scheduler starts automatically on backend boot
+- Runs every 15 minutes (configurable via `REMINDER_CHECK_INTERVAL_MS`)
+- Creates notifications for students with approaching deadlines
+
+### TA Role
+- New `ta` value in `user_role` enum (migration 022)
+- TA has instructor-level read access but cannot create peer review sessions
+- Configure via `user_enrollments` table with `role = 'ta'`
+
+---
+
+*Document version: 3.0 — 2026-03*

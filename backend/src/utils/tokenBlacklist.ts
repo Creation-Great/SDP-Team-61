@@ -1,38 +1,60 @@
 /**
- * In-memory JWT blacklist.
+ * JWT blacklist backed by Redis with in-memory fallback.
  *
- * When a user logs out the token's JTI (JWT ID) is added here so the
- * auth middleware can reject it even before it expires.
+ * When Redis is available, revoked tokens are stored with TTL matching
+ * the token's remaining lifetime — they auto-expire, no manual purge needed.
  *
- * Entries are automatically purged once they pass their original expiry
- * time to prevent unbounded memory growth.
- *
- * NOTE: This is a per-process store.  In a multi-instance / clustered
- * deployment you would replace this with a shared store (e.g. Redis).
+ * When Redis is unavailable, falls back to the original in-memory Map
+ * with periodic purge (same as before).
  */
+import { getRedis } from './redis.js';
 
 interface BlacklistEntry {
   /** Epoch-seconds at which the original JWT expires */
   exp: number;
 }
 
-const store = new Map<string, BlacklistEntry>();
+// In-memory fallback store
+const memStore = new Map<string, BlacklistEntry>();
 
-/** Add a token to the blacklist.  `jti` is the JWT ID, `exp` is the
- *  expiry timestamp (seconds since epoch) copied from the token payload. */
-export function blacklistToken(jti: string, exp: number): void {
-  store.set(jti, { exp });
+const KEY_PREFIX = 'bl:';
+
+/**
+ * Add a token to the blacklist.
+ * `jti` is the JWT ID, `exp` is the expiry timestamp (seconds since epoch).
+ */
+export async function blacklistToken(jti: string, exp: number): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    const ttl = Math.max(exp - Math.floor(Date.now() / 1000), 1);
+    try {
+      await redis.setex(`${KEY_PREFIX}${jti}`, ttl, '1');
+      return;
+    } catch {
+      // fall through to in-memory
+    }
+  }
+  memStore.set(jti, { exp });
 }
 
 /** Returns `true` if the token has been revoked. */
-export function isBlacklisted(jti: string): boolean {
-  return store.has(jti);
+export async function isBlacklisted(jti: string): Promise<boolean> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const val = await redis.exists(`${KEY_PREFIX}${jti}`);
+      return val === 1;
+    } catch {
+      // fall through to in-memory
+    }
+  }
+  return memStore.has(jti);
 }
 
-// Purge expired entries every 10 minutes
+// Purge expired entries from in-memory fallback every 10 minutes
 setInterval(() => {
   const now = Math.floor(Date.now() / 1000);
-  for (const [jti, entry] of store) {
-    if (entry.exp <= now) store.delete(jti);
+  for (const [jti, entry] of memStore) {
+    if (entry.exp <= now) memStore.delete(jti);
   }
-}, 10 * 60 * 1000).unref();   // .unref() so the timer doesn't keep Node alive
+}, 10 * 60 * 1000).unref();

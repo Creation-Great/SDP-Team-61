@@ -1,15 +1,15 @@
 # SDP Peer Review System – Integrated
 
-> AI-enhanced peer review platform for university courses. Built with **UConn Blue (#000E2F)** theme, featuring **SSE real-time streaming**, review quality flags, global search, AI-powered writing tools, and instructor analytics. Integrated from `SDP-Team-61-main`, `SDP-Team-61-old-main`, and `SDP-Team-61-anish-dev`, keeping the strengths of each.
+> AI-enhanced peer review platform for university courses. Built with **UConn Blue (#000E2F)** theme, featuring **SSE real-time streaming**, review quality flags, global search, AI-powered writing tools, and instructor analytics. Integrated from `SDP-Team-61-main`, `SDP-Team-61-old-main`, and `SDP-Team-61-anish-dev`, keeping the strengths of each. **v3.0** adds anonymous reviews, multi-round revisions, 4 assignment strategies, AI scoring/calibration/similarity detection, grade management, semesters, dark mode, PWA, Redis caching, and GDPR compliance.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | React 19 · React Router 7 · Vite 7 · Axios · Tailwind CSS · Lucide Icons · Framer Motion |
-| **Backend** | TypeScript (ES2022) · Express 5 · PostgreSQL 16 · JWT httpOnly cookies · Zod 4 · Pino |
-| **AI Service** | Python · Flask · OpenAI GPT-4o-mini · psycopg2 |
-| **DevOps** | Docker Compose (4 services) · GitHub Actions CI · ESLint 9 · Prettier |
+| **Frontend** | React 19 · React Router 7 · Vite 7 · Axios · Tailwind CSS · Lucide Icons · Framer Motion · Recharts · PWA (vite-plugin-pwa) |
+| **Backend** | TypeScript (ES2022) · Express 5 · PostgreSQL 16 · JWT httpOnly cookies · Zod 4 · Pino · Redis 7 · ioredis |
+| **AI Service** | Python · Flask · OpenAI GPT-4o-mini · psycopg2 · scikit-learn (TF-IDF) |
+| **DevOps** | Docker Compose (5 services) · GitHub Actions CI · ESLint 9 · Prettier · Redis 7-alpine |
 | **Testing** | Backend: Jest 29 · ts-jest · Supertest · Frontend: Vitest · @testing-library/react · Playwright E2E |
 
 ## Architecture
@@ -20,13 +20,13 @@
 │  React 19 / Vite     │       │  Express 5 + JWT     │      │  RLS + Audit │
 │  Tailwind + UConn    │◀─SSE─│  Pino + Zod + Helmet │      │  :5432       │
 │  :5173 (dev)         │       │  :8080               │      └──────────────┘
-│  :80  (prod/nginx)   │       └──────────┬───────────┘
-└──────────────────────┘                  │
-         │                        ┌───────▼────────┐
-         │  Notifications         │  AI Service    │
-         │  Search / SSE          │  Flask + OpenAI│
-         │  Feedback / Rewrite    │  :5001         │
-         │  Polish / Summarize    │                │
+│  :80  (prod/nginx)   │       └──────────┬───────────┘             │
+└──────────────────────┘                  │                  ┌──────┴───────┐
+         │                        ┌───────▼────────┐       │  Redis 7     │
+         │  Notifications         │  AI Service    │       │  Cache + BL  │
+         │  Search / SSE          │  Flask + OpenAI│       │  :6379       │
+         │  Feedback / Rewrite    │  + scikit-learn│       └──────────────┘
+         │  Polish / Summarize    │  :5001         │
          └───────proxy─────────▶ └────────────────┘
 ```
 
@@ -108,6 +108,115 @@
 - **SSL Keys Excluded**: `.gitignore` blocks `ssl/` and `*.pem` files from version control
 - **JWT_SECRET**: Required via `.env` — no hardcoded fallback in docker-compose
 
+### v3.0 — New Features
+
+#### Anonymous Review System
+- **Single-blind**: Reviewer identity hidden from author (Author sees "Anonymous Reviewer #N")
+- **Double-blind**: Both reviewer and author identities hidden from each other
+- **Per-session configuration**: Instructor selects anonymity level when creating peer review sessions
+- Stable pseudonyms via `anonymous_reviewer_map` table
+
+#### Multi-Round Review (Revision Cycle)
+- **Revision submissions**: Students create new revisions linked to parent submissions via `parent_submission_id`
+- **Auto-reassignment**: Original reviewers automatically assigned to review new revisions
+- **Version history**: Recursive CTE walks the revision chain; `RevisionHistoryPage` displays all versions
+- **Diff view**: Line-by-line comparison between current and previous revision metadata
+
+#### Assignment Strategy Optimization
+- **4 strategies**: `random` (default), `load_balanced` (fewest pending tasks first), `reciprocal` (mutual A↔B reviews), `manual_only` (no auto-assign)
+- **Exclusion rules**: `review_exclusions` table prevents specific student pairs from reviewing each other
+- **Min review guarantee**: `min_reviews_required` ensures each submission gets N reviews
+
+#### Review Quality Assessment
+- **Helpfulness voting**: Students vote thumbs-up/down on received reviews (`review_helpfulness` table)
+- **Consistency alerts**: Flags submissions where reviewer scores differ by >2 points
+- **AI depth scoring**: Constructiveness, specificity, actionability scores via `/api/ai/review-depth`
+- **Reviewer reputation**: Aggregate metrics in `reviewer_reputation` table
+
+#### AI Scoring & Calibration
+- **Score suggestion**: AI suggests score range based on rubric + submission content (`/api/ai/score-suggestion`)
+- **Calibration**: Compares reviewer's score with peer average, provides adjustment advice (`/api/ai/calibration`)
+- **Score reasoning**: AI generates explanation text for a given score (`/api/ai/score-reasoning`)
+
+#### Plagiarism / Similarity Detection
+- **TF-IDF cosine similarity**: Pairwise comparison between submissions using scikit-learn
+- **Mock Turnitin**: Simulated external plagiarism check (`/api/ai/similarity/turnitin`)
+- **Similarity dashboard**: Instructor view of all similarity reports with color-coded scores
+- Results stored in `similarity_reports` table
+
+#### AI Conversational Assistant
+- **3 context modes**: `writing_review` (help write reviews), `reading_review` (interpret feedback), `teacher_summary` (aggregate analysis)
+- **Multi-turn conversations**: Persisted in `ai_conversations` table with full message history
+- **Floating widget**: `AiChatWidget` embedded in ReviewPage and PeerReviewFormPage
+- **Standalone page**: Full chat interface at `/ai-assistant`
+
+#### Grade Management
+- **Weight configuration**: Per-course weights for file review, peer review, and check-in components
+- **Drop lowest/highest**: Configurable extremes removal before averaging
+- **Weighted final grade**: Auto-calculated with normalized percentages
+- **CSV export**: Download final grades as CSV file
+
+#### LMS Integration (Mock)
+- **Mock LTI 1.3**: Simulated launch, grade passback, and roster import endpoints
+- **Provider configuration**: Per-course LMS config stored in `lms_config` table
+- **Mock Canvas/Blackboard/Moodle**: Returns realistic mock responses for testing
+
+#### Course Management Enhancements
+- **Semesters**: CRUD for academic semesters with active/inactive toggle
+- **Course cloning**: Copy rubrics, templates, and policies from one course to another
+- **TA role**: New `ta` role with instructor-level read access but restricted write permissions
+- **Enhanced announcements**: Support for pinned, scheduled, and attachment-enabled announcements
+
+#### Deadline & Reminder System
+- **Automated reminders**: Scheduler checks every 15 minutes for upcoming deadlines
+- **Grace periods**: Configurable `grace_period_hours` per session/template
+- **Individual extensions**: Instructor can extend deadlines for specific students
+- **Calendar API**: `GET /deadlines/calendar` returns all upcoming deadlines for the current user
+- **Calendar page**: Monthly grid view with color-coded deadline types
+
+#### Dashboard Data Visualization
+- **Score distribution**: Bar chart histogram of review scores (1-5)
+- **Activity trends**: SVG line chart showing weekly submissions and reviews
+- **Peer review radar**: 3-axis radar chart (technical, interactions, management)
+- **Completion heatmap**: Student × assignment grid with color-coded completion status
+
+#### Rich Text Review Editor
+- **Markdown toolbar**: Bold, italic, list, code formatting via `RichTextEditor` component
+- **PDF viewer**: In-system PDF display via `PdfViewer` component (replaces raw iframe)
+- **Inline annotations**: `InlinePdfAnnotator` for position-based PDF comments
+- **File attachments**: `AttachmentUpload` component with drag-and-drop support
+
+#### PWA & Mobile
+- **Service Worker**: Generated by vite-plugin-pwa with Workbox precaching
+- **Offline caching**: NetworkFirst strategy for API calls (5-minute TTL)
+- **Swipe gestures**: `useSwipeToDismiss` hook for notification items
+- **Responsive design**: Tailwind mobile-first with sidebar drawer
+
+#### Accessibility
+- **Dark mode**: Toggle via `DarkModeToggle` component; CSS variables in `.dark` class
+- **Font size control**: S/M/L selector via `FontSizeSelector` component
+- **ARIA labels**: On all interactive components (buttons, score selectors, toggles)
+- **Keyboard navigation**: Arrow keys + Space/Enter for score selection, radio groups
+- **User preferences page**: Centralized settings at `/settings/preferences`
+
+#### Offline & Collaborative Editing
+- **Auto-save**: `useAutoSave` hook saves drafts to server every 30 seconds
+- **Version conflict detection**: Returns HTTP 409 if draft version is stale
+- **Offline queue**: `useOfflineQueue` hook stores failed requests in IndexedDB, syncs on reconnect
+
+#### Audit & Compliance
+- **Review integrity**: SHA-256 hashes stored in `review_hash` column on both review tables
+- **GDPR data export**: Download all personal data as JSON via `/compliance/export/:userId`
+- **Account deletion**: Request deletion via `/compliance/deletion-request`
+- **Audit log viewer**: Admin page at `/admin/audit` with paginated event history
+
+#### Performance & Infrastructure
+- **Redis 7**: Docker service for caching, token blacklist, and rate limiting
+- **Token blacklist persistence**: Redis SETEX with TTL auto-expiry; in-memory fallback
+- **Object storage abstraction**: `LocalStorageAdapter` + `MockS3Adapter` for file uploads
+- **Virtual scrolling**: `react-virtuoso` on AuditLogPage and FinalGradeTable
+- **Rate limiting**: Redis-backed rate limits across all API endpoints
+
 ### Accessibility (WCAG 2.1)
 - **ARIA radiogroup**: Score selectors use `role="radiogroup/radio"` with full keyboard navigation
 - **Live regions**: Error messages use `role="alert"` + `aria-live="assertive"` for screen reader announcements
@@ -119,7 +228,7 @@
 - **Structured Logging**: Pino with pino-pretty (dev) / JSON (production)
 - **ESLint 9 Flat Config**: TypeScript-ESLint for backend, React Hooks + Refresh for frontend
 - **Prettier**: Unified code formatting across the monorepo
-- **Backend Tests**: Jest — 14 suites / 67 tests (utils, middleware, auth, submissions, peer review, instructor, AI controller, review, rubric, enrollment, assignment template)
+- **Backend Tests**: Jest — 14 suites / 67 tests (utils, middleware, auth, submissions, peer review, instructor, AI controller, review, rubric, enrollment, assignment template). Test counts are for the v2.0 baseline; v3.0 controllers added but tests pending.
 - **AI Service Tests**: pytest — 7 tests (healthz, feedback, polish, search)
 - **Frontend Unit Tests**: Vitest — 6 suites / 38 tests (`useFilteredList`, `useSSE`, `csvHelpers`, EmptyState, Button, OfflineBanner)
 - **E2E**: Playwright — login, submission, instructor dashboard, peer review flows (runs Chromium in CI)
@@ -170,7 +279,7 @@ OPENAI_API_KEY=sk-... python app.py     # Flask on :5001
 ### One-command (from root)
 
 ```bash
-docker compose up -d            # All 4 services
+docker compose up -d            # All 5 services
 # or for dev:
 npm run install:all             # installs backend + frontend
 npm run dev                     # runs backend + frontend concurrently
@@ -331,7 +440,7 @@ SDP-Team-61-integrated/
 ├── .github/workflows/ci.yml     # GitHub Actions: 4-job CI pipeline
 ├── .prettierrc                   # Shared Prettier config
 ├── .prettierignore
-├── docker-compose.yml            # PostgreSQL + Backend + AI + Frontend
+├── docker-compose.yml            # PostgreSQL + Backend + AI + Frontend + Redis
 ├── package.json                  # Monorepo root (concurrently, lint, format)
 ├── start-dev.ps1                 # One-click local dev startup script
 │
@@ -518,7 +627,7 @@ SDP-Team-61-integrated/
 |---------|-------------|
 | `npm run dev` | Start with tsx watch (hot reload) |
 | `npm run build` | TypeScript compile |
-| `npm test` | Jest test suite (14 suites, 67 tests) |
+| `npm test` | Jest test suite (14 suites, 67 tests; v3.0 tests pending) |
 | `npm run lint` | ESLint check |
 | `npm run format` | Prettier format |
 | `npm run migrate` | Run DB migrations (up) |
@@ -616,7 +725,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | Enhanced UI components | anish-dev | Skeleton, Toast, ConfirmDialog, animations |
 | Error Boundary | anish-dev | Graceful error fallback with retry |
 
-## Database Schema (20 migrations)
+## Database Schema (36 migrations)
 
 | Migration | Tables / Changes |
 |-----------|-----------------|
@@ -640,6 +749,22 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | 018 | `assignment_templates` + `submissions.assignment_template_id` |
 | 019 | Performance indexes (`submissions`, `peer_reviews`, `rewrite_suggestions`, `peer_review_sessions`, `team_chemistry`) |
 | 020 | Data lifecycle cleanup functions (`cleanup_old_drafts`, `cleanup_old_notifications`, `cleanup_old_ai_logs`) |
+| 021 | `anonymous_reviewer_map`, `anonymity_level` enum, session/submission anonymity columns |
+| 022 | `revision_number`, `parent_submission_id` on submissions; `review_round` on reviews |
+| 023 | `assignment_strategy` enum, `review_exclusions` table, `min_reviews_required` column |
+| 024 | `review_helpfulness` table, `reviewer_reputation` table |
+| 025 | AI scoring tables: `score_suggestions`, `calibration_results` |
+| 026 | `similarity_reports` table (TF-IDF + mock Turnitin results) |
+| 027 | `ai_conversations` table (multi-turn AI assistant history) |
+| 028 | `grade_weights` table, `final_grades` view |
+| 029 | `lms_config` table (mock LTI 1.3 configuration) |
+| 030 | `semesters` table, `courses.semester_id` FK |
+| 031 | Enhanced `announcements` (pinned, scheduled_at, attachment columns) |
+| 032 | `deadline_reminders`, `deadline_extensions` tables, `grace_period_hours` column |
+| 033 | `review_hash` column on reviews + peer_review_scores |
+| 034 | `compliance_requests` table (GDPR export/deletion) |
+| 035 | `user_preferences` table (theme, font_size, contrast) |
+| 036 | Performance indexes for v3.0 tables |
 
 ## License
 

@@ -12,6 +12,7 @@ import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import { PeerReviewRubric } from '../components/RubricPanel';
+import AiChatWidget from '../components/ai/AiChatWidget';
 
 const POLL_INTERVAL = 5000;
 
@@ -524,6 +525,8 @@ export default function PeerReviewFormPage() {
           )}
         </div>
       </form>
+
+      <AiChatWidget contextType="writing_review" contextId={sessionId} />
     </div>
   );
 }

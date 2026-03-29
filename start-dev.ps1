@@ -148,7 +148,7 @@ if ($Docker) {
         Write-Warn "Created root .env from .env.example - set JWT_SECRET etc. if needed"
     }
 
-    Write-Step "Starting all Docker containers (db + backend + ai-service + frontend)..."
+    Write-Step "Starting all Docker containers (db + redis + backend + ai-service + frontend)..."
     Push-Location $ProjectRoot
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -219,6 +219,7 @@ if ($Docker) {
     Write-Host "  API docs:    " -NoNewline; Write-Host "http://localhost:8080/api-docs" -ForegroundColor Gray
     Write-Host "  AI service:  " -NoNewline; Write-Host "http://localhost:5001" -ForegroundColor Gray
     Write-Host "  Database:    " -NoNewline; Write-Host "localhost:5432" -ForegroundColor Gray
+    Write-Host "  Redis:       " -NoNewline; Write-Host "localhost:6379" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  Test accounts:" -ForegroundColor White
     Write-Host "    instructor@example.com / password123  (instructor)"
@@ -358,6 +359,15 @@ if ($waited -ge $maxWait) {
     exit 1
 }
 Write-Ok "PostgreSQL ready (healthy)"
+
+Write-Step "Starting Redis container..."
+Push-Location $ProjectRoot
+try {
+    docker compose up redis -d 2>&1 | Out-Host
+} catch {
+    Write-Warn "Redis startup failed (optional — system works without Redis)"
+}
+Pop-Location
 
 # ══════════════════════════════════════════════════════════
 # STEP 3 — .env config
@@ -530,6 +540,7 @@ if ($WithAI) {
     Write-Host "  AI service:  " -NoNewline; Write-Host "http://localhost:5001" -ForegroundColor Cyan
 }
 Write-Host "  Database:   " -NoNewline; Write-Host "localhost:5432" -ForegroundColor Gray
+Write-Host "  Redis:      " -NoNewline; Write-Host "localhost:6379" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Test accounts:" -ForegroundColor White
 Write-Host "    instructor@example.com / password123  (instructor)"

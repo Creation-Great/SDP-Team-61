@@ -6,7 +6,9 @@ import API from '../services/api';
 import {
   BookOpen, Upload, Users, BarChart3, CheckSquare, ClipboardList, UserPlus, GraduationCap,
   LogOut, Sparkles, Menu, X, Pencil, Check, XCircle, BellRing, Download, FileText,
+  Calendar, Settings, SearchCheck, Link,
 } from 'lucide-react';
+import DarkModeToggle from './a11y/DarkModeToggle';
 
 const studentNav = [
   { to: '/dashboard', label: 'Dashboard', icon: BookOpen },
@@ -16,6 +18,10 @@ const studentNav = [
   { to: '/my-grades', label: 'My Grades', icon: GraduationCap },
   { to: '/student/checkins', label: 'Weekly Check-ins', icon: CheckSquare },
   { to: '/settings/notifications', label: 'Notification Prefs', icon: BellRing },
+  { to: '/calendar', label: 'Calendar', icon: Calendar },
+  { to: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
+  { to: '/settings/preferences', label: 'Preferences', icon: Settings },
+  { to: '/settings/data-export', label: 'Data Export', icon: Download },
 ];
 
 const instructorNav = [
@@ -28,6 +34,13 @@ const instructorNav = [
   { to: '/instructor/assignment-templates', label: 'Assignment Templates', icon: FileText },
   { to: '/instructor/exports', label: 'Export Center', icon: Download },
   { to: '/settings/notifications', label: 'Notification Prefs', icon: BellRing },
+  { to: '/instructor/grades', label: 'Grade Management', icon: GraduationCap },
+  { to: '/instructor/semesters', label: 'Semesters', icon: Calendar },
+  { to: '/instructor/similarity', label: 'Similarity Check', icon: SearchCheck },
+  { to: '/instructor/lms', label: 'LMS Integration', icon: Link },
+  { to: '/instructor/advanced-analytics', label: 'Charts', icon: BarChart3 },
+  { to: '/settings/preferences', label: 'Preferences', icon: Settings },
+  { to: '/settings/data-export', label: 'Data Export', icon: Download },
 ];
 
 export default function Sidebar() {
@@ -181,6 +194,9 @@ export default function Sidebar() {
               {user?.role || 'student'}
             </div>
           </div>
+        </div>
+        <div className="px-3 py-1.5">
+          <DarkModeToggle />
         </div>
         <button
           onClick={handleLogout}

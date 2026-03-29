@@ -4,6 +4,7 @@ import { Loader2, AlertCircle, ArrowLeft, Download, MessageSquare, Star, Sparkle
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import HelpfulnessVote from '../components/review/HelpfulnessVote';
 
 /**
  * View submission and its reviews. GET /reviews/by-submission/:submissionId. Optional AI summary/feedback.
@@ -214,6 +215,11 @@ export default function ViewReviewPage() {
                   {fb?.error && (
                     <p className="text-xs text-red-500 mt-1">Analysis failed</p>
                   )}
+                </div>
+
+                {/* Helpfulness Vote */}
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <HelpfulnessVote reviewId={review.review_id} />
                 </div>
               </Card>
             );

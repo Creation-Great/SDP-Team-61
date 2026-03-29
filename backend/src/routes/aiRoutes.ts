@@ -18,6 +18,13 @@ import {
   postSummarize,
   getAiLogs,
   getSearch,
+  postReviewDepth,
+  postScoreSuggestion,
+  postCalibration,
+  postScoreReasoning,
+  postSimilarity,
+  postSimilarityTurnitin,
+  postChat,
 } from '../controllers/aiController.js';
 import { h } from '../utils/asyncHandler.js';
 
@@ -44,5 +51,24 @@ router.get('/logs', h(getAiLogs));
 
 // Search
 router.get('/search', h(getSearch));
+
+// Review depth analysis
+router.post('/review-depth', h(postReviewDepth));
+
+// Score suggestion
+router.post('/score-suggestion', h(postScoreSuggestion));
+
+// Calibration
+router.post('/calibration', h(postCalibration));
+
+// Score reasoning
+router.post('/score-reasoning', h(postScoreReasoning));
+
+// Similarity detection
+router.post('/similarity', h(postSimilarity));
+router.post('/similarity/turnitin', h(postSimilarityTurnitin));
+
+// Conversational AI chat
+router.post('/chat', h(postChat));
 
 export default router;

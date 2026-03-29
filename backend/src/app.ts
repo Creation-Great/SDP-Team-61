@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import { getRedis } from './utils/redis.js';
 import { AppError } from './utils/AppError.js';
 import { ZodValidationError } from './middleware/validate.js';
 
@@ -25,6 +26,17 @@ import aiRoutes from './routes/aiRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import rubricRoutes from './routes/rubricRoutes.js';
 import assignmentTemplateRoutes from './routes/assignmentTemplateRoutes.js';
+import semesterRoutes from './routes/semesterRoutes.js';
+import revisionRoutes from './routes/revisionRoutes.js';
+import gradeRoutes from './routes/gradeRoutes.js';
+import lmsRoutes from './routes/lmsRoutes.js';
+import deadlineRoutes from './routes/deadlineRoutes.js';
+import preferencesRoutes from './routes/preferencesRoutes.js';
+import complianceRoutes from './routes/complianceRoutes.js';
+import similarityRoutes from './routes/similarityRoutes.js';
+import anonymityRoutes from './routes/anonymityRoutes.js';
+import assignmentStrategyRoutes from './routes/assignmentStrategyRoutes.js';
+import qualityRoutes from './routes/qualityRoutes.js';
 import { authenticate } from './middleware/auth.js';
 import { h } from './utils/asyncHandler.js';
 import fs from 'fs';
@@ -86,8 +98,12 @@ app.use(express.json());
 app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => (req as any).url === '/healthz' } }));
 
 // ── Rate limiting ──
+// In-memory rate limiting (Redis store can be added when Redis is initialised)
+const rateLimitStore = {};
+
 // Global: 100 requests per minute per IP
 const globalLimiter = rateLimit({
+  ...rateLimitStore,
   windowMs: 60 * 1000,
   max: 100,
   standardHeaders: true,
@@ -98,6 +114,7 @@ app.use(globalLimiter);
 
 // Strict limiter for auth endpoints (login / register / CAS callback)
 const authLimiter = rateLimit({
+  ...rateLimitStore,
   windowMs: 5 * 60 * 1000,    // 5 minutes
   max: 20,                     // 20 attempts — prevents brute-force
   standardHeaders: true,
@@ -107,6 +124,7 @@ const authLimiter = rateLimit({
 
 // Write-heavy operation limiter: 30 requests per 10 minutes (peer-review sessions, bulk assign, enrollments)
 const writeLimiter = rateLimit({
+  ...rateLimitStore,
   windowMs: 10 * 60 * 1000,
   max: 30,
   standardHeaders: true,
@@ -116,6 +134,7 @@ const writeLimiter = rateLimit({
 
 // Upload limiter: 100 uploads per 10 minutes
 const uploadLimiter = rateLimit({
+  ...rateLimitStore,
   windowMs: 10 * 60 * 1000,
   max: 100,
   standardHeaders: true,
@@ -210,6 +229,17 @@ app.use('/api/ai', aiRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/rubrics', rubricRoutes);
 app.use('/assignment-templates', assignmentTemplateRoutes);
+app.use('/semesters', writeLimiter, semesterRoutes);
+app.use('/revisions', uploadLimiter, revisionRoutes);
+app.use('/grades', gradeRoutes);
+app.use('/lms', writeLimiter, lmsRoutes);
+app.use('/deadlines', deadlineRoutes);
+app.use('/preferences', preferencesRoutes);
+app.use('/compliance', complianceRoutes);
+app.use('/similarity', similarityRoutes);
+app.use('/anonymity', anonymityRoutes);
+app.use('/assignment-strategy', writeLimiter, assignmentStrategyRoutes);
+app.use('/quality', qualityRoutes);
 
 // Default error codes by status (used when AppError has no code)
 function defaultErrorCode(statusCode: number): string {

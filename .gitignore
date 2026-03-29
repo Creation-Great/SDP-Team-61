@@ -8,3 +8,17 @@ uploads/*
 ssl/
 
 cookies*.txt
+
+# Redis
+dump.rdb
+
+# PWA
+dist/sw.js
+dist/workbox-*.js
+
+# Test artifacts
+frontend/e2e-artifacts/
+frontend/playwright-report/
+frontend/test-results/
+frontend/debug-*.png
+*.png.bak

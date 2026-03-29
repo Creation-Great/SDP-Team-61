@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, Check, CheckCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import API from '../services/api';
+import useSwipeToDismiss from '../hooks/useSwipeToDismiss';
 
 /**
  * Notification bell with unread badge and dropdown panel.
@@ -105,6 +106,39 @@ export default function NotificationBell() {
     return `${days}d ago`;
   };
 
+  /* Inner component to allow per-item hook usage for swipe-to-dismiss */
+  function NotificationItem({ notification: n, onClick, onDismiss, timeAgo }) {
+    const { elementRef, onTouchStart, onTouchMove, onTouchEnd } = useSwipeToDismiss(onDismiss);
+    return (
+      <button
+        ref={elementRef}
+        onClick={onClick}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        className={`w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors flex items-start gap-3 ${
+          !n.is_read ? 'bg-blue-50/40' : ''
+        }`}
+        style={{ transition: 'transform 0.2s ease, opacity 0.2s ease' }}
+      >
+        <div className="mt-1 flex-shrink-0">
+          {!n.is_read ? (
+            <span className="block w-2 h-2 rounded-full bg-[#000E2F]" />
+          ) : (
+            <Check className="w-3.5 h-3.5 text-slate-300" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-700 truncate">{n.title}</div>
+          {n.body && (
+            <div className="text-xs text-slate-400 mt-0.5 line-clamp-2">{n.body}</div>
+          )}
+          <div className="text-xs text-slate-300 mt-1">{timeAgo(n.created_at)}</div>
+        </div>
+      </button>
+    );
+  }
+
   return (
     <div ref={wrapperRef} className="relative">
       <button
@@ -150,29 +184,13 @@ export default function NotificationBell() {
             )}
 
             {!loading && notifications.map((n) => (
-              <button
+              <NotificationItem
                 key={n.id}
+                notification={n}
                 onClick={() => handleClick(n)}
-                className={`w-full text-left px-4 py-3 border-b border-slate-50 hover:bg-slate-50 transition-colors flex items-start gap-3 ${
-                  !n.is_read ? 'bg-blue-50/40' : ''
-                }`}
-              >
-                {/* Unread indicator */}
-                <div className="mt-1 flex-shrink-0">
-                  {!n.is_read ? (
-                    <span className="block w-2 h-2 rounded-full bg-[#000E2F]" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5 text-slate-300" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-slate-700 truncate">{n.title}</div>
-                  {n.body && (
-                    <div className="text-xs text-slate-400 mt-0.5 line-clamp-2">{n.body}</div>
-                  )}
-                  <div className="text-xs text-slate-300 mt-1">{timeAgo(n.created_at)}</div>
-                </div>
-              </button>
+                onDismiss={() => markRead(n.id)}
+                timeAgo={timeAgo}
+              />
             ))}
           </div>
         </div>

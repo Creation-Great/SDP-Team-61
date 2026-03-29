@@ -33,6 +33,17 @@ const StudentGradesPage = lazy(() => import('./pages/StudentGradesPage'));
 const NotificationPreferencesPage = lazy(() => import('./pages/NotificationPreferencesPage'));
 const ExportCenterPage = lazy(() => import('./pages/ExportCenterPage'));
 const AssignmentTemplatesPage = lazy(() => import('./pages/AssignmentTemplatesPage'));
+const RevisionHistoryPage = lazy(() => import('./pages/RevisionHistoryPage'));
+const SimilarityDashboardPage = lazy(() => import('./pages/SimilarityDashboardPage'));
+const AiChatPage = lazy(() => import('./pages/AiChatPage'));
+const GradeManagementPage = lazy(() => import('./pages/GradeManagementPage'));
+const LmsConfigPage = lazy(() => import('./pages/LmsConfigPage'));
+const SemesterManagementPage = lazy(() => import('./pages/SemesterManagementPage'));
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const AdvancedAnalyticsPage = lazy(() => import('./pages/AdvancedAnalyticsPage'));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage'));
+const UserPreferencesPage = lazy(() => import('./pages/UserPreferencesPage'));
+const DataExportPage = lazy(() => import('./pages/DataExportPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 /** Loading fallback for lazy-loaded pages */
@@ -255,6 +266,93 @@ export default function App() {
           <InstructorRoute>
             <AppLayout><AssignmentTemplatesPage /></AppLayout>
           </InstructorRoute>
+        </ProtectedRoute>
+      } />
+
+      {/* Revision history */}
+      <Route path="/submissions/:id/revisions" element={
+        <ProtectedRoute>
+          <AppLayout><RevisionHistoryPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Similarity dashboard (instructor) */}
+      <Route path="/instructor/similarity" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><SimilarityDashboardPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+
+      {/* AI assistant */}
+      <Route path="/ai-assistant" element={
+        <ProtectedRoute>
+          <AppLayout><AiChatPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Grade management (instructor) */}
+      <Route path="/instructor/grades" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><GradeManagementPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+
+      {/* LMS config (instructor) */}
+      <Route path="/instructor/lms" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><LmsConfigPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+
+      {/* Semester management (instructor) */}
+      <Route path="/instructor/semesters" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><SemesterManagementPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+
+      {/* Calendar */}
+      <Route path="/calendar" element={
+        <ProtectedRoute>
+          <AppLayout><CalendarPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Advanced analytics (instructor) */}
+      <Route path="/instructor/advanced-analytics" element={
+        <ProtectedRoute>
+          <InstructorRoute>
+            <AppLayout><AdvancedAnalyticsPage /></AppLayout>
+          </InstructorRoute>
+        </ProtectedRoute>
+      } />
+
+      {/* Audit log (admin) */}
+      <Route path="/admin/audit" element={
+        <ProtectedRoute>
+          <AppLayout><AuditLogPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* User preferences */}
+      <Route path="/settings/preferences" element={
+        <ProtectedRoute>
+          <AppLayout><UserPreferencesPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Data export */}
+      <Route path="/settings/data-export" element={
+        <ProtectedRoute>
+          <AppLayout><DataExportPage /></AppLayout>
         </ProtectedRoute>
       } />
 

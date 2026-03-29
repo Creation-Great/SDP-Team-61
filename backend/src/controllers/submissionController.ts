@@ -96,15 +96,49 @@ export async function uploadSubmission(req: AuthRequest, res: Response): Promise
       filename,
     });
 
-    // ---- Auto-assign reviewers (course-isolated, cross-group preferred) ----
-    // Eligible pool: same course, different user, role = student.
-    // Prefer students from OTHER groups (cross-group review) and with fewest
-    // pending assignments. Fall back to same-group if not enough candidates.
-    // Uses user_enrollments for course-aware group membership with users.group_id fallback.
+    // ---- Auto-assign reviewers (strategy-aware, course-isolated) ----
+    const assignmentStrategy = req.body.assignment_strategy || 'random';
+    const minReviewsRequired = req.body.min_reviews_required || safeReviewerCount;
+
+    // If manual_only strategy, skip auto-assign entirely
+    const assignedReviewers: string[] = [];
+    if (assignmentStrategy === 'manual_only') {
+      return { submission, assignedReviewers };
+    }
+
+    // Query review exclusions for this course
+    const exclusionResult = effectiveCourseId
+      ? await client.query(
+          `SELECT user_a, user_b FROM review_exclusions WHERE course_id = $1`,
+          [effectiveCourseId]
+        )
+      : { rows: [] };
+    const excludedPairs = new Set<string>();
+    for (const ex of exclusionResult.rows) {
+      excludedPairs.add(`${ex.user_a}:${ex.user_b}`);
+      excludedPairs.add(`${ex.user_b}:${ex.user_a}`);
+    }
+
+    // Build ORDER BY clause based on strategy
+    let orderClause = 'same_group ASC, pending_count ASC'; // default random/load_balanced
+    if (assignmentStrategy === 'load_balanced') {
+      orderClause = 'pending_count ASC, same_group ASC';
+    } else if (assignmentStrategy === 'reciprocal') {
+      orderClause = 'has_unreviewed_submission DESC, pending_count ASC, same_group ASC';
+    }
+
     const reviewerQuery = await client.query(
       `SELECT u.user_id,
               COUNT(a.assignment_id) FILTER (WHERE a.status = 'pending') AS pending_count,
-              CASE WHEN COALESCE(ue.group_id, u.group_id) = $3 THEN 1 ELSE 0 END AS same_group
+              CASE WHEN COALESCE(ue.group_id, u.group_id) = $3 THEN 1 ELSE 0 END AS same_group,
+              CASE WHEN EXISTS (
+                SELECT 1 FROM submissions s2
+                WHERE s2.user_id = u.user_id AND s2.course_id = $2
+                  AND NOT EXISTS (
+                    SELECT 1 FROM reviews r2
+                    WHERE r2.submission_id = s2.submission_id AND r2.reviewer_id = $1
+                  )
+              ) THEN 1 ELSE 0 END AS has_unreviewed_submission
        FROM users u
        LEFT JOIN user_enrollments ue ON ue.user_id = u.user_id AND ue.course_id = $2
        LEFT JOIN assignments a ON a.reviewer_id = u.user_id
@@ -112,13 +146,14 @@ export async function uploadSubmission(req: AuthRequest, res: Response): Promise
          AND u.role   = 'student'
          AND COALESCE(ue.course_id, u.course_id) IS NOT DISTINCT FROM $2
        GROUP BY u.user_id, COALESCE(ue.group_id, u.group_id)
-       ORDER BY same_group ASC, pending_count ASC
+       ORDER BY ${orderClause}
        LIMIT $4`,
-      [user_id, effectiveCourseId, effectiveGroupId, safeReviewerCount]
+      [user_id, effectiveCourseId, effectiveGroupId, minReviewsRequired]
     );
 
-    const assignedReviewers: string[] = [];
     for (const row of reviewerQuery.rows) {
+      // Filter out excluded pairs
+      if (excludedPairs.has(`${user_id}:${row.user_id}`)) continue;
       const assign = await client.query(
         `INSERT INTO assignments (submission_id, reviewer_id, status)
          VALUES ($1, $2, 'pending')

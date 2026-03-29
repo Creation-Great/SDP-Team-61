@@ -328,7 +328,7 @@ export async function logout(req: AuthRequest, res: Response): Promise<void> {
     if (match) {
       const decoded = jwt.verify(match[1], JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload;
       if (decoded.jti && decoded.exp) {
-        blacklistToken(decoded.jti, decoded.exp);
+        await blacklistToken(decoded.jti, decoded.exp);
       }
     }
   } catch { /* token already invalid — nothing to blacklist */ }

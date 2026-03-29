@@ -1,0 +1,25 @@
+import { useState, useEffect, useCallback } from 'react';
+import API from '../services/api';
+
+export default function useGradeWeights(courseId) {
+  const [weights, setWeights] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!courseId) return;
+    API.get(`/grades/weights/${courseId}`)
+      .then(r => setWeights(r.data))
+      .catch(() => setWeights({
+        file_review_weight: 40, peer_review_weight: 40, checkin_weight: 20,
+        drop_lowest: 0, drop_highest: 0,
+      }))
+      .finally(() => setLoading(false));
+  }, [courseId]);
+
+  const save = useCallback(async (newWeights) => {
+    await API.put(`/grades/weights/${courseId}`, newWeights);
+    setWeights(newWeights);
+  }, [courseId]);
+
+  return { weights, loading, save, setWeights };
+}

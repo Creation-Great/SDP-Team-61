@@ -58,6 +58,7 @@ export default function PeerReviewSessionsPage() {
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState('');
   const [newDeadline, setNewDeadline] = useState('');
+  const [newAnonymity, setNewAnonymity] = useState('none');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [editDialog, setEditDialog] = useState(null);
@@ -87,10 +88,12 @@ export default function PeerReviewSessionsPage() {
         title: newTitle.trim(),
         course_id: user?.course_id || undefined,
         deadline: newDeadline ? new Date(newDeadline).toISOString() : undefined,
+        anonymity_level: newAnonymity,
       };
       await API.post('/peer-review/sessions', payload);
       setNewTitle('');
       setNewDeadline('');
+      setNewAnonymity('none');
       fetchSessions();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create session');
@@ -184,7 +187,7 @@ export default function PeerReviewSessionsPage() {
             <Plus className="w-5 h-5 mr-2 text-[#000E2F]" />
             Create New Session
           </h3>
-          <form className="grid grid-cols-1 md:grid-cols-3 gap-4" onSubmit={handleCreate}>
+          <form className="grid grid-cols-1 md:grid-cols-4 gap-4" onSubmit={handleCreate}>
             <div className="space-y-1">
               <label className="text-sm font-medium text-slate-700">Session Name</label>
               <input
@@ -204,6 +207,18 @@ export default function PeerReviewSessionsPage() {
                 onChange={(e) => setNewDeadline(e.target.value)}
                 min={new Date().toISOString().slice(0, 16)}
               />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-slate-700">Anonymity Level</label>
+              <select
+                className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:border-[#000E2F] focus:ring-2 focus:ring-[#000E2F]/10 bg-white text-sm"
+                value={newAnonymity}
+                onChange={(e) => setNewAnonymity(e.target.value)}
+              >
+                <option value="none">None</option>
+                <option value="single_blind">Single Blind</option>
+                <option value="double_blind">Double Blind</option>
+              </select>
             </div>
             <div className="flex items-end">
               <Button type="submit" loading={creating} className="w-full">
@@ -247,6 +262,7 @@ export default function PeerReviewSessionsPage() {
                     <th className={thClass}>Session Name</th>
                     <th className={thClass}>Deadline</th>
                     <th className={thClass}>Completion Rate</th>
+                    <th className={thClass}>Anonymity</th>
                     <th className={thClass}>Status</th>
                     {isInstructor && <th className={thClass}>Scores</th>}
                     <th className={thClass}>Actions</th>
@@ -278,6 +294,13 @@ export default function PeerReviewSessionsPage() {
                             </div>
                             <span className="text-xs text-slate-500 font-medium">{pct}%</span>
                           </div>
+                        </td>
+                        <td className={tdClass}>
+                          {s.anonymity_level === 'double_blind'
+                            ? <Badge type="info">Double Blind</Badge>
+                            : s.anonymity_level === 'single_blind'
+                            ? <Badge type="warning">Single Blind</Badge>
+                            : <Badge type="default">None</Badge>}
                         </td>
                         <td className={tdClass}>
                           {s.is_open ? <Badge type="success">Active</Badge> : <Badge type="default">Closed</Badge>}

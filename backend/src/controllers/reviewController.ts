@@ -6,6 +6,8 @@ import { scheduleMvRefresh } from '../utils/mvRefresh.js';
 import { emitSseEvent } from '../utils/sse.js';
 import { logger } from '../utils/logger.js';
 import { createNotification } from '../utils/notifications.js';
+import { computeReviewHash } from '../utils/hashIntegrity.js';
+import { anonymizeReviews, getAnonymousId } from '../utils/anonymizer.js';
 import type { AuthRequest } from '../types.js';
 
 /**
@@ -91,6 +93,13 @@ export async function submitReview(req: AuthRequest, res: Response): Promise<voi
        VALUES ($1, $2, $3, $4)
        RETURNING review_id, created_at`,
       [assign.submission_id, user_id, numScore, comments || '']
+    );
+
+    // Compute and store integrity hash
+    const reviewHash = computeReviewHash(numScore, comments || '');
+    await client.query(
+      `UPDATE reviews SET review_hash = $1 WHERE review_id = $2`,
+      [reviewHash, review.rows[0].review_id]
     );
 
     // Update assignment status
@@ -250,7 +259,7 @@ export async function getReviewsBySubmission(req: AuthRequest, res: Response): P
 
     // Get reviews
     const reviews = await client.query(
-      `SELECT r.review_id, r.score, r.comments, r.created_at,
+      `SELECT r.review_id, r.reviewer_id, r.score, r.comments, r.created_at,
               u.name AS reviewer_name
        FROM reviews r
        JOIN users u ON u.user_id = r.reviewer_id
@@ -259,7 +268,31 @@ export async function getReviewsBySubmission(req: AuthRequest, res: Response): P
       [submissionId]
     );
 
-    return { submission, reviews: reviews.rows };
+    // Check anonymity level for this submission's session
+    const anonQuery = await client.query(
+      `SELECT COALESCE(s.anonymity, 'none') AS anonymity_level
+       FROM submissions sub
+       LEFT JOIN peer_review_sessions s ON s.course_id = sub.course_id
+       WHERE sub.submission_id = $1
+       LIMIT 1`,
+      [submissionId]
+    );
+    const anonymityLevel = anonQuery.rows[0]?.anonymity_level || 'none';
+
+    let reviewRows = reviews.rows;
+    if (anonymityLevel !== 'none' && role === 'student') {
+      // Build anonymous ID mappings for reviewers
+      const mappings = new Map<string, number>();
+      for (const r of reviewRows) {
+        if (!mappings.has(r.reviewer_id)) {
+          const anonId = await getAnonymousId(client, r.reviewer_id, null, String(submissionId));
+          mappings.set(r.reviewer_id, anonId);
+        }
+      }
+      reviewRows = anonymizeReviews(reviewRows, anonymityLevel, mappings, role);
+    }
+
+    return { submission, reviews: reviewRows };
   });
 
   res.json(data);

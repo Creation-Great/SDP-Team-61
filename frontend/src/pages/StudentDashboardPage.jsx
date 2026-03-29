@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Upload, CheckSquare, CheckCircle2, Clock, ChevronRight, Star,
   AlertCircle, MessageSquare, Loader2, Edit, Trash2, RefreshCw,
@@ -261,8 +261,20 @@ export default function StudentDashboardPage() {
                   <p className="text-xs text-slate-400 mt-1">
                     {new Date(s.created_at).toLocaleDateString()} · {s.status}
                   </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <Link to={`/submissions/${s.submission_id}/revisions`} className="text-xs text-[#000E2F] hover:underline font-medium">
+                      View History
+                    </Link>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {s.status === 'reviewed' && (
+                    <Link to={`/submissions/${s.submission_id}/revisions`}>
+                      <Button size="sm" variant="secondary" type="button">
+                        <RefreshCw className="w-3.5 h-3.5 mr-1" /> Revise
+                      </Button>
+                    </Link>
+                  )}
                   <input
                     type="file"
                     className="hidden"

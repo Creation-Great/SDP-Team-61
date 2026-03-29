@@ -1,6 +1,8 @@
 import app from './app.js';
 import { migrateUp } from './migrate.js';
 import { startPeriodicRefresh } from './utils/mvRefresh.js';
+import { startReminderScheduler } from './utils/scheduler.js';
+import { initRedis } from './utils/redis.js';
 import { logger } from './utils/logger.js';
 
 const port = process.env.PORT || 8080;
@@ -52,8 +54,14 @@ async function boot(): Promise<void> {
     }
   }
 
+  // Initialise Redis (non-blocking; gracefully degrades if unavailable)
+  await initRedis();
+
   // Start periodic materialized-view refresh (safety net)
   startPeriodicRefresh();
+
+  // Start deadline reminder scheduler
+  startReminderScheduler();
 
   // Start daily data cleanup (drafts > 30d, read notifications > 90d, AI logs > 90d)
   startDataCleanup();
