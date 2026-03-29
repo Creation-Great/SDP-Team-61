@@ -267,7 +267,7 @@ export async function createAnnouncement(req: AuthRequest, res: Response): Promi
       [targetCourseId, targetGroupId]
     );
 
-    const recipientIds = users.rows.map((r: any) => r.user_id);
+    const recipientIds = users.rows.map((r: { user_id: string }) => r.user_id);
     if (recipientIds.length === 0) {
       return { recipients: 0 };
     }
@@ -396,7 +396,7 @@ export async function getCheckinStudents(req: AuthRequest, res: Response): Promi
   const usePagination = pageSize > 0;
 
   const result = await withDb(user_id, role, async (client) => {
-    const schema = await getUsersTableSchema(client as any);
+    const schema = await getUsersTableSchema(client);
     const displayExpr = schema.hasName
       ? 'name'
       : schema.hasNetid
@@ -436,7 +436,7 @@ export async function getCheckinStudents(req: AuthRequest, res: Response): Promi
                    LIMIT $${baseParams.length + 1} OFFSET $${baseParams.length + 2}`;
       const result = await client.query(sql, [...baseParams, pageSize, (page - 1) * pageSize]);
       const rows = result.rows.map(({ _total, ...r }) => r);
-      const total = result.rows[0] ? parseInt(String((result.rows[0] as any)._total), 10) : 0;
+      const total = result.rows[0] ? parseInt(String(result.rows[0]._total), 10) : 0;
       return { rows, total };
     }
 
@@ -559,7 +559,8 @@ export async function getQualityFlags(req: AuthRequest, res: Response): Promise<
     );
 
     // Group reviews by reviewer to detect identical scores
-    const byReviewer = new Map<string, any[]>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DB row shape varies
+    const byReviewer = new Map<string, Array<Record<string, any>>>();
     for (const row of result.rows) {
       const key = row.reviewer_name;
       if (!byReviewer.has(key)) byReviewer.set(key, []);
@@ -576,7 +577,7 @@ export async function getQualityFlags(req: AuthRequest, res: Response): Promise<
 
     for (const [, reviews] of byReviewer) {
       // Check if all scores are identical (only flag if >= 2 reviews)
-      const scores = reviews.map((r: any) => Number(r.score));
+      const scores = reviews.map((r) => Number(r.score));
       const allIdentical = scores.length >= 2 && new Set(scores).size === 1;
 
       for (const r of reviews) {
@@ -725,7 +726,8 @@ export async function exportFileReviewCsv(req: AuthRequest, res: Response): Prom
   };
 
   const header = 'Student,Course,Group,Submission,Status,Date,Assigned,Completed,Avg Score';
-  const rows = data.map((r: any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DB row shape for CSV export
+  const rows = data.map((r: Record<string, any>) =>
     [
       escape(anonymized ? '' : (r.student_name || '')),
       escape(r.course_id || ''),

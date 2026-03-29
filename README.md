@@ -75,7 +75,7 @@
 - **UConn Blue Theme**: Primary color `#000E2F` applied throughout the application
 - **Sidebar Navigation**: Collapsible sidebar with role-based menu items (replaces top navbar)
 - **UI Component Library**: Reusable `Card`, `Button` (with `asChild` prop for link styling), `Badge` (with `className` support), `Skeleton`, `ConfirmDialog`, `ToastProvider` components
-- **Background Images**: Login/register use `content.png` with gradient overlay; main content area uses `background3.jpg` with animated grid overlay
+- **Background Images**: Login/register use `content.webp` with gradient overlay; main content area uses `background3.jpg` with animated grid overlay
 - **Text Reveal Animation**: Typewriter-style text reveal component
 - **Animated Table**: Row-by-row staggered table animation component
 - **Error Boundary**: Graceful error fallback UI with retry option
@@ -98,7 +98,8 @@
 - **CAS SSO**: University single sign-on integration (production)
 - **RBAC Middleware**: `requireRole()` guards protect instructor/student-only routes
 - **Zod Validation**: All request bodies validated with Zod schemas; admin role blocked from self-registration
-- **Rate Limiting**: Global (100/min), auth (100/15 min), upload (100/10 min), and AI-specific rate limiters
+- **Rate Limiting**: Global (100/min), auth (20/5 min), upload (100/10 min), write operations (30/10 min), and AI-specific rate limiters
+- **Content Security Policy**: Strict CSP via Helmet (script-src, img-src, style-src, connect-src, font-src)
 - **Audit Trail**: All critical operations logged to `audit` table
 - **bcrypt**: Passwords hashed (10 rounds)
 - **Helmet**: HTTP security headers
@@ -118,10 +119,11 @@
 - **Structured Logging**: Pino with pino-pretty (dev) / JSON (production)
 - **ESLint 9 Flat Config**: TypeScript-ESLint for backend, React Hooks + Refresh for frontend
 - **Prettier**: Unified code formatting across the monorepo
-- **Backend Tests**: Jest — 7 suites / 36 tests (utils, middleware, auth, submissions)
-- **Frontend Unit Tests**: Vitest + jsdom + Testing Library — `useFilteredList`, `useSSE`, etc.
-- **E2E**: Playwright — login page and key flows (runs Chromium in CI)
-- **GitHub Actions CI**: 4-job pipeline (backend / frontend / AI service / Docker), including dependency audit, frontend unit tests, and E2E
+- **Backend Tests**: Jest — 14 suites / 67 tests (utils, middleware, auth, submissions, peer review, instructor, AI controller, review, rubric, enrollment, assignment template)
+- **AI Service Tests**: pytest — 7 tests (healthz, feedback, polish, search)
+- **Frontend Unit Tests**: Vitest — 6 suites / 38 tests (`useFilteredList`, `useSSE`, `csvHelpers`, EmptyState, Button, OfflineBanner)
+- **E2E**: Playwright — login, submission, instructor dashboard, peer review flows (runs Chromium in CI)
+- **GitHub Actions CI**: 5-job pipeline (backend with coverage / frontend / AI service with pytest / Docker / security scan via Trivy)
 - **Hot Reload**: tsx watch (backend) + Vite HMR (frontend)
 
 ## Quick Start
@@ -178,7 +180,7 @@ npm run dev                     # runs backend + frontend concurrently
 
 - **API (OpenAPI 3.0)**: [docs/openapi.yaml](docs/openapi.yaml) — main routes, request/response shapes, and security (cookie/Bearer). View with [Swagger Editor](https://editor.swagger.io/) or any OpenAPI viewer.
 - **Swagger UI**: When the backend runs from the repo root (e.g. `cd backend && npm run dev`) and `docs/openapi.yaml` exists, open **http://localhost:8080/api-docs** in a browser for an interactive API explorer. (Docker builds that do not include `docs/` will not expose `/api-docs`.)
-- **Full doc index**: [docs/README.md](docs/README.md) — deployment ([DEPLOYMENT.md](docs/DEPLOYMENT.md)), user guide ([USER_GUIDE.md](docs/USER_GUIDE.md)), functional analysis ([FUNCTIONAL_IMPROVEMENTS_ANALYSIS.md](docs/FUNCTIONAL_IMPROVEMENTS_ANALYSIS.md)), and improvement plan ([IMPROVEMENT_AND_OPTIMIZATION_PLAN.md](docs/IMPROVEMENT_AND_OPTIMIZATION_PLAN.md)).
+- **Full doc index**: [docs/README.md](docs/README.md) — deployment ([DEPLOYMENT.md](docs/DEPLOYMENT.md)), user guide ([USER_GUIDE.md](docs/USER_GUIDE.md)), and archived historical documents.
 
 ## API Routes (expanded)
 
@@ -422,7 +424,7 @@ SDP-Team-61-integrated/
 │   ├── postcss.config.js
 │   ├── public/
 │   │   └── images/
-│   │       ├── content.png       # Login/register background
+│   │       ├── content.webp       # Login/register background
 │   │       └── background3.jpg   # Content area background
 │   └── src/
 │       ├── main.jsx              # App entry
@@ -516,7 +518,7 @@ SDP-Team-61-integrated/
 |---------|-------------|
 | `npm run dev` | Start with tsx watch (hot reload) |
 | `npm run build` | TypeScript compile |
-| `npm test` | Jest test suite (7 suites, 36 tests) |
+| `npm test` | Jest test suite (14 suites, 67 tests) |
 | `npm run lint` | ESLint check |
 | `npm run format` | Prettier format |
 | `npm run migrate` | Run DB migrations (up) |
@@ -614,7 +616,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | Enhanced UI components | anish-dev | Skeleton, Toast, ConfirmDialog, animations |
 | Error Boundary | anish-dev | Graceful error fallback with retry |
 
-## Database Schema (18 migrations)
+## Database Schema (20 migrations)
 
 | Migration | Tables / Changes |
 |-----------|-----------------|
@@ -636,6 +638,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on push to `main`/`integrated` 
 | 016 | `file_review_drafts`, `peer_review_drafts` (backend draft persistence) |
 | 017 | `submission_policies` table (course-level edit/withdraw policy) |
 | 018 | `assignment_templates` + `submissions.assignment_template_id` |
+| 019 | Performance indexes (`submissions`, `peer_reviews`, `rewrite_suggestions`, `peer_review_sessions`, `team_chemistry`) |
+| 020 | Data lifecycle cleanup functions (`cleanup_old_drafts`, `cleanup_old_notifications`, `cleanup_old_ai_logs`) |
 
 ## License
 

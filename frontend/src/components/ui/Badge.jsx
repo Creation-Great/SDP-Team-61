@@ -1,9 +1,11 @@
+import { memo } from 'react';
+
 /**
  * Reusable Badge pill component.
  *
  * Types: success | warning | error | info | default
  */
-export default function Badge({ children, type = 'default', className = '' }) {
+export default memo(function Badge({ children, type = 'default', className = '' }) {
   const types = {
     success: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
     warning: 'bg-amber-100 text-amber-700 border border-amber-200',
@@ -19,4 +21,4 @@ export default function Badge({ children, type = 'default', className = '' }) {
       {children}
     </span>
   );
-}
+})

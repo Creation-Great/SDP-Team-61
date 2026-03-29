@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
-import { FileText, TrendingUp, AlertCircle, Loader2, Download, Flag, ShieldAlert, Megaphone } from 'lucide-react';
+import { FileText, TrendingUp, AlertCircle, Loader2 } from 'lucide-react';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import { API_BASE_URL } from '../config';
+import { useToast } from '../components/ui/ToastProvider';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import QualityFlags from '../components/analytics/QualityFlags';
+import RubricEditor from '../components/analytics/RubricEditor';
+import AppealsPanel from '../components/analytics/AppealsPanel';
+import AnnouncementsPanel from '../components/analytics/AnnouncementsPanel';
 
 /**
  * Instructor analytics: cohort stats, quality flags, peer review flags.
@@ -12,6 +18,7 @@ import { API_BASE_URL } from '../config';
  * @returns {JSX.Element}
  */
 export default function InstructorAnalyticsPage() {
+  const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
@@ -42,6 +49,8 @@ export default function InstructorAnalyticsPage() {
   const [policyCourseId, setPolicyCourseId] = useState('');
   const [allowAfterReview, setAllowAfterReview] = useState(false);
   const [policyMsg, setPolicyMsg] = useState('');
+  const [replyDialog, setReplyDialog] = useState(null);
+  const [replyText, setReplyText] = useState('');
 
   const rubricDefaults = {
     file_review: [
@@ -157,17 +166,23 @@ export default function InstructorAnalyticsPage() {
     }
   };
 
-  const updateAppeal = async (appealId, status) => {
-    const reply = window.prompt('Instructor reply (optional)', '') ?? '';
+  const updateAppeal = (appealId, status) => {
+    setReplyText('');
+    setReplyDialog({ appealId, status });
+  };
+
+  const confirmAppealUpdate = async () => {
+    const { appealId, status } = replyDialog;
+    setReplyDialog(null);
     try {
       await API.patch(`/peer-review/appeals/${appealId}`, {
         status,
-        instructor_reply: reply,
+        instructor_reply: replyText,
       });
       const res = await API.get('/peer-review/appeals');
       setAppeals(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update request');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to update request' });
     }
   };
 
@@ -429,59 +444,11 @@ export default function InstructorAnalyticsPage() {
       </div>
 
       {/* ── Quality Flags ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* File Review Quality Flags */}
-        <Card className="p-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
-            <Flag className="w-5 h-5 mr-2 text-red-500" /> File Review Quality Flags
-          </h3>
-          {flagsLoading ? (
-            <p className="text-sm text-slate-400">Loading…</p>
-          ) : qualityFlags.length === 0 ? (
-            <p className="text-sm text-slate-500">No file review quality issues detected.</p>
-          ) : (
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {qualityFlags.map((f, i) => (
-                <div key={i} className="p-3 bg-red-50 border border-red-100 rounded-lg text-sm">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-slate-900">{f.reviewer_name}</span>
-                    <Badge type="error">{f.flag_reason}</Badge>
-                  </div>
-                  <p className="text-slate-600 text-xs">
-                    Reviewed <span className="font-medium">{f.author_name}</span>'s "{f.submission_title}"
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* Peer Review Quality Flags */}
-        <Card className="p-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center">
-            <ShieldAlert className="w-5 h-5 mr-2 text-orange-500" /> Peer Review Quality Flags
-          </h3>
-          {flagsLoading ? (
-            <p className="text-sm text-slate-400">Loading…</p>
-          ) : peerQualityFlags.length === 0 ? (
-            <p className="text-sm text-slate-500">No peer review quality issues detected.</p>
-          ) : (
-            <div className="space-y-3 max-h-64 overflow-y-auto">
-              {peerQualityFlags.map((f, i) => (
-                <div key={i} className="p-3 bg-orange-50 border border-orange-100 rounded-lg text-sm">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-slate-900">{f.reviewer_name}</span>
-                    <Badge type="warning">{f.flag_reason}</Badge>
-                  </div>
-                  <p className="text-slate-600 text-xs">
-                    Reviewed <span className="font-medium">{f.reviewee_name}</span> in "{f.session_title}"
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+      <QualityFlags
+        flagsLoading={flagsLoading}
+        qualityFlags={qualityFlags}
+        peerQualityFlags={peerQualityFlags}
+      />
 
       {/* ── Student Performance Roster ── */}
       <Card className="p-0 overflow-hidden">
@@ -530,80 +497,23 @@ export default function InstructorAnalyticsPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Rubric Configuration</h2>
-        <div className="flex flex-wrap gap-3 items-end mb-4">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Rubric Type</label>
-            <select
-              className="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white"
-              value={rubricType}
-              onChange={(e) => setRubricType(e.target.value)}
-            >
-              <option value="file_review">File Review</option>
-              <option value="peer_technical">Peer - Technical</option>
-              <option value="peer_interactions">Peer - Interactions</option>
-              <option value="peer_management">Peer - Management</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Course (optional)</label>
-            <input
-              type="text"
-              className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-              placeholder="e.g. CSE2100"
-              value={rubricCourseId}
-              onChange={(e) => setRubricCourseId(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Session UUID (optional)</label>
-            <input
-              type="text"
-              className="px-3 py-2 rounded-xl border border-slate-200 text-sm min-w-[320px]"
-              placeholder="peer review session id"
-              value={rubricSessionId}
-              onChange={(e) => setRubricSessionId(e.target.value)}
-            />
-          </div>
-        </div>
+      {/* ── Rubric Configuration ── */}
+      <RubricEditor
+        rubricType={rubricType}
+        setRubricType={setRubricType}
+        rubricCourseId={rubricCourseId}
+        setRubricCourseId={setRubricCourseId}
+        rubricSessionId={rubricSessionId}
+        setRubricSessionId={setRubricSessionId}
+        rubricLoading={rubricLoading}
+        rubricLevels={rubricLevels}
+        updateRubricLevel={updateRubricLevel}
+        saveRubric={saveRubric}
+        rubricSaving={rubricSaving}
+        rubricMsg={rubricMsg}
+      />
 
-        {rubricLoading ? (
-          <p className="text-sm text-slate-500">Loading rubric...</p>
-        ) : (
-          <div className="space-y-3">
-            {rubricLevels.map((lvl) => (
-              <div key={lvl.score} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="text-xs font-semibold text-slate-500 mb-2">Score {lvl.score}</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
-                    value={lvl.label}
-                    onChange={(e) => updateRubricLevel(lvl.score, 'label', e.target.value)}
-                    placeholder="Label"
-                  />
-                  <input
-                    type="text"
-                    className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white"
-                    value={lvl.desc}
-                    onChange={(e) => updateRubricLevel(lvl.score, 'desc', e.target.value)}
-                    placeholder="Description"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-4 flex items-center gap-3">
-          <Button onClick={saveRubric} disabled={rubricSaving || rubricLoading}>
-            {rubricSaving ? 'Saving...' : 'Save Rubric'}
-          </Button>
-          {rubricMsg && <span className="text-sm text-slate-600">{rubricMsg}</span>}
-        </div>
-      </Card>
-
+      {/* ── Submission Policy ── */}
       <Card className="p-6">
         <h2 className="text-lg font-bold text-slate-900 mb-4">Submission Edit/Withdraw Policy</h2>
         <div className="flex flex-wrap gap-3 items-end">
@@ -630,87 +540,48 @@ export default function InstructorAnalyticsPage() {
         </div>
       </Card>
 
-      <Card className="p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <Megaphone className="w-5 h-5 text-[#000E2F]" />
-          System Announcements
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            type="text"
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-            placeholder="Title"
-            value={announcementTitle}
-            onChange={(e) => setAnnouncementTitle(e.target.value)}
-          />
-          <input
-            type="text"
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-            placeholder="Link (optional), e.g. /peer-review"
-            value={announcementLink}
-            onChange={(e) => setAnnouncementLink(e.target.value)}
-          />
-          <input
-            type="text"
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-            placeholder="Course scope (optional)"
-            value={announcementCourse}
-            onChange={(e) => setAnnouncementCourse(e.target.value)}
-          />
-          <input
-            type="text"
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm"
-            placeholder="Group scope (optional)"
-            value={announcementGroup}
-            onChange={(e) => setAnnouncementGroup(e.target.value)}
-          />
-        </div>
-        <textarea
-          className="mt-3 w-full px-3 py-2 rounded-xl border border-slate-200 text-sm min-h-24"
-          placeholder="Announcement content"
-          value={announcementBody}
-          onChange={(e) => setAnnouncementBody(e.target.value)}
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <Button onClick={sendAnnouncement} disabled={announcementSending}>
-            {announcementSending ? 'Sending...' : 'Publish Announcement'}
-          </Button>
-          {announcementMsg ? <span className="text-sm text-slate-600">{announcementMsg}</span> : null}
-        </div>
-      </Card>
+      {/* ── Announcements ── */}
+      <AnnouncementsPanel
+        announcementTitle={announcementTitle}
+        setAnnouncementTitle={setAnnouncementTitle}
+        announcementBody={announcementBody}
+        setAnnouncementBody={setAnnouncementBody}
+        announcementCourse={announcementCourse}
+        setAnnouncementCourse={setAnnouncementCourse}
+        announcementGroup={announcementGroup}
+        setAnnouncementGroup={setAnnouncementGroup}
+        announcementLink={announcementLink}
+        setAnnouncementLink={setAnnouncementLink}
+        announcementSending={announcementSending}
+        announcementMsg={announcementMsg}
+        sendAnnouncement={sendAnnouncement}
+      />
 
-      <Card className="p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Clarification / Appeal Requests</h2>
-        {appealsLoading ? (
-          <p className="text-sm text-slate-500">Loading requests...</p>
-        ) : appeals.length === 0 ? (
-          <p className="text-sm text-slate-500">No requests yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {appeals.map((a) => (
-              <div key={a.appeal_id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">{a.student_name} · {a.session_title}</p>
-                    <p className="text-xs text-slate-500">{new Date(a.created_at).toLocaleString()}</p>
-                  </div>
-                  <Badge type={a.status === 'resolved' ? 'success' : a.status === 'rejected' ? 'error' : 'warning'}>
-                    {a.status}
-                  </Badge>
-                </div>
-                <p className="text-sm text-slate-700 mt-2">{a.message}</p>
-                {a.instructor_reply ? <p className="text-xs text-slate-500 mt-1">Reply: {a.instructor_reply}</p> : null}
-                {a.status === 'open' && (
-                  <div className="flex gap-2 mt-3">
-                    <Button size="sm" onClick={() => updateAppeal(a.appeal_id, 'resolved')}>Mark Resolved</Button>
-                    <Button size="sm" variant="danger" onClick={() => updateAppeal(a.appeal_id, 'rejected')}>Reject</Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      {/* ── Appeals ── */}
+      <AppealsPanel
+        appealsLoading={appealsLoading}
+        appeals={appeals}
+        updateAppeal={updateAppeal}
+      />
+
+      {/* Reply dialog for appeal updates */}
+      <ConfirmDialog
+        open={!!replyDialog}
+        title="Instructor Reply"
+        message="Provide an optional reply before updating this appeal."
+        confirmLabel="Submit"
+        variant="primary"
+        onConfirm={confirmAppealUpdate}
+        onCancel={() => setReplyDialog(null)}
+      >
+        <textarea
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+          rows={3}
+          placeholder="Instructor reply (optional)"
+          value={replyText}
+          onChange={(e) => setReplyText(e.target.value)}
+        />
+      </ConfirmDialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   Sparkles, ShieldAlert, RefreshCw, Check, Copy,
 } from 'lucide-react';
 import API from '../services/api';
+import { strings } from '../i18n/strings';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -43,8 +44,7 @@ export default function ReviewPage() {
   useEffect(() => {
     API.get(`/reviews/${id}`)
       .then((res) => setReview(res.data))
-      .catch((err) => {
-        console.error('Failed to load review:', err);
+      .catch(() => {
         setError('Failed to load review details');
       })
       .finally(() => setLoading(false));
@@ -263,11 +263,11 @@ export default function ReviewPage() {
                   This review has already been submitted.
                 </div>
                 <div>
-                  <span className="text-sm text-slate-500">Score: </span>
+                  <span className="text-sm text-slate-500">{strings.reviews.score}: </span>
                   <Badge type="info" className="ml-1">{review.score}</Badge>
                 </div>
                 <div>
-                  <span className="text-sm text-slate-500">Comments:</span>
+                  <span className="text-sm text-slate-500">{strings.reviews.comments}:</span>
                   <p className="mt-1 text-sm text-slate-700">{review.comments}</p>
                 </div>
               </div>
@@ -306,7 +306,7 @@ export default function ReviewPage() {
                   </Button>
                   <Button variant="ai" size="sm" icon={RefreshCw} onClick={handleAiRewrite} loading={rewriteLoading}
                     disabled={rewriteLoading || !comments.trim()}>
-                    AI Rewrite
+                    {strings.reviews.aiRewrite}
                   </Button>
                 </div>
 
@@ -384,7 +384,7 @@ export default function ReviewPage() {
                           </Button>
                         ) : (
                           <span className="text-sm text-emerald-600 flex items-center gap-1">
-                            <CheckCircle className="w-4 h-4" /> Adopted
+                            <CheckCircle className="w-4 h-4" /> {strings.reviews.adopted}
                           </span>
                         )}
                         <Button variant="ghost" size="sm" icon={Copy} onClick={() => navigator.clipboard.writeText(aiRewrite.revised_text)}>
@@ -405,7 +405,7 @@ export default function ReviewPage() {
 
                 <div className="flex items-center gap-3">
                   <Button onClick={handleSubmit} disabled={submitting} loading={submitting}>
-                    Submit Review
+                    {strings.reviews.submitReview}
                   </Button>
                   <Button variant="secondary" onClick={() => navigate('/reviews')}>
                     Cancel

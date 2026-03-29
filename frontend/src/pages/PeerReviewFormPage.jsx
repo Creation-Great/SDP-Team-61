@@ -6,6 +6,7 @@ import {
   AlertCircle, CheckCircle, ArrowLeft, Send, Sparkles,
 } from 'lucide-react';
 import API from '../services/api';
+import { strings } from '../i18n/strings';
 import { useAuth } from '../contexts/AuthContext';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -397,7 +398,7 @@ export default function PeerReviewFormPage() {
         ) : null}
         {/* Team Chemistry */}
         <Card className="p-8">
-          <h3 className="text-lg font-semibold text-slate-900 mb-1">Team Chemistry</h3>
+          <h3 className="text-lg font-semibold text-slate-900 mb-1">{strings.peerReview.teamChemistry}</h3>
           <p className="text-sm text-slate-500 mb-4">"Overall, I am satisfied with my team"</p>
           <div className="flex gap-4">
             {[1, 2, 3, 4, 5].map((score) => (
@@ -434,9 +435,9 @@ export default function PeerReviewFormPage() {
               <div className="space-y-8">
                 {/* Score selectors with prototype-style buttons */}
                 {[
-                  { key: 'technical_contributions', label: 'Technical Contributions' },
-                  { key: 'team_interactions', label: 'Team Interactions' },
-                  { key: 'project_management', label: 'Project Management' },
+                  { key: 'technical_contributions', label: strings.peerReview.technicalContributions },
+                  { key: 'team_interactions', label: strings.peerReview.teamInteractions },
+                  { key: 'project_management', label: strings.peerReview.projectManagement },
                 ].map(({ key, label }) => (
                   <div key={key}>
                     <label className="block text-sm font-semibold text-slate-700 mb-3">{label} (1-5)</label>
@@ -486,7 +487,7 @@ export default function PeerReviewFormPage() {
                         onClick={() => handlePolish(t.user_id)}
                         disabled={!r.individual_comments?.trim()}
                       >
-                        AI Polish
+                        {strings.reviews.aiPolish}
                       </Button>
                     </div>
                   </div>

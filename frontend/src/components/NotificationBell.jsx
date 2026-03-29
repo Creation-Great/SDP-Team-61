@@ -39,7 +39,12 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000);
+    const interval = setInterval(() => {
+      // Only poll when tab is visible — saves API calls when tab is hidden
+      if (document.visibilityState === 'visible') {
+        fetchUnreadCount();
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchUnreadCount]);
 

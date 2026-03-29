@@ -1,18 +1,19 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Loader2, Upload, UserPlus, Download, AlertCircle, BarChart3,
-  ChevronRight, Plus, Sparkles, Radio,
+  Loader2, Upload, AlertCircle, Download, Plus, Radio,
 } from 'lucide-react';
 import API from '../services/api';
+import { strings } from '../i18n/strings';
 import useFilteredList from '../hooks/useFilteredList';
 import useSSE from '../hooks/useSSE';
 import SearchInput from '../components/SearchInput';
 import Pagination from '../components/Pagination';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
 import Skeleton from '../components/ui/Skeleton';
+import DashboardStatsCards from '../components/instructor/DashboardStatsCards';
+import SubmissionsTable from '../components/instructor/SubmissionsTable';
 
 const TABS = ['overview', 'submissions', 'participation', 'csv aggregate'];
 
@@ -121,7 +122,7 @@ export default function InstructorDashboardPage() {
           setTotalSubmissions(subs.total);
         }
       })
-      .catch((err) => console.error('Error loading dashboard:', err))
+      .catch(() => { /* error handled by loading state */ })
       .finally(() => setLoading(false));
   }, [buildFilterParams]);
 
@@ -438,337 +439,48 @@ export default function InstructorDashboardPage() {
       </Card>
 
       {/* ═══════ Overview Tab ═══════ */}
-      {activeTab === 'overview' && dashboard && (
-        <div className="space-y-6">
-          {/* 4 Stat Cards with border-l-4 */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <Card className="p-6 border-l-4 border-l-[#000E2F]">
-              <h3 className="text-slate-500 font-medium text-sm">Total Submissions</h3>
-              <div className="text-3xl font-bold text-slate-900 mt-2">{fr.total_submissions || 0}</div>
-            </Card>
-            <Card className="p-6 border-l-4 border-l-emerald-500">
-              <h3 className="text-slate-500 font-medium text-sm">Active Review Sessions</h3>
-              <div className="text-3xl font-bold text-slate-900 mt-2">{pr.open_sessions || 0}</div>
-            </Card>
-            <Card className="p-6 border-l-4 border-l-amber-500 cursor-pointer hover:bg-slate-50" onClick={() => navigate('/instructor/analytics')}>
-              <h3 className="text-slate-500 font-medium text-sm flex items-center justify-between">Flags / Anomalies <ChevronRight className="w-4 h-4" /></h3>
-              <div className="text-3xl font-bold text-amber-600 mt-2">{fr.total_assigned - fr.total_completed || 0}</div>
-            </Card>
-            <Card className="p-6 border-l-4 border-l-teal-500 cursor-pointer hover:bg-slate-50" onClick={() => navigate('/instructor/class-checkins')}>
-              <h3 className="text-slate-500 font-medium text-sm flex items-center justify-between">Check-in Compliance <ChevronRight className="w-4 h-4" /></h3>
-              <div className="text-3xl font-bold text-slate-900 mt-2">{checkinRate}%</div>
-            </Card>
-          </div>
-
-          {/* Two-column: Active Sessions + AI Activity */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Active Sessions Overview */}
-            <Card className="p-0 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h2 className="text-lg font-bold text-slate-900">Active Sessions Overview</h2>
-                <Button variant="ghost" size="sm" onClick={() => navigate('/peer-review')}>Manage</Button>
-              </div>
-              <div className="p-6 space-y-4">
-                {pr.open_sessions > 0 ? (
-                  weeklyTrends.slice(0, 4).map((row, i) => (
-                    <div key={i} className="border border-slate-200 rounded-xl p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-slate-900">{row.course_id || 'Course'} — {row.group_id || 'All'}</h4>
-                        <Badge type="success">Active</Badge>
-                      </div>
-                      <div className="flex items-center justify-between text-sm text-slate-500 mb-3">
-                        <span>Week: {row.wk ? new Date(row.wk).toLocaleDateString() : '—'}</span>
-                        <span>{row.reviews_completed || 0} / {row.assignments || 0} Completed</span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full ${row.reviews_completed >= row.assignments ? 'bg-emerald-500' : 'bg-[#000E2F]'}`}
-                          style={{ width: `${row.assignments ? Math.round((row.reviews_completed / row.assignments) * 100) : 0}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-slate-400 text-center py-8">No active sessions.</p>
-                )}
-              </div>
-            </Card>
-
-            {/* AI Activity Logs */}
-            <Card className="p-0 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                <h2 className="text-lg font-bold text-slate-900">Recent AI Activity Logs</h2>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  {aiLogsLoading && (
-                    <p className="text-sm text-slate-400 text-center py-4">Loading AI logs...</p>
-                  )}
-                  {!aiLogsLoading && aiLogs.length === 0 && (
-                    <p className="text-sm text-slate-400 text-center py-8">No AI activity recorded yet.</p>
-                  )}
-                  {!aiLogsLoading && aiLogs.map((log) => {
-                    const mins = Math.floor((Date.now() - new Date(log.created_at).getTime()) / 60000);
-                    let timeStr;
-                    if (mins < 1) timeStr = 'just now';
-                    else if (mins < 60) timeStr = `${mins}m ago`;
-                    else if (mins < 1440) timeStr = `${Math.floor(mins / 60)}h ago`;
-                    else timeStr = `${Math.floor(mins / 1440)}d ago`;
-
-                    return (
-                      <div key={log.id} className="flex items-start gap-3 text-sm">
-                        <div className="w-8 h-8 rounded-full bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
-                          <Sparkles className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <p className="text-slate-900">
-                            <span className="font-medium">{log.user_name || log.user_id || 'A user'}</span>{' '}
-                            used AI <span className="capitalize font-medium">{log.action}</span>
-                            {log.detail?.input_length ? ` (${log.detail.input_length} ${log.action === 'summarize' ? 'reviews' : 'chars'})` : ''}
-                          </p>
-                          <p className="text-slate-400 text-xs mt-0.5">{timeStr}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Live Events Feed */}
-          {liveEvents.length > 0 && (
-            <Card className="p-0 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Radio className="w-5 h-5 text-emerald-500" /> Live Events
-                </h2>
-                <Button variant="ghost" size="sm" onClick={() => setLiveEvents([])}>Clear</Button>
-              </div>
-              <div className="p-6 space-y-3 max-h-64 overflow-y-auto">
-                {liveEvents.map((evt, i) => {
-                  const labels = {
-                    submission_created: 'New Submission',
-                    review_submitted: 'Review Submitted',
-                    peer_review_submitted: 'Peer Review Submitted',
-                  };
-                  const colors = {
-                    submission_created: 'info',
-                    review_submitted: 'success',
-                    peer_review_submitted: 'warning',
-                  };
-                  return (
-                    <div key={i} className="flex items-center gap-3 text-sm">
-                      <Badge type={colors[evt.type] || 'info'}>{labels[evt.type] || evt.type}</Badge>
-                      <span className="text-slate-700">
-                        {evt.data?.student_name || evt.data?.reviewer_name || 'Unknown'}
-                        {evt.data?.title ? ` — "${evt.data.title}"` : ''}
-                      </span>
-                      <span className="text-xs text-slate-400 ml-auto whitespace-nowrap">
-                        {new Date(evt.timestamp || Date.now()).toLocaleTimeString()}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
-
-          {/* Weekly Trends table */}
-          {weeklyTrends.length > 0 && (
-            <Card className="p-0 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                <h3 className="text-lg font-bold text-slate-900">Weekly Trends</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <caption className="sr-only">Weekly submission trends by course and group</caption>
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
-                      <th scope="col" className={thClass}>Week</th>
-                      <th scope="col" className={thClass}>Course</th>
-                      <th scope="col" className={thClass}>Group</th>
-                      <th scope="col" className={thClass}>Submissions</th>
-                      <th scope="col" className={thClass}>Assignments</th>
-                      <th scope="col" className={thClass}>Completed</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {weeklyTrends.map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-50/50">
-                        <td className={tdClass}>{row.wk ? new Date(row.wk).toLocaleDateString() : '—'}</td>
-                        <td className={tdClass}>{row.course_id || '—'}</td>
-                        <td className={tdClass}>{row.group_id || '—'}</td>
-                        <td className={tdClass}>{row.submissions}</td>
-                        <td className={tdClass}>{row.assignments}</td>
-                        <td className={tdClass}>{row.reviews_completed}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'overview' && !dashboard && (
-        <Card className="text-center px-6 py-12">
-          <BarChart3 className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500">Unified dashboard data unavailable.</p>
-        </Card>
+      {activeTab === 'overview' && (
+        <DashboardStatsCards
+          dashboard={dashboard}
+          weeklyTrends={weeklyTrends}
+          checkinRate={checkinRate}
+          fr={fr}
+          pr={pr}
+          aiLogs={aiLogs}
+          aiLogsLoading={aiLogsLoading}
+          liveEvents={liveEvents}
+          setLiveEvents={setLiveEvents}
+          connected={connected}
+        />
       )}
 
       {/* ═══════ Submissions Tab ═══════ */}
       {activeTab === 'submissions' && (
-        <div className="space-y-4">
-          {submissions.length === 0 ? (
-            <Card className="text-center px-6 py-12">
-              <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-lg font-semibold text-slate-700 mb-1">No submissions yet</h3>
-              <p className="text-sm text-slate-500">Student submissions will appear here once uploaded.</p>
-            </Card>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-3">
-                <SearchInput
-                  value={subs.query}
-                  onChange={subs.setQuery}
-                  placeholder="Search by title, student…"
-                  className="flex-1 min-w-[200px]"
-                />
-                <select
-                  className="max-w-[160px] px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
-                  value={subs.filters.status || ''}
-                  onChange={(e) => subs.setFilters({ ...subs.filters, status: e.target.value || undefined })}
-                >
-                  <option value="">All statuses</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="reviewed">Reviewed</option>
-                </select>
-                <select
-                  className="max-w-[150px] px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 focus:border-[#000E2F]/20"
-                  value={bulkReviewerCount}
-                  onChange={(e) => setBulkReviewerCount(Number(e.target.value))}
-                >
-                  <option value={1}>Assign 1 each</option>
-                  <option value={2}>Assign 2 each</option>
-                  <option value={3}>Assign 3 each</option>
-                </select>
-                <Button
-                  size="sm"
-                  disabled={selectedSubmissionIds.length === 0 || bulkAssigning}
-                  onClick={handleBulkAssign}
-                >
-                  {bulkAssigning ? 'Assigning...' : `Bulk Assign (${selectedSubmissionIds.length})`}
-                </Button>
-                {bulkMsg.text && (
-                  <span className={`text-xs ${bulkMsg.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {bulkMsg.text}
-                  </span>
-                )}
-              </div>
-
-              <Card className="p-0 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
-                        <th className={thClass}>
-                          <input
-                            type="checkbox"
-                            checked={subs.pageItems.length > 0 && subs.pageItems.every((s) => selectedSubmissionIds.includes(s.submission_id))}
-                            onChange={handleToggleAllCurrentPage}
-                            aria-label="Select all submissions on current page"
-                          />
-                        </th>
-                        <th className={thClass}>Title</th>
-                        <th className={thClass}>Student</th>
-                        <th className={thClass}>Status</th>
-                        <th className={thClass}>Assigned</th>
-                        <th className={thClass}>Completed</th>
-                        <th className={thClass}>Date</th>
-                        <th className={thClass}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {subs.pageItems.map((s) => (
-                        <tr key={s.submission_id} className="hover:bg-slate-50/50">
-                          <td className={tdClass}>
-                            <input
-                              type="checkbox"
-                              checked={selectedSubmissionIds.includes(s.submission_id)}
-                              onChange={() => handleToggleSubmissionSelect(s.submission_id)}
-                              aria-label={`Select submission ${s.title}`}
-                            />
-                          </td>
-                          <td className={tdClass + ' font-medium text-slate-900'}>{s.title}</td>
-                          <td className={tdClass}>{s.student_name}</td>
-                          <td className={tdClass}>
-                            <Badge type={s.status === 'submitted' ? 'info' : 'success'}>
-                              {s.status === 'submitted' ? 'Submitted' : 'Reviewed'}
-                            </Badge>
-                          </td>
-                          <td className={tdClass}>{s.assigned_count || 0}</td>
-                          <td className={tdClass}>{s.completed_count || 0}</td>
-                          <td className={tdClass + ' text-slate-400 text-xs'}>{new Date(s.created_at).toLocaleDateString()}</td>
-                          <td className={tdClass}>
-                            <div className="flex items-center gap-2">
-                              {s.file_url && (
-                                <a href={s.file_url} target="_blank" rel="noreferrer">
-                                  <Button size="sm" variant="ghost"><Download className="w-4 h-4" /></Button>
-                                </a>
-                              )}
-                              {assignTarget === s.submission_id ? (
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    className="max-w-[180px] px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10"
-                                    value={assignReviewerId}
-                                    onChange={(e) => setAssignReviewerId(e.target.value)}
-                                  >
-                                    <option value="">Select…</option>
-                                    {students.filter((st) => st.user_id !== s.user_id).map((st) => (
-                                      <option key={st.user_id} value={st.user_id}>{st.display_name}</option>
-                                    ))}
-                                  </select>
-                                  <Button size="sm" disabled={!assignReviewerId || assigning} onClick={handleAssign}>
-                                    {assigning ? '…' : 'OK'}
-                                  </Button>
-                                  <Button size="sm" variant="ghost" onClick={() => { setAssignTarget(null); setAssignMsg({ type: '', text: '' }); }}>✕</Button>
-                                  {assignMsg.text && assignTarget === s.submission_id && (
-                                    <span className="inline-flex items-center gap-2" role={assignMsg.type === 'err' ? 'alert' : 'status'} aria-live={assignMsg.type === 'err' ? 'assertive' : 'polite'}>
-                                      <span className={`text-xs ${assignMsg.type === 'ok' ? 'text-emerald-600' : assignMsg.type === 'warn' ? 'text-amber-600' : 'text-red-600'}`}>{assignMsg.text}</span>
-                                      {assignMsg.type === 'err' && (
-                                        <Button size="sm" variant="ghost" onClick={handleAssign} disabled={assigning} aria-label="Retry assignment">Retry</Button>
-                                      )}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <Button size="sm" variant="secondary" onClick={() => { setAssignTarget(s.submission_id); setAssignReviewerId(''); setAssignMsg({ type: '', text: '' }); }}>
-                                  <UserPlus className="w-3.5 h-3.5 mr-1" />Assign
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-
-              <Pagination
-                page={submissionsPage}
-                totalPages={Math.max(1, Math.ceil(totalSubmissions / SUBMISSIONS_PAGE_SIZE))}
-                onPageChange={setSubmissionsPage}
-                filtered={submissions.length}
-                total={totalSubmissions}
-                noun="submissions"
-              />
-            </>
-          )}
-        </div>
+        <SubmissionsTable
+          submissions={submissions}
+          totalSubmissions={totalSubmissions}
+          submissionsPage={submissionsPage}
+          setSubmissionsPage={setSubmissionsPage}
+          SUBMISSIONS_PAGE_SIZE={SUBMISSIONS_PAGE_SIZE}
+          subs={subs}
+          students={students}
+          selectedSubmissionIds={selectedSubmissionIds}
+          handleToggleSubmissionSelect={handleToggleSubmissionSelect}
+          handleToggleAllCurrentPage={handleToggleAllCurrentPage}
+          bulkReviewerCount={bulkReviewerCount}
+          setBulkReviewerCount={setBulkReviewerCount}
+          bulkAssigning={bulkAssigning}
+          handleBulkAssign={handleBulkAssign}
+          bulkMsg={bulkMsg}
+          assignTarget={assignTarget}
+          setAssignTarget={setAssignTarget}
+          assignReviewerId={assignReviewerId}
+          setAssignReviewerId={setAssignReviewerId}
+          assigning={assigning}
+          handleAssign={handleAssign}
+          assignMsg={assignMsg}
+          setAssignMsg={setAssignMsg}
+        />
       )}
 
       {/* ═══════ Participation Tab ═══════ */}

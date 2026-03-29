@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../config';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { strings } from '../i18n/strings';
 
 export default function ExportCenterPage() {
   const [course, setCourse] = useState('');
@@ -112,19 +113,19 @@ export default function ExportCenterPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-4 space-y-3">
-          <h2 className="text-base font-semibold text-slate-900">File Review Analytics CSV</h2>
+          <h2 className="text-base font-semibold text-slate-900">{strings.export.fileReviewAnalytics} CSV</h2>
           <p className="text-sm text-slate-500">Exports submission-level file review report.</p>
           <Button icon={Download} onClick={exportFileReviewCsv}>Export File Review CSV</Button>
         </Card>
 
         <Card className="p-4 space-y-3">
-          <h2 className="text-base font-semibold text-slate-900">Peer Review Session CSV</h2>
+          <h2 className="text-base font-semibold text-slate-900">{strings.export.peerReviewSession} CSV</h2>
           <p className="text-sm text-slate-500">Exports one peer review session by session ID.</p>
           <Button icon={Download} onClick={exportPeerReviewCsv}>Export Peer Review CSV</Button>
         </Card>
 
         <Card className="p-4 space-y-3">
-          <h2 className="text-base font-semibold text-slate-900">Roster CSV</h2>
+          <h2 className="text-base font-semibold text-slate-900">{strings.export.roster} CSV</h2>
           <p className="text-sm text-slate-500">Exports participation roster from unified dashboard data.</p>
           <Button icon={Download} onClick={exportRosterCsv} loading={loadingRoster}>Export Roster CSV</Button>
         </Card>

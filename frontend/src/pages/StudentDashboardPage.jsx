@@ -5,8 +5,11 @@ import {
   AlertCircle, MessageSquare, Loader2, Edit, Trash2, RefreshCw,
 } from 'lucide-react';
 import API from '../services/api';
+import { strings } from '../i18n/strings';
+import { useToast } from '../components/ui/ToastProvider';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 /**
  * Student dashboard: pending review tasks, weekly check-in entry, average score, and quick actions.
@@ -19,7 +22,10 @@ export default function StudentDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState('');
   const [fileInputTarget, setFileInputTarget] = useState('');
+  const [withdrawTarget, setWithdrawTarget] = useState(null);
+  const [editDialog, setEditDialog] = useState(null);
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   useEffect(() => {
     Promise.all([
@@ -50,33 +56,41 @@ export default function StudentDashboardPage() {
     setSubmissions(s);
   };
 
-  const handleEditSubmission = async (sub) => {
-    const nextTitle = window.prompt('Edit title', sub.title || '');
-    if (nextTitle === null) return;
-    const nextDesc = window.prompt('Edit description', sub.description || '');
-    if (nextDesc === null) return;
-    setActionLoadingId(sub.submission_id);
+  const handleEditSubmission = (sub) => {
+    setEditDialog({
+      submissionId: sub.submission_id,
+      title: sub.title || '',
+      description: sub.description || '',
+    });
+  };
+
+  const confirmEditSubmission = async () => {
+    const { submissionId, title, description } = editDialog;
+    setEditDialog(null);
+    setActionLoadingId(submissionId);
     try {
-      await API.patch(`/submissions/${sub.submission_id}`, {
-        title: nextTitle.trim(),
-        description: nextDesc,
+      await API.patch(`/submissions/${submissionId}`, {
+        title: title.trim(),
+        description,
       });
       await refreshData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update submission');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to update submission' });
     } finally {
       setActionLoadingId('');
     }
   };
 
-  const handleWithdrawSubmission = async (sub) => {
-    if (!window.confirm(`Withdraw "${sub.title}"? This action cannot be undone.`)) return;
+  const confirmWithdraw = async () => {
+    const sub = withdrawTarget;
+    if (!sub) return;
+    setWithdrawTarget(null);
     setActionLoadingId(sub.submission_id);
     try {
       await API.delete(`/submissions/${sub.submission_id}`);
       await refreshData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to withdraw submission');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to withdraw submission' });
     } finally {
       setActionLoadingId('');
     }
@@ -93,7 +107,7 @@ export default function StudentDashboardPage() {
       });
       await refreshData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to replace submission file');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to replace submission file' });
     } finally {
       setActionLoadingId('');
       setFileInputTarget('');
@@ -206,7 +220,7 @@ export default function StudentDashboardPage() {
 
         {tasks.length === 0 ? (
           <div className="p-6 text-center text-slate-500">
-            No pending review tasks — you're all caught up!
+            {strings.dashboard.noReviewTasks}
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -236,7 +250,7 @@ export default function StudentDashboardPage() {
           <h2 className="text-lg font-bold text-slate-900">My Submissions</h2>
         </div>
         {submissions.length === 0 ? (
-          <div className="p-6 text-center text-slate-500">No submissions yet.</div>
+          <div className="p-6 text-center text-slate-500">{strings.dashboard.noSubmissions}</div>
         ) : (
           <div className="divide-y divide-slate-100">
             {submissions.slice(0, 6).map((s) => (
@@ -280,7 +294,7 @@ export default function StudentDashboardPage() {
                     size="sm"
                     variant="danger"
                     disabled={actionLoadingId === s.submission_id}
-                    onClick={() => handleWithdrawSubmission(s)}
+                    onClick={() => setWithdrawTarget(s)}
                   >
                     <Trash2 className="w-3.5 h-3.5 mr-1" /> Withdraw
                   </Button>
@@ -290,6 +304,49 @@ export default function StudentDashboardPage() {
           </div>
         )}
       </Card>
+
+      {/* Withdraw confirmation dialog */}
+      <ConfirmDialog
+        open={!!withdrawTarget}
+        title="Withdraw Submission"
+        message={`Withdraw "${withdrawTarget?.title}"? This action cannot be undone.`}
+        confirmLabel="Withdraw"
+        variant="danger"
+        onConfirm={confirmWithdraw}
+        onCancel={() => setWithdrawTarget(null)}
+      />
+
+      {/* Edit submission dialog */}
+      <ConfirmDialog
+        open={!!editDialog}
+        title="Edit Submission"
+        message="Update the title and description for this submission."
+        confirmLabel="Save"
+        variant="primary"
+        onConfirm={confirmEditSubmission}
+        onCancel={() => setEditDialog(null)}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Title</label>
+            <input
+              type="text"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+              value={editDialog?.title ?? ''}
+              onChange={(e) => setEditDialog((prev) => ({ ...prev, title: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
+            <textarea
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+              rows={3}
+              value={editDialog?.description ?? ''}
+              onChange={(e) => setEditDialog((prev) => ({ ...prev, description: e.target.value }))}
+            />
+          </div>
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }

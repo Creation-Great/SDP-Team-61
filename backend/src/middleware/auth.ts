@@ -12,7 +12,9 @@ import { isBlacklisted } from '../utils/tokenBlacklist.js';
  * Token resolution order:
  *   1. httpOnly cookie "token"  (browser sessions — XSS-safe)
  *   2. Authorization: Bearer … header (API clients / scripts)
- *   3. ?token= query param (SSE/EventSource — cannot set headers)
+ *
+ * Note: query param tokens removed — they leak into logs and browser history.
+ * SSE/EventSource works via cookies (same-origin requests carry cookies automatically).
  */
 export async function authenticate(
   req: AuthRequest,
@@ -31,17 +33,15 @@ export async function authenticate(
       }
     }
 
-    // 3. Fallback to query param (for SSE / EventSource which cannot set headers)
-    if (!token && typeof req.query.token === 'string') {
-      token = req.query.token;
-    }
+    // SSE / EventSource uses cookies automatically — no query param fallback needed.
+    // Query param tokens leak into server logs and browser history.
 
     if (!token) {
       res.status(401).json({ error: 'unauthorized', message: 'No token provided' });
       return;
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET) as {
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as {
       user_id: string;
       email: string;
       role: string;

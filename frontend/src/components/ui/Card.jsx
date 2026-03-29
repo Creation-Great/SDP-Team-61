@@ -1,7 +1,9 @@
+import { memo } from 'react';
+
 /**
  * Reusable Card component — white rounded-2xl shadow-sm with border.
  */
-export default function Card({ children, className = '', onClick }) {
+export default memo(function Card({ children, className = '', onClick }) {
   return (
     <div
       onClick={onClick}
@@ -10,4 +12,4 @@ export default function Card({ children, className = '', onClick }) {
       {children}
     </div>
   );
-}
+});

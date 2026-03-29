@@ -1,5 +1,13 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
+import { validate, validateParams } from '../middleware/validate.js';
+import {
+  reviewIdParamSchema,
+  aiFeedbackSchema,
+  aiRewriteSchema,
+  aiPolishSchema,
+  aiSummarizeSchema,
+} from '../schemas.js';
 import {
   postFeedback,
   getFeedback,
@@ -19,17 +27,17 @@ const router = Router();
 router.use(h(authenticate));
 
 // Feedback analysis
-router.post('/feedback', h(postFeedback));
-router.get('/feedback/:reviewId', h(getFeedback));
+router.post('/feedback', validate(aiFeedbackSchema), h(postFeedback));
+router.get('/feedback/:reviewId', validateParams(reviewIdParamSchema), h(getFeedback));
 
 // Rewrite suggestions
-router.post('/rewrite', h(postRewrite));
-router.get('/rewrite/:reviewId', h(getRewrite));
-router.patch('/rewrite/:reviewId/adopt', h(adoptRewrite));
+router.post('/rewrite', validate(aiRewriteSchema), h(postRewrite));
+router.get('/rewrite/:reviewId', validateParams(reviewIdParamSchema), h(getRewrite));
+router.patch('/rewrite/:reviewId/adopt', validateParams(reviewIdParamSchema), h(adoptRewrite));
 
 // Polish & Summarize
-router.post('/polish', h(postPolish));
-router.post('/summarize', h(postSummarize));
+router.post('/polish', validate(aiPolishSchema), h(postPolish));
+router.post('/summarize', validate(aiSummarizeSchema), h(postSummarize));
 
 // AI activity logs
 router.get('/logs', h(getAiLogs));

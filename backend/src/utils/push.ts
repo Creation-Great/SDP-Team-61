@@ -49,8 +49,8 @@ export async function sendWebPushToSubscriptions(
         },
         body
       );
-    } catch (err: any) {
-      const statusCode = Number(err?.statusCode || 0);
+    } catch (err: unknown) {
+      const statusCode = Number((err as { statusCode?: number })?.statusCode || 0);
       if (statusCode === 404 || statusCode === 410) {
         staleEndpoints.push(sub.endpoint);
       }

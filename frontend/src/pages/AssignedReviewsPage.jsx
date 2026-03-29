@@ -19,8 +19,7 @@ export default function AssignedReviewsPage() {
   useEffect(() => {
     API.get('/submissions/reviews/my-tasks')
       .then((res) => setTasks(res.data))
-      .catch((err) => {
-        console.error('Failed to load review tasks:', err);
+      .catch(() => {
         setTasks([]);
       })
       .finally(() => setLoading(false));

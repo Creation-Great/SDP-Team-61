@@ -52,6 +52,9 @@ export default function ToastProvider({ children }) {
     <ToastContext.Provider value={{ addToast, removeToast }}>
       {children}
       <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
         style={{
           position: 'fixed',
           bottom: '24px',

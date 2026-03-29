@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Clock, Users, Loader2, AlertCircle, ChevronRight, Edit, Eye, EyeOff } from 'lucide-react';
 import API from '../services/api';
+import { strings } from '../i18n/strings';
 import { useAuth } from '../contexts/AuthContext';
 import useFilteredList from '../hooks/useFilteredList';
 import SearchInput from '../components/SearchInput';
@@ -9,6 +10,8 @@ import Pagination from '../components/Pagination';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { useToast } from '../components/ui/ToastProvider';
 
 function useCountdown(deadline) {
   const [now, setNow] = useState(0);
@@ -50,12 +53,14 @@ function DeadlineChip({ deadline }) {
  * @returns {JSX.Element}
  */
 export default function PeerReviewSessionsPage() {
+  const { addToast } = useToast();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newTitle, setNewTitle] = useState('');
   const [newDeadline, setNewDeadline] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [editDialog, setEditDialog] = useState(null);
   const navigate = useNavigate();
 
   const { user, isInstructor } = useAuth();
@@ -99,7 +104,7 @@ export default function PeerReviewSessionsPage() {
       await API.patch(`/peer-review/sessions/${sessionId}`, { is_open: !currentOpen });
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update session');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to update session' });
     }
   };
 
@@ -108,26 +113,32 @@ export default function PeerReviewSessionsPage() {
       await API.patch(`/peer-review/sessions/${sessionId}/release-scores`, { scores_released: !currentReleased });
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to update score release');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to update score release' });
     }
   };
 
-  const handleEditSession = async (session) => {
-    const nextTitle = window.prompt('Edit session title', session.title || '');
-    if (nextTitle === null) return;
+  const handleEditSession = (session) => {
     const currentDeadline = session.deadline
       ? new Date(new Date(session.deadline).getTime() - new Date(session.deadline).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
       : '';
-    const nextDeadlineInput = window.prompt('Edit deadline (YYYY-MM-DDTHH:mm), leave blank to clear', currentDeadline);
-    if (nextDeadlineInput === null) return;
+    setEditDialog({
+      sessionId: session.session_id,
+      title: session.title || '',
+      deadline: currentDeadline,
+    });
+  };
+
+  const confirmEditSession = async () => {
+    const { sessionId, title, deadline } = editDialog;
+    setEditDialog(null);
     try {
-      await API.patch(`/peer-review/sessions/${session.session_id}`, {
-        title: nextTitle.trim(),
-        deadline: nextDeadlineInput.trim() ? new Date(nextDeadlineInput).toISOString() : null,
+      await API.patch(`/peer-review/sessions/${sessionId}`, {
+        title: title.trim(),
+        deadline: deadline.trim() ? new Date(deadline).toISOString() : null,
       });
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to edit session');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to edit session' });
     }
   };
 
@@ -136,7 +147,7 @@ export default function PeerReviewSessionsPage() {
       await API.post(`/peer-review/sessions/${sessionId}/duplicate`);
       fetchSessions();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to duplicate session');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to duplicate session' });
     }
   };
 
@@ -215,7 +226,7 @@ export default function PeerReviewSessionsPage() {
           <div className="w-16 h-16 bg-[#000E2F]/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <Users className="w-8 h-8 text-[#000E2F]" />
           </div>
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">No peer review sessions yet</h3>
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">{strings.dashboard.noSessions}</h3>
           <p className="text-slate-500">
             {isInstructor ? 'Create a session above to get started.' : 'Your instructor has not created any sessions yet.'}
           </p>
@@ -362,6 +373,38 @@ export default function PeerReviewSessionsPage() {
           />
         </>
       )}
+
+      {/* Edit session dialog */}
+      <ConfirmDialog
+        open={!!editDialog}
+        title="Edit Session"
+        message="Update the session title and deadline."
+        confirmLabel="Save"
+        variant="primary"
+        onConfirm={confirmEditSession}
+        onCancel={() => setEditDialog(null)}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Session Title</label>
+            <input
+              type="text"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+              value={editDialog?.title ?? ''}
+              onChange={(e) => setEditDialog((prev) => ({ ...prev, title: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Deadline (leave blank to clear)</label>
+            <input
+              type="datetime-local"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+              value={editDialog?.deadline ?? ''}
+              onChange={(e) => setEditDialog((prev) => ({ ...prev, deadline: e.target.value }))}
+            />
+          </div>
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }

@@ -15,13 +15,22 @@ const INSECURE_DEFAULTS = new Set([
 function resolveJwtSecret(): string {
   const raw = process.env.JWT_SECRET;
 
-  // Production guard: reject insecure secrets
+  // Production guard: reject insecure or weak secrets
   if (process.env.NODE_ENV === 'production') {
     if (!raw || INSECURE_DEFAULTS.has(raw)) {
       logger.fatal(
         'JWT_SECRET is missing or insecure. ' +
         'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))" ' +
         'Then set it in your production environment variables.'
+      );
+      process.exit(1);
+    }
+    // Minimum 64 characters (256 bits) for production security
+    if (raw.length < 64) {
+      logger.fatal(
+        `JWT_SECRET is too short (${raw.length} chars). ` +
+        'Production requires at least 64 characters (256 bits). ' +
+        'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
       );
       process.exit(1);
     }

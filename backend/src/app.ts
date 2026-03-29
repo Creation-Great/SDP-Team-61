@@ -36,8 +36,25 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Trust proxy when behind reverse proxy (nginx, load balancer) — required for rate limiting by real IP
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+}
+
 // Security & parsing
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+    },
+  },
+}));
 
 // CORS — supports comma-separated CORS_ORIGINS env var for multiple front-end domains.
 // Falls back to FRONTEND_URL (single origin) or localhost dev default.
@@ -81,11 +98,20 @@ app.use(globalLimiter);
 
 // Strict limiter for auth endpoints (login / register / CAS callback)
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,   // 15 minutes
-  max: 100,                    // 100 attempts
+  windowMs: 5 * 60 * 1000,    // 5 minutes
+  max: 20,                     // 20 attempts — prevents brute-force
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'too_many_requests', message: 'Too many authentication attempts, try again in 15 minutes' },
+  message: { error: 'too_many_requests', message: 'Too many authentication attempts, try again in 5 minutes' },
+});
+
+// Write-heavy operation limiter: 30 requests per 10 minutes (peer-review sessions, bulk assign, enrollments)
+const writeLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_requests', message: 'Too many write operations, try again later' },
 });
 
 // Upload limiter: 100 uploads per 10 minutes
@@ -101,7 +127,8 @@ const uploadLimiter = rateLimit({
 // Files are no longer served as public static assets.
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
 
-app.get('/uploads/:filename', h(authenticate), (req, res) => {
+app.get('/uploads/:filename', h(authenticate), async (req, res) => {
+  const authReq = req as import('./types.js').AuthRequest;
   // Sanitise: strip path-traversal characters
   const raw = req.params.filename;
   const filename = path.basename(Array.isArray(raw) ? raw[0] : raw);
@@ -112,21 +139,44 @@ app.get('/uploads/:filename', h(authenticate), (req, res) => {
     return;
   }
 
+  // Verify the requesting user has access to this file
+  const { pool } = await import('./db.js');
+  const userId = authReq.user?.user_id;
+  const role = authReq.user?.role;
+
+  // Instructors and admins can access all files
+  if (role !== 'instructor' && role !== 'admin') {
+    const access = await pool.query(
+      `SELECT 1 FROM submissions s
+       LEFT JOIN assignments a ON a.submission_id = s.submission_id
+       WHERE s.file_url LIKE '%' || $1
+         AND (s.user_id = $2 OR a.reviewer_id = $2)
+       LIMIT 1`,
+      [filename, userId]
+    );
+    if (access.rows.length === 0) {
+      res.status(403).json({ error: 'forbidden', message: 'You do not have access to this file' });
+      return;
+    }
+  }
+
   // Content-Disposition: inline so browsers can preview PDFs, etc.
   res.sendFile(path.resolve(filePath));
 });
 
-// API docs: serve OpenAPI spec and Swagger UI (dev / staging; can be disabled in production via env)
-const openApiPath = path.join(__dirname, '..', '..', 'docs', 'openapi.yaml');
-if (fs.existsSync(openApiPath)) {
-  app.get('/api-docs/openapi.yaml', (_req, res) => {
-    res.setHeader('Content-Type', 'application/yaml');
-    res.sendFile(path.resolve(openApiPath));
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(null, {
-    swaggerOptions: { url: '/api-docs/openapi.yaml' },
-    customSiteTitle: 'SDP Peer Review API',
-  }));
+// API docs: serve OpenAPI spec and Swagger UI (disabled in production)
+if (process.env.NODE_ENV !== 'production') {
+  const openApiPath = path.join(__dirname, '..', '..', 'docs', 'openapi.yaml');
+  if (fs.existsSync(openApiPath)) {
+    app.get('/api-docs/openapi.yaml', (_req, res) => {
+      res.setHeader('Content-Type', 'application/yaml');
+      res.sendFile(path.resolve(openApiPath));
+    });
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(null, {
+      swaggerOptions: { url: '/api-docs/openapi.yaml' },
+      customSiteTitle: 'SDP Peer Review API',
+    }));
+  }
 }
 
 // Health check: liveness (process up) + optional DB connectivity for readiness
@@ -152,10 +202,10 @@ app.get('/healthz', async (_req, res) => {
 app.use('/auth', authLimiter, authRoutes);
 app.use('/submissions', uploadLimiter, submissionRoutes);
 app.use('/reviews', reviewRoutes);
-app.use('/instructor', instructorRoutes);
-app.use('/peer-review', peerReviewRoutes);
+app.use('/instructor', writeLimiter, instructorRoutes);
+app.use('/peer-review', writeLimiter, peerReviewRoutes);
 app.use('/checkins', checkinRoutes);
-app.use('/enrollments', enrollmentRoutes);
+app.use('/enrollments', writeLimiter, enrollmentRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/rubrics', rubricRoutes);

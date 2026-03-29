@@ -21,6 +21,39 @@ export function validate(schema: ZodSchema) {
 }
 
 /**
+ * Express middleware factory that validates `req.params` against a Zod schema.
+ * Returns 400 with structured error details on failure.
+ */
+export function validateParams(schema: ZodSchema) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.params);
+    if (!result.success) {
+      const firstIssue = result.error.issues[0];
+      const err = new ZodValidationError(result.error, firstIssue?.message ?? 'Invalid parameter');
+      return next(err);
+    }
+    next();
+  };
+}
+
+/**
+ * Express middleware factory that validates `req.query` against a Zod schema.
+ * Returns 400 with structured error details on failure.
+ */
+export function validateQuery(schema: ZodSchema) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const result = schema.safeParse(req.query);
+    if (!result.success) {
+      const firstIssue = result.error.issues[0];
+      const err = new ZodValidationError(result.error, firstIssue?.message ?? 'Invalid query parameter');
+      return next(err);
+    }
+    // Parsed data is available via result.data; keep original req.query for Express compatibility
+    next();
+  };
+}
+
+/**
  * Thin wrapper so the global error handler can detect zod validation failures.
  */
 export class ZodValidationError extends Error {

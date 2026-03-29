@@ -3,11 +3,56 @@ import { z } from 'zod';
 // ── Common helpers ──────────────────────────────────────────
 const score1to5 = z.number({ error: 'Score is required' }).min(1).max(5);
 
+// ── Route parameter schemas ────────────────────────────────
+export const uuidParamSchema = z.object({
+  id: z.string().uuid('id must be a valid UUID'),
+});
+
+export const sessionIdParamSchema = z.object({
+  sessionId: z.string().uuid('sessionId must be a valid UUID'),
+});
+
+export const submissionIdParamSchema = z.object({
+  submissionId: z.string().uuid('submissionId must be a valid UUID'),
+});
+
+export const appealIdParamSchema = z.object({
+  appealId: z.string().uuid('appealId must be a valid UUID'),
+});
+
+export const reviewIdParamSchema = z.object({
+  reviewId: z.string().uuid('reviewId must be a valid UUID'),
+});
+
+// ── AI Service ─────────────────────────────────────────────
+export const aiFeedbackSchema = z.object({
+  review_id: z.string().uuid('review_id must be a UUID'),
+  text: z.string().min(1, 'text is required'),
+});
+
+export const aiRewriteSchema = z.object({
+  review_id: z.string().uuid('review_id must be a UUID'),
+  text: z.string().min(1, 'text is required'),
+  context: z.string().optional().default(''),
+});
+
+export const aiPolishSchema = z.object({
+  text: z.string().min(1, 'text is required'),
+});
+
+export const aiSummarizeSchema = z.object({
+  reviews: z.array(z.object({
+    score: z.coerce.number().optional(),
+    comments: z.string().optional().default(''),
+    reviewer_name: z.string().optional().default('Anonymous'),
+  })).nonempty('reviews array is required'),
+});
+
 // ── Auth ────────────────────────────────────────────────────
 export const registerSchema = z.object({
   name: z.string().min(1, 'name is required'),
   email: z.string().email('Invalid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.enum(['student', 'instructor']).optional(),
   group_id: z.string().optional(),
 });
@@ -15,6 +60,10 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: z.string().min(1, 'email is required'),
   password: z.string().min(1, 'password is required'),
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().min(1, 'name is required').max(100, 'name is too long'),
 });
 
 // ── Submissions ─────────────────────────────────────────────

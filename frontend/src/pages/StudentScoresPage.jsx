@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, AlertCircle, Lock, BarChart3 } from 'lucide-react';
 import API from '../services/api';
+import { useToast } from '../components/ui/ToastProvider';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -14,6 +15,7 @@ import Badge from '../components/ui/Badge';
 export default function StudentScoresPage() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -47,7 +49,7 @@ export default function StudentScoresPage() {
       const res = await API.get('/peer-review/appeals/mine');
       setAppeals(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to submit request');
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to submit request' });
     } finally {
       setAppealLoading(false);
     }

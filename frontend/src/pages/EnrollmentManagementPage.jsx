@@ -7,6 +7,7 @@ import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 /**
  * Enrollment management (instructor): list, add, edit, remove. GET/POST/PATCH/DELETE /enrollments.
@@ -32,6 +33,9 @@ export default function EnrollmentManagementPage() {
   /* Search/Filter */
   const [search, setSearch] = useState('');
   const [filterCourse, setFilterCourse] = useState('');
+
+  /* Delete confirmation */
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   /* Course-scoped members (GET /enrollments/course/:courseId/members) */
   const [courseMembers, setCourseMembers] = useState(null);
@@ -130,8 +134,13 @@ export default function EnrollmentManagementPage() {
   };
 
   /* Delete enrollment */
-  const handleDelete = async (enrollmentId) => {
-    if (!window.confirm('Remove this enrollment?')) return;
+  const handleDelete = (enrollmentId) => {
+    setDeleteTarget(enrollmentId);
+  };
+
+  const confirmDelete = async () => {
+    const enrollmentId = deleteTarget;
+    setDeleteTarget(null);
     try {
       await API.delete(`/enrollments/${enrollmentId}`);
       await loadEnrollments();
@@ -387,6 +396,17 @@ export default function EnrollmentManagementPage() {
           </table>
         </div>
       </Card>
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Remove Enrollment"
+        message="Remove this enrollment? This action cannot be undone."
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

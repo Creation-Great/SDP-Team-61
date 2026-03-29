@@ -71,7 +71,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col relative" style={{ backgroundImage: "url('/images/content.png')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}>
+    <div className="min-h-screen flex flex-col relative" style={{ backgroundImage: "url('/images/content.webp')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}>
       {/* Gradient overlay on top of background image */}
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(135deg, rgba(0,14,47,0.6) 0%, rgba(10,22,40,0.4) 40%, rgba(15,29,53,0.4) 70%, rgba(0,14,47,0.6) 100%)' }} />
 

@@ -123,7 +123,7 @@ export async function updateEnrollment(req: AuthRequest, res: Response): Promise
     }
 
     const setClauses: string[] = [];
-    const params: any[] = [];
+    const params: (string | boolean | null)[] = [];
     let idx = 1;
 
     if (group_id !== undefined) {

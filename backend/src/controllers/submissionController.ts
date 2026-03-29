@@ -12,7 +12,7 @@ import type { AuthRequest } from '../types.js';
 /** Default reviewer count if not specified (zod schema enforces 1–3 range) */
 const DEFAULT_REVIEWERS = 1;
 
-async function canEditOrWithdraw(client: any, submissionId: string, courseId: string | null): Promise<boolean> {
+async function canEditOrWithdraw(client: import('pg').PoolClient, submissionId: string, courseId: string | null): Promise<boolean> {
   const reviews = await client.query(
     `SELECT COUNT(*)::int AS cnt FROM reviews WHERE submission_id = $1`,
     [submissionId]

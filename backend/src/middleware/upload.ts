@@ -2,7 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-
+import type { Request, Response, NextFunction } from 'express';
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 
 // Ensure upload directory exists
@@ -50,7 +50,7 @@ const storage = multer.diskStorage({
  * First-pass filter: reject obviously wrong MIME types.
  * The real content validation happens in `validateFileContent` below.
  */
-const fileFilter = (_req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const fileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   if (allowedMimes.has(file.mimetype)) {
     cb(null, true);
   } else {
@@ -67,7 +67,6 @@ export const upload = multer({
 });
 
 // ── Post-upload magic-byte validation middleware ──
-import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Call this AFTER multer has written the file to disk.
@@ -75,7 +74,7 @@ import type { Request, Response, NextFunction } from 'express';
  * Deletes the file and returns 400 if the content doesn't match.
  */
 export async function validateFileContent(req: Request, res: Response, next: NextFunction) {
-  const file = (req as any).file as Express.Multer.File | undefined;
+  const file = (req as Request & { file?: Express.Multer.File }).file;
   if (!file) return next();  // no file → let controller handle
 
   const entry = ALLOWED[file.mimetype];

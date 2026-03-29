@@ -52,12 +52,20 @@ jobs:
       - name: TypeScript type-check
         run: npx tsc --noEmit
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage
+        run: npm test -- --coverage
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/peerreview
           JWT_SECRET: ci-test-secret
           NODE_ENV: test
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage
+          retention-days: 7
 
   # ── Frontend: lint, build ─────────────────────────────────
   frontend:
@@ -122,10 +130,17 @@ jobs:
           cache: pip
           cache-dependency-path: ai-service/requirements.txt
 
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt pytest
 
       - name: Python syntax check
         run: python -m py_compile app.py
+
+      - name: Run AI service tests
+        run: python -m pytest tests/ -v
+        env:
+          AI_API_KEY: test-key
+          OPENAI_API_KEY: test-openai-key
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
 
   # ── Docker build validation ───────────────────────────────
   docker:
@@ -147,3 +162,21 @@ jobs:
 
       - name: Validate docker-compose config
         run: docker compose config --quiet
+
+  # ── Security scanning ────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, ai-service]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: 0
+          format: table

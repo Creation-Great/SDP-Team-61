@@ -2,20 +2,45 @@ import { Response } from 'express';
 import { withDb } from '../db.js';
 import type { AuthRequest } from '../types.js';
 
-function toScore(value: any): number | null {
+// ── Checkin data interfaces ────────────────────────────────
+interface CheckinMember {
+  id: string;
+  name?: string;
+  team?: string;
+  mapped_user_id?: string;
+}
+
+interface InstructorWeek {
+  scores?: Record<string, Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+interface SelfWeek {
+  self_score?: unknown;
+  peer_scores?: Record<string, Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+interface StudentRow {
+  selected_member_id?: string;
+  weeks?: SelfWeek[];
+}
+
+// ── Helper functions ───────────────────────────────────────
+function toScore(value: unknown): number | null {
   const n = Number(value);
   if (Number.isNaN(n) || n < 1 || n > 5) return null;
   return n;
 }
 
-function buildComparison(topics: any[], instructorWeeks: any[], selectedMemberId: string, selfWeeks: any[]) {
+function buildComparison(topics: string[], instructorWeeks: InstructorWeek[], selectedMemberId: string, selfWeeks: SelfWeek[]) {
   return topics.map((topic: string) => {
     let selfSum = 0;
     let selfCount = 0;
     let profSum = 0;
     let profCount = 0;
 
-    (selfWeeks || []).forEach((week: any) => {
+    (selfWeeks || []).forEach((week) => {
       const score = toScore(week?.peer_scores?.[selectedMemberId]?.[topic]);
       if (score !== null) {
         selfSum += score;
@@ -23,7 +48,7 @@ function buildComparison(topics: any[], instructorWeeks: any[], selectedMemberId
       }
     });
 
-    (instructorWeeks || []).forEach((week: any) => {
+    (instructorWeeks || []).forEach((week) => {
       const score = toScore(week?.scores?.[selectedMemberId]?.[topic]);
       if (score !== null) {
         profSum += score;
@@ -42,25 +67,25 @@ function buildComparison(topics: any[], instructorWeeks: any[], selectedMemberId
   });
 }
 
-function findMappedMemberId(members: any[], userId: string): string | null {
+function findMappedMemberId(members: CheckinMember[], userId: string): string | null {
   if (!Array.isArray(members)) return null;
-  const found = members.find((m: any) => m?.mapped_user_id === userId);
+  const found = members.find((m) => m?.mapped_user_id === userId);
   return found?.id || null;
 }
 
-function buildInstructorAggregates(members: any[], topics: any[], instructorWeeks: any[], studentRows: any[]) {
+function buildInstructorAggregates(members: CheckinMember[], topics: string[], instructorWeeks: InstructorWeek[], studentRows: StudentRow[]) {
   const instr = new Map<string, { sum: number; count: number }>();
   const self = new Map<string, { sum: number; count: number }>();
   const peer = new Map<string, { sum: number; count: number }>();
 
-  (members || []).forEach((m: any) => {
+  (members || []).forEach((m) => {
     instr.set(m.id, { sum: 0, count: 0 });
     self.set(m.id, { sum: 0, count: 0 });
     peer.set(m.id, { sum: 0, count: 0 });
   });
 
-  (instructorWeeks || []).forEach((week: any) => {
-    (members || []).forEach((m: any) => {
+  (instructorWeeks || []).forEach((week) => {
+    (members || []).forEach((m) => {
       (topics || []).forEach((topic: string) => {
         const score = toScore(week?.scores?.[m.id]?.[topic]);
         if (score === null) return;
@@ -72,10 +97,10 @@ function buildInstructorAggregates(members: any[], topics: any[], instructorWeek
     });
   });
 
-  (studentRows || []).forEach((row: any) => {
+  (studentRows || []).forEach((row) => {
     const target = row.selected_member_id;
     if (!target) return;
-    (row.weeks || []).forEach((week: any) => {
+    (row.weeks || []).forEach((week) => {
       const selfScore = toScore(week?.self_score);
       if (selfScore !== null) {
         const selfBucket = self.get(target);
@@ -85,8 +110,8 @@ function buildInstructorAggregates(members: any[], topics: any[], instructorWeek
         }
       }
 
-      Object.entries(week?.peer_scores || {}).forEach(([targetMemberId, topicMap]: any) => {
-        Object.values(topicMap || {}).forEach((raw: any) => {
+      Object.entries(week?.peer_scores || {}).forEach(([targetMemberId, topicMap]) => {
+        Object.values(topicMap || {}).forEach((raw: unknown) => {
           const s = toScore(raw);
           if (s === null) return;
           const peerBucket = peer.get(targetMemberId);
@@ -98,7 +123,7 @@ function buildInstructorAggregates(members: any[], topics: any[], instructorWeek
     });
   });
 
-  return (members || []).map((m: any) => {
+  return (members || []).map((m) => {
     const instrBucket = instr.get(m.id) || { sum: 0, count: 0 };
     const selfBucket = self.get(m.id) || { sum: 0, count: 0 };
     const peerBucket = peer.get(m.id) || { sum: 0, count: 0 };
@@ -257,8 +282,8 @@ export async function getInstructorCheckinInsights(req: AuthRequest, res: Respon
       const instructorWeeks = Array.isArray(instructor.weeks) ? instructor.weeks : [];
       const studentRows = studentRowsResult.rows || [];
       const handedOut = studentRows
-        .filter((r: any) => r.selected_member_id)
-        .map((r: any) => ({
+        .filter((r: StudentRow) => r.selected_member_id)
+        .map((r: StudentRow) => ({
           rater_member_id: r.selected_member_id,
           weeks: Array.isArray(r.weeks) ? r.weeks : [],
         }));

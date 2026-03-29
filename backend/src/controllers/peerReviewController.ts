@@ -724,13 +724,13 @@ export async function getTeamReviews(req: AuthRequest, res: Response): Promise<v
     const chemistry = await client.query(chemistryQuery, chemistryParams);
 
     // Who has submitted (distinct reviewer_ids)
-    const submittedSet = new Set(reviews.rows.map((r: any) => r.reviewer_id));
+    const submittedSet = new Set(reviews.rows.map((r: { reviewer_id: string }) => r.reviewer_id));
 
     // Privacy: only return the current user's own review details.
     // Other students should only see completion status (who submitted),
     // NOT individual scores or comments from other reviewers.
-    const myReviews = reviews.rows.filter((r: any) => r.reviewer_id === user_id);
-    const myChemistry = chemistry.rows.filter((c: any) => c.reviewer_id === user_id);
+    const myReviews = reviews.rows.filter((r: { reviewer_id: string }) => r.reviewer_id === user_id);
+    const myChemistry = chemistry.rows.filter((c: { reviewer_id: string }) => c.reviewer_id === user_id);
 
     return {
       session: session.rows[0],
@@ -791,7 +791,8 @@ export async function exportCsv(req: AuthRequest, res: Response): Promise<void> 
   };
 
   const header = 'Team,Name,Avg Technical Contributions,Avg Team Interactions,Avg Project Management,Avg Team Chemistry,Review Count';
-  const rows = data.map((r: any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DB row shape for CSV export
+  const rows = data.map((r: Record<string, any>) =>
     [
       escape(anonymized ? '' : (r.team || '')),
       escape(anonymized ? '' : (r.student_name || '')),
@@ -901,7 +902,7 @@ export async function getBiasAnalytics(req: AuthRequest, res: Response): Promise
     );
 
     // Add bias metric: self_avg - peer_avg
-    const analytics = result.rows.map((r: any) => ({
+    const analytics = result.rows.map((r: Record<string, unknown>) => ({
       ...r,
       bias: r.self_avg != null && r.peer_avg != null
         ? parseFloat((Number(r.self_avg) - Number(r.peer_avg)).toFixed(2))

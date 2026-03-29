@@ -1,3 +1,4 @@
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -6,31 +7,42 @@ import StudentRoute from './components/StudentRoute';
 import { useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import InfiniteGridBackground from './components/ui/InfiniteGridBackground';
-import LoginPage from './pages/LoginPage';
-import StudentDashboardPage from './pages/StudentDashboardPage';
-import InstructorDashboardPage from './pages/InstructorDashboardPage';
-import UploadAssignment from './pages/UploadAssignment';
-import AssignedReviewsPage from './pages/AssignedReviewsPage';
-import ReviewPage from './pages/ReviewPage';
-import ViewReviewPage from './pages/ViewReviewPage';
-import PeerReviewSessionsPage from './pages/PeerReviewSessionsPage';
-import PeerReviewFormPage from './pages/PeerReviewFormPage';
-import PeerReviewResultsPage from './pages/PeerReviewResultsPage';
-import StudentCheckinsPage from './pages/StudentCheckinsPage';
-import InstructorPeerReviewPage from './pages/InstructorPeerReviewPage';
-import InstructorAnalyticsPage from './pages/InstructorAnalyticsPage';
-import ClassCheckinsPage from './pages/ClassCheckinsPage';
-import EnrollmentManagementPage from './pages/EnrollmentManagementPage';
-import RegisterPage from './pages/RegisterPage';
-import StudentScoresPage from './pages/StudentScoresPage';
-import StudentGradesPage from './pages/StudentGradesPage';
-import NotificationPreferencesPage from './pages/NotificationPreferencesPage';
-import ExportCenterPage from './pages/ExportCenterPage';
-import AssignmentTemplatesPage from './pages/AssignmentTemplatesPage';
-import NotFoundPage from './pages/NotFoundPage';
-
 import HeaderSearchBar from './components/HeaderSearchBar';
 import NotificationBell from './components/NotificationBell';
+import { Loader2 } from 'lucide-react';
+
+// ── Route-level code splitting ─────────────────────────────
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const StudentDashboardPage = lazy(() => import('./pages/StudentDashboardPage'));
+const InstructorDashboardPage = lazy(() => import('./pages/InstructorDashboardPage'));
+const UploadAssignment = lazy(() => import('./pages/UploadAssignment'));
+const AssignedReviewsPage = lazy(() => import('./pages/AssignedReviewsPage'));
+const ReviewPage = lazy(() => import('./pages/ReviewPage'));
+const ViewReviewPage = lazy(() => import('./pages/ViewReviewPage'));
+const PeerReviewSessionsPage = lazy(() => import('./pages/PeerReviewSessionsPage'));
+const PeerReviewFormPage = lazy(() => import('./pages/PeerReviewFormPage'));
+const PeerReviewResultsPage = lazy(() => import('./pages/PeerReviewResultsPage'));
+const StudentCheckinsPage = lazy(() => import('./pages/StudentCheckinsPage'));
+const InstructorPeerReviewPage = lazy(() => import('./pages/InstructorPeerReviewPage'));
+const InstructorAnalyticsPage = lazy(() => import('./pages/InstructorAnalyticsPage'));
+const ClassCheckinsPage = lazy(() => import('./pages/ClassCheckinsPage'));
+const EnrollmentManagementPage = lazy(() => import('./pages/EnrollmentManagementPage'));
+const StudentScoresPage = lazy(() => import('./pages/StudentScoresPage'));
+const StudentGradesPage = lazy(() => import('./pages/StudentGradesPage'));
+const NotificationPreferencesPage = lazy(() => import('./pages/NotificationPreferencesPage'));
+const ExportCenterPage = lazy(() => import('./pages/ExportCenterPage'));
+const AssignmentTemplatesPage = lazy(() => import('./pages/AssignmentTemplatesPage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+/** Loading fallback for lazy-loaded pages */
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-8 h-8 animate-spin text-[#000E2F]" />
+    </div>
+  );
+}
 
 /** Redirect root "/" based on auth state */
 function HomeRedirect() {
@@ -42,6 +54,24 @@ function HomeRedirect() {
     : <Navigate to="/dashboard" replace />;
 }
 
+/** Offline detection banner */
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine);
+  useEffect(() => {
+    const goOffline = () => setOffline(true);
+    const goOnline = () => setOffline(false);
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); };
+  }, []);
+  if (!offline) return null;
+  return (
+    <div className="bg-amber-500 text-white text-center py-2 px-4 text-sm font-medium z-50 relative" role="alert">
+      You are offline. Some features may be unavailable.
+    </div>
+  );
+}
+
 /** Sidebar + header layout for authenticated pages */
 function AppLayout({ children }) {
   return (
@@ -50,6 +80,12 @@ function AppLayout({ children }) {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative"
         style={{ backgroundImage: "url('/images/background3.jpg')", backgroundSize: '100% 100%', backgroundColor: '#FFFFFF' }}
       >
+        {/* Skip-to-content link for keyboard navigation (WCAG 2.1) */}
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-[#000E2F] focus:text-white focus:px-4 focus:py-2 focus:rounded-lg focus:text-sm">
+          Skip to main content
+        </a>
+        {/* Offline detection */}
+        <OfflineBanner />
         {/* Subtle grid overlay on top of background image */}
         <InfiniteGridBackground />
         {/* Desktop top header */}
@@ -61,9 +97,11 @@ function AppLayout({ children }) {
             <NotificationBell />
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:mt-0 mt-14 relative z-[1]">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:mt-0 mt-14 relative z-[1] outline-none">
           <ErrorBoundary>
-            {children}
+            <Suspense fallback={<PageLoader />}>
+              {children}
+            </Suspense>
           </ErrorBoundary>
         </main>
       </div>
@@ -86,8 +124,8 @@ export default function App() {
       <Route path="/" element={<HomeRedirect />} />
 
       {/* Public routes */}
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/login" element={<Suspense fallback={<PageLoader />}><LoginPage /></Suspense>} />
+      <Route path="/register" element={<Suspense fallback={<PageLoader />}><RegisterPage /></Suspense>} />
 
       {/* Student routes */}
       <Route path="/dashboard" element={

@@ -12,11 +12,17 @@ services:
       - dbdata:/var/lib/postgresql/data
       - ./backend/sql/migrations.sql:/docker-entrypoint-initdb.d/01-migrations.sql
       - ./backend/sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
 
   # ── Express Backend ───────────────────────────────────────
   backend:
@@ -46,6 +52,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
 
   # ── AI Service (Flask / OpenAI) ───────────────────────────
   ai-service:
@@ -71,6 +82,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
 
   # ── React Frontend (nginx) ───────────────────────────────
   frontend:
@@ -83,6 +99,16 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
 volumes:
   dbdata: {}

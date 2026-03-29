@@ -1,8 +1,15 @@
 openapi: 3.0.3
 info:
   title: SDP Peer Review System API
-  description: AI-enhanced peer review platform. Auth via JWT httpOnly cookie or Bearer token; SSE at GET /instructor/events.
-  version: 2.0.0
+  description: |
+    AI-enhanced peer review platform. Auth via JWT httpOnly cookie or Bearer token.
+    SSE at GET /instructor/events. Rate limits per IP:
+    - Global: 100 req/min
+    - Auth endpoints: 20 req/5 min
+    - Upload: 100 req/10 min
+    - AI feedback/polish: 30 req/min
+    - AI rewrite/summarize: 20 req/min
+  version: 2.2.0
 
 servers:
   - url: http://localhost:8080
@@ -20,6 +27,8 @@ tags:
   - name: Enrollments
   - name: AI
   - name: Notifications
+  - name: Rubrics
+  - name: Assignment Templates
 
 paths:
   /healthz:
@@ -526,6 +535,117 @@ paths:
         '404':
           description: Not found
 
+  # ── Rubrics ──────────────────────────────────────────────
+  /rubrics:
+    get:
+      tags: [Rubrics]
+      summary: List rubrics (filtered by rubric_type, course_id, session_id)
+      parameters:
+        - name: rubric_type
+          in: query
+          schema: { type: string, enum: [file_review, peer_technical, peer_interactions, peer_management] }
+        - name: course_id
+          in: query
+          schema: { type: string }
+        - name: session_id
+          in: query
+          schema: { type: string, format: uuid }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Array of rubric objects
+        '400':
+          $ref: '#/components/responses/ValidationError'
+    post:
+      tags: [Rubrics]
+      summary: Create or update a rubric (instructor only)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rubric_type, levels]
+              properties:
+                rubric_type: { type: string, enum: [file_review, peer_technical, peer_interactions, peer_management] }
+                course_id: { type: string, nullable: true }
+                session_id: { type: string, format: uuid, nullable: true }
+                levels:
+                  type: array
+                  minItems: 5
+                  maxItems: 5
+                  items:
+                    type: object
+                    required: [score, label, desc]
+                    properties:
+                      score: { type: integer, minimum: 1, maximum: 5 }
+                      label: { type: string }
+                      desc: { type: string }
+      responses:
+        '200':
+          description: Rubric saved
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ── Assignment Templates ────────────────────────────────
+  /assignment-templates:
+    get:
+      tags: [Assignment Templates]
+      summary: List assignment templates for the user's course
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Array of template objects
+    post:
+      tags: [Assignment Templates]
+      summary: Create assignment template (instructor only)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [course_id, title]
+              properties:
+                course_id: { type: string }
+                title: { type: string }
+                description: { type: string, default: '' }
+                due_at: { type: string, format: date-time, nullable: true }
+                is_active: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Template created
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /assignment-templates/{id}:
+    patch:
+      tags: [Assignment Templates]
+      summary: Update assignment template (instructor only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+                due_at: { type: string, format: date-time, nullable: true }
+                is_active: { type: boolean }
+      responses:
+        '200':
+          description: Template updated
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -537,6 +657,61 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  responses:
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        RateLimit-Limit:
+          schema: { type: integer }
+          description: Request limit per window
+        RateLimit-Remaining:
+          schema: { type: integer }
+          description: Remaining requests in current window
+        RateLimit-Reset:
+          schema: { type: integer }
+          description: Seconds until the rate limit resets
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: too_many_requests
+            message: Too many requests, please try again later
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: unauthorized
+            message: No token provided
+    Forbidden:
+      description: Insufficient role permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: forbidden
+            message: Insufficient permissions
+    ValidationError:
+      description: Request body validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: validation }
+              message: { type: string }
+              details:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path: { type: string }
+                    message: { type: string }
 
   schemas:
     Error:

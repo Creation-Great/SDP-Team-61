@@ -13,6 +13,7 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Skeleton from '../components/ui/Skeleton';
 import { strings } from '../i18n/strings';
+import { useToast } from '../components/ui/ToastProvider';
 
 /**
  * Instructor view of peer-review session results: GET /peer-review/sessions/:sessionId/results,
@@ -21,6 +22,7 @@ import { strings } from '../i18n/strings';
  * @returns {JSX.Element}
  */
 export default function PeerReviewResultsPage() {
+  const { addToast } = useToast();
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -145,12 +147,12 @@ export default function PeerReviewResultsPage() {
         team_interactions: Number(v.team_interactions),
         project_management: Number(v.project_management),
       }));
-    if (reviews.length === 0) return alert('Please fill scores for at least one student.');
+    if (reviews.length === 0) return addToast({ type: 'warning', message: 'Please fill scores for at least one student.' });
     setSubmitReviewError('');
     setSubmittingReview(true);
     try {
       await API.post(`/peer-review/sessions/${sessionId}/instructor-review`, { reviews });
-      alert(`Submitted reviews for ${reviews.length} student(s).`);
+      addToast({ type: 'success', message: `Submitted reviews for ${reviews.length} student(s).` });
     } catch (err) {
       setSubmitReviewError(err.response?.data?.message || 'Failed to submit reviews. Please try again.');
     } finally {
@@ -178,7 +180,7 @@ export default function PeerReviewResultsPage() {
         a.click();
         URL.revokeObjectURL(a.href);
       })
-      .catch(() => alert('Failed to download CSV'));
+      .catch(() => addToast({ type: 'error', message: 'Failed to download CSV' }));
   };
 
   if (loading) {

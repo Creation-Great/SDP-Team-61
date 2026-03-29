@@ -8,6 +8,8 @@ import json
 import os
 import functools
 import logging
+import time
+import random
 
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
@@ -16,7 +18,8 @@ from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 import psycopg2
 import psycopg2.extras
-from openai import OpenAI
+import psycopg2.pool
+from openai import OpenAI, APIConnectionError, RateLimitError, APITimeoutError
 
 load_dotenv()
 
@@ -31,11 +34,31 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:postgres@localhost:5432/peerreview",
 )
 
-logging.basicConfig(level=logging.INFO)
+class JsonFormatter(logging.Formatter):
+    """Structured JSON log formatter for production observability."""
+    def format(self, record):
+        entry = {
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if hasattr(record, "extra_data"):
+            entry.update(record.extra_data)
+        if record.exc_info and record.exc_info[0]:
+            entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(entry)
+
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 log = logging.getLogger("ai-service")
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024  # 1 MB request body limit
 CORS(app, origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")])
+
+MAX_TEXT_LENGTH = 10_000  # Maximum characters for AI text input
 
 # Rate limiting – keyed by remote IP
 limiter = Limiter(
@@ -54,17 +77,98 @@ def _get_openai() -> OpenAI:
     if _openai_client is None:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY is not configured")
-        _openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY, timeout=30.0)
     return _openai_client
 
 
 # ---------------------------------------------------------------------------
-# Database helpers
+# OpenAI call with retry + token tracking
 # ---------------------------------------------------------------------------
+MAX_RETRIES = 3
+RETRYABLE_ERRORS = (APIConnectionError, RateLimitError, APITimeoutError)
+
+
+def call_openai(*, model: str, temperature: float, system_prompt: str, user_message: str, action: str) -> dict:
+    """Call OpenAI with exponential backoff retry and token usage logging.
+    Returns the parsed JSON response dict."""
+    client = _get_openai()
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            completion = client.chat.completions.create(
+                model=model,
+                temperature=temperature,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+            )
+            raw = completion.choices[0].message.content or "{}"
+            result = json.loads(raw)
+
+            # Log token usage
+            usage = completion.usage
+            if usage:
+                log.info("OpenAI usage", extra={"extra_data": {
+                    "action": action,
+                    "model": model,
+                    "prompt_tokens": usage.prompt_tokens,
+                    "completion_tokens": usage.completion_tokens,
+                    "total_tokens": usage.total_tokens,
+                }})
+
+            return result
+        except json.JSONDecodeError:
+            log.error("OpenAI returned non-JSON for %s: %s", action, raw)
+            raise
+        except RETRYABLE_ERRORS as e:
+            last_error = e
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            log.warning("OpenAI %s attempt %d/%d failed (%s), retrying in %.1fs",
+                        action, attempt + 1, MAX_RETRIES, type(e).__name__, wait)
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(wait)
+    raise last_error  # type: ignore[misc]
+
+
+def validate_feedback(result: dict) -> dict:
+    """Clamp feedback values to expected ranges."""
+    toxicity = result.get("toxicity", 0)
+    politeness = result.get("politeness", 0)
+    result["toxicity"] = max(0.0, min(1.0, float(toxicity))) if isinstance(toxicity, (int, float)) else 0.0
+    result["politeness"] = max(0.0, min(1.0, float(politeness))) if isinstance(politeness, (int, float)) else 0.0
+    if result.get("sentiment") not in ("positive", "negative", "neutral", "mixed"):
+        result["sentiment"] = "neutral"
+    if not isinstance(result.get("identity_spans"), list):
+        result["identity_spans"] = []
+    if not isinstance(result.get("evidence_spans"), list):
+        result["evidence_spans"] = []
+    result.setdefault("confidence", 0.5)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Database helpers — connection pool with timeouts
+# ---------------------------------------------------------------------------
+_db_pool = None
+
+def _get_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=DATABASE_URL,
+            connect_timeout=10,
+            options="-c statement_timeout=30000",
+        )
+    return _db_pool
+
 def get_db():
-    """Return a per-request psycopg2 connection (reused within the same request)."""
+    """Return a per-request connection from the pool (returned on teardown)."""
     if "db" not in g:
-        g.db = psycopg2.connect(DATABASE_URL)
+        g.db = _get_pool().getconn()
     return g.db
 
 
@@ -72,20 +176,33 @@ def get_db():
 def close_db(_exc):
     conn = g.pop("db", None)
     if conn is not None:
-        conn.close()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            _get_pool().putconn(conn)
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
 # Inter-service auth decorator
 # ---------------------------------------------------------------------------
 def require_api_key(fn):
-    """Validate X-AI-API-Key header against the shared secret."""
+    """Validate X-AI-API-Key header against the shared secret.
+    When AI_API_KEY is not configured, reject all requests (fail closed)."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        if AI_API_KEY:
-            incoming = request.headers.get("X-AI-API-Key", "")
-            if incoming != AI_API_KEY:
-                return jsonify(error="unauthorized", message="Invalid or missing API key"), 401
+        if not AI_API_KEY:
+            log.warning("AI_API_KEY not configured — rejecting request")
+            return jsonify(error="not_configured", message="AI service API key is not configured"), 503
+        incoming = request.headers.get("X-AI-API-Key", "")
+        if incoming != AI_API_KEY:
+            return jsonify(error="unauthorized", message="Invalid or missing API key"), 401
         return fn(*args, **kwargs)
     return wrapper
 
@@ -130,6 +247,9 @@ def generate_feedback():
     if not review_id or not text:
         return jsonify(error="validation", message="review_id and text are required"), 400
 
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify(error="validation", message=f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"), 400
+
     # Check cache – return stored result if it already exists
     conn = get_db()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -150,7 +270,7 @@ def generate_feedback():
             "cached": True,
         })
 
-    # Call OpenAI
+    # Call OpenAI (with retry + validation)
     if not OPENAI_API_KEY:
         return jsonify(
             error="not_configured",
@@ -158,20 +278,14 @@ def generate_feedback():
         ), 503
 
     try:
-        client = _get_openai()
-        completion = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": FEEDBACK_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Analyse this peer review comment:\n\n{text}"},
-            ],
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.2,
+            system_prompt=FEEDBACK_SYSTEM_PROMPT,
+            user_message=f"Analyse this peer review comment:\n\n{text}",
+            action="feedback",
         )
-        raw = completion.choices[0].message.content or "{}"
-        result = json.loads(raw)
+        result = validate_feedback(result)
     except json.JSONDecodeError:
-        log.error("OpenAI returned non-JSON for feedback: %s", raw)
         return jsonify(error="ai_error", message="AI returned invalid response"), 502
     except Exception as e:
         log.error("OpenAI feedback call failed: %s", e)
@@ -242,6 +356,9 @@ def suggest_rewrite():
     if not review_id or not text:
         return jsonify(error="validation", message="review_id and text are required"), 400
 
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify(error="validation", message=f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"), 400
+
     # Check cache
     conn = get_db()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -270,20 +387,12 @@ def suggest_rewrite():
         user_msg += f"\n\nContext about the submission being reviewed:\n{context}"
 
     try:
-        client = _get_openai()
-        completion = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            temperature=0.3,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": REWRITE_SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.3,
+            system_prompt=REWRITE_SYSTEM_PROMPT,
+            user_message=user_msg, action="rewrite",
         )
-        raw = completion.choices[0].message.content or "{}"
-        result = json.loads(raw)
     except json.JSONDecodeError:
-        log.error("OpenAI returned non-JSON for rewrite: %s", raw)
         return jsonify(error="ai_error", message="AI returned invalid response"), 502
     except Exception as e:
         log.error("OpenAI rewrite call failed: %s", e)
@@ -355,6 +464,9 @@ def polish_text():
     if not text:
         return jsonify(error="validation", message="text is required"), 400
 
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify(error="validation", message=f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"), 400
+
     if not OPENAI_API_KEY:
         return jsonify(
             error="not_configured",
@@ -362,20 +474,13 @@ def polish_text():
         ), 503
 
     try:
-        client = _get_openai()
-        completion = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            temperature=0.3,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": POLISH_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Polish this peer review comment:\n\n{text}"},
-            ],
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.3,
+            system_prompt=POLISH_SYSTEM_PROMPT,
+            user_message=f"Polish this peer review comment:\n\n{text}",
+            action="polish",
         )
-        raw = completion.choices[0].message.content or "{}"
-        result = json.loads(raw)
     except json.JSONDecodeError:
-        log.error("OpenAI returned non-JSON for polish: %s", raw)
         return jsonify(error="ai_error", message="AI returned invalid response"), 502
     except Exception as e:
         log.error("OpenAI polish call failed: %s", e)
@@ -439,20 +544,13 @@ def summarize_reviews():
     ], indent=2)
 
     try:
-        client = _get_openai()
-        completion = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            temperature=0.3,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": SUMMARIZE_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Summarize these peer reviews:\n\n{review_text}"},
-            ],
+        result = call_openai(
+            model=OPENAI_MODEL, temperature=0.3,
+            system_prompt=SUMMARIZE_SYSTEM_PROMPT,
+            user_message=f"Summarize these peer reviews:\n\n{review_text}",
+            action="summarize",
         )
-        raw = completion.choices[0].message.content or "{}"
-        result = json.loads(raw)
     except json.JSONDecodeError:
-        log.error("OpenAI returned non-JSON for summarize: %s", raw)
         return jsonify(error="ai_error", message="AI returned invalid response"), 502
     except Exception as e:
         log.error("OpenAI summarize call failed: %s", e)

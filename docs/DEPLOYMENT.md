@@ -62,7 +62,7 @@ Ensure the backend, DB, and AI service can reach each other in production; the f
 
 - The instructor real-time event stream uses **GET /instructor/events** (SSE).
 - If nginx is used as reverse proxy in production, configure **/instructor/events** separately: disable `proxy_buffering`, set a longer `proxy_read_timeout`, etc. See **frontend/nginx.conf** under `location /instructor/events`.
-- With same-origin deployment, the browser sends the JWT via cookie; for cross-origin setups use the `?token=` method (see README Security section and the `getToken` option in `useSSE`).
+- With same-origin deployment, the browser sends the JWT via cookie automatically. SSE (EventSource) works with cookies on same-origin requests. Query param `?token=` has been removed for security (tokens in URLs leak to logs and browser history).
 
 ---
 
@@ -102,7 +102,100 @@ Ensure the backend, DB, and AI service can reach each other in production; the f
 
 ---
 
-## 8. Functional Rollout Notes (Current)
+## 8. JWT Secret Rotation
+
+When rotating `JWT_SECRET` in production:
+
+1. **Generate a new secret**: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+2. **Minimum length**: 64 characters (256 bits). The server refuses to start with shorter keys in production.
+3. **Rolling update**:
+   - Set the new `JWT_SECRET` in your secrets manager.
+   - Restart backend service(s). All existing tokens become invalid immediately.
+   - Users will be logged out and must re-authenticate.
+4. **No downtime rotation**: Not currently supported (would require dual-key verification). Plan rotation during low-traffic windows.
+5. **In-memory token blacklist**: Restarting the server clears the blacklist. For multi-instance deployments, consider Redis-backed blacklist.
+
+---
+
+## 9. Database Backup & Recovery
+
+### 9.1 Automated Backups
+
+```bash
+# Daily backup with pg_dump (add to cron or CI/CD schedule)
+pg_dump -U postgres -h localhost -d peerreview -F c -f backup_$(date +%Y%m%d).dump
+
+# Restore from backup
+pg_restore -U postgres -h localhost -d peerreview -c backup_20260315.dump
+```
+
+### 9.2 Backup Strategy
+
+- **Frequency**: Daily full backups; keep 7 days of rolling backups minimum.
+- **Upload volume**: Back up `backend_uploads` Docker volume (submitted files).
+- **Test restores**: Periodically restore a backup to a staging environment to verify integrity.
+
+### 9.3 Disaster Recovery
+
+- **RTO target**: 1 hour (restore from backup + redeploy services).
+- **RPO target**: 24 hours (daily backups). For tighter RPO, enable WAL archiving or use managed PostgreSQL with continuous backup.
+
+---
+
+## 10. Monitoring & Observability
+
+### 10.1 Health Checks
+
+| Service | Endpoint | Healthy | Unhealthy |
+|---------|----------|---------|-----------|
+| Backend | `GET /healthz` | `200 { ok: true, db: "ok" }` | `503 { ok: false, db: "error" }` |
+| AI Service | `GET /healthz` | `200 { status: "ok" }` | Connection refused |
+| Frontend | `GET /` (nginx) | `200` | Connection refused |
+| Database | `pg_isready -U postgres` | Exit 0 | Exit non-zero |
+
+### 10.2 Key Metrics to Monitor
+
+- **Backend**: Request latency (p50/p95/p99), error rate (5xx), active DB connections.
+- **AI Service**: OpenAI API latency, token usage per request (logged as structured JSON), retry count.
+- **Database**: Active connections vs pool max, query latency, disk usage.
+- **Frontend**: Nginx access log error rate (4xx/5xx).
+
+### 10.3 Log Aggregation
+
+- Backend outputs structured JSON logs (Pino) — pipe to ELK, Datadog, or CloudWatch.
+- AI service outputs structured JSON logs — same destination.
+- Nginx access/error logs available at `/var/log/nginx/`.
+
+---
+
+## 11. Resource Limits (Docker)
+
+The `docker-compose.yml` sets resource limits for all services:
+
+| Service | CPU | Memory |
+|---------|-----|--------|
+| db | 2 | 2 GB |
+| backend | 1 | 1 GB |
+| ai-service | 1 | 1 GB |
+| frontend | 0.5 | 256 MB |
+
+Adjust based on actual load. AI service may need more memory if handling large text inputs.
+
+---
+
+## 12. Security Headers (Nginx)
+
+The production nginx.conf includes these security headers:
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `X-XSS-Protection: 1; mode=block`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+
+---
+
+## 13. Functional Rollout Notes
 
 - The current deployment includes additional functional modules:
   - Rubrics API (`GET/POST /rubrics`)
@@ -113,7 +206,7 @@ Ensure the backend, DB, and AI service can reach each other in production; the f
 
 ---
 
-## 9. Mobile and Responsive
+## 14. Mobile and Responsive
 
 - Tables use horizontal scroll (`overflow-x-auto`); on small screens users can scroll horizontally to see all columns.
 - Validate on a real device or emulator: login, sidebar collapse, table scroll, modals and forms on small screens; touch targets are designed to be tappable and focusable.
@@ -121,4 +214,4 @@ Ensure the backend, DB, and AI service can reach each other in production; the f
 
 ---
 
-*Document version: 1.3 — 2026-03*
+*Document version: 2.0 — 2026-03*

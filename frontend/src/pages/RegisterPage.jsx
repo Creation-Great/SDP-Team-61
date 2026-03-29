@@ -53,7 +53,7 @@ export default function RegisterPage() {
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-cover bg-center bg-no-repeat"
-      style={{ backgroundImage: "url('/images/content.png')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}
+      style={{ backgroundImage: "url('/images/content.webp')", backgroundSize: '100% 100%', backgroundColor: '#000E2F' }}
     >
       <Card className="w-full max-w-md relative z-10 !shadow-2xl !bg-white !p-8">
         {/* Logo */}

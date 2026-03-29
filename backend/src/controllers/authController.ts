@@ -3,11 +3,32 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { withDbNoRLS } from '../db.js';
-import type { AuthRequest } from '../types.js';
+import type { AuthRequest, AuthUser } from '../types.js';
 import { JWT_SECRET, JWT_EXPIRES_IN } from '../utils/jwtConfig.js';
 import { setTokenCookie, clearTokenCookie } from '../utils/cookieHelper.js';
 import { blacklistToken } from '../utils/tokenBlacklist.js';
+import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
+
+/** Shape of the JWT payload we sign and verify. */
+interface JwtPayload {
+  user_id: string;
+  email: string;
+  role: string;
+  jti?: string;
+  exp?: number;
+}
+
+/** Row shape returned from user queries. */
+interface UserRow {
+  user_id: string;
+  email: string;
+  name: string;
+  role: string;
+  course_id?: string;
+  group_id?: string;
+  password_hash?: string;
+}
 
 const SALT_ROUNDS = 10;
 const DEFAULT_COURSE_ID = process.env.DEFAULT_COURSE_ID || 'CSE4939W';
@@ -81,7 +102,7 @@ function parseCasProfile(xml: string): { netid: string | null; name: string | nu
   return { netid, name, email };
 }
 
-async function findOrCreateCasUser(netidRaw: string, casName: string | null, casEmail: string | null): Promise<any> {
+async function findOrCreateCasUser(netidRaw: string, casName: string | null, casEmail: string | null): Promise<UserRow> {
   const netid = netidRaw.trim();
   const email = casEmail?.trim() || `${netid}@uconn.edu`;
   const displayName = casName?.trim() || netid;
@@ -133,8 +154,7 @@ export async function casLogin(_req: Request, res: Response): Promise<void> {
 export async function casCallback(req: Request, res: Response): Promise<void> {
   const ticket = String(req.query.ticket || '');
   if (!ticket) {
-    res.status(400).json({ error: 'validation', message: 'Missing CAS ticket' });
-    return;
+    throw new AppError(400, 'Missing CAS ticket');
   }
 
   const service = buildCasServiceUrl();
@@ -147,8 +167,7 @@ export async function casCallback(req: Request, res: Response): Promise<void> {
 
   if (!response.ok || !netid) {
     logger.warn({ action: 'login_failed', reason: 'cas_validation' }, 'CAS validation failed');
-    res.status(401).json({ error: 'unauthorized', message: 'CAS validation failed' });
-    return;
+    throw new AppError(401, 'CAS validation failed');
   }
 
   const user = await findOrCreateCasUser(netid, name, email);
@@ -183,8 +202,7 @@ export async function getMe(req: AuthRequest, res: Response): Promise<void> {
 export async function updateProfile(req: AuthRequest, res: Response): Promise<void> {
   const { name } = req.body ?? {};
   if (!name || typeof name !== 'string' || !name.trim()) {
-    res.status(400).json({ error: 'validation', message: 'name is required' });
-    return;
+    throw new AppError(400, 'name is required');
   }
 
   const trimmedName = name.trim();
@@ -209,8 +227,7 @@ function isDevMode(): boolean {
  */
 export async function register(req: Request, res: Response): Promise<void> {
   if (!isDevMode()) {
-    res.status(403).json({ error: 'forbidden', message: 'Local registration is disabled in production. Use CAS login.' });
-    return;
+    throw new AppError(403, 'Local registration is disabled in production. Use CAS login.');
   }
 
   const { name, email, password, role, group_id } = req.body;
@@ -235,8 +252,7 @@ export async function register(req: Request, res: Response): Promise<void> {
   });
 
   if (!user) {
-    res.status(409).json({ error: 'conflict', message: 'Email already registered' });
-    return;
+    throw new AppError(409, 'Email already registered');
   }
 
   res.status(201).json({ message: 'Registration successful', user_id: user.user_id });
@@ -248,8 +264,7 @@ export async function register(req: Request, res: Response): Promise<void> {
  */
 export async function login(req: Request, res: Response): Promise<void> {
   if (!isDevMode()) {
-    res.status(403).json({ error: 'forbidden', message: 'Local login is disabled in production. Use CAS login.' });
-    return;
+    throw new AppError(403, 'Local login is disabled in production. Use CAS login.');
   }
 
   const { email, password } = req.body;
@@ -264,15 +279,13 @@ export async function login(req: Request, res: Response): Promise<void> {
 
   if (!user) {
     logger.warn({ action: 'login_failed' }, 'Invalid credentials (user not found)');
-    res.status(401).json({ error: 'unauthorized', message: 'Invalid email or password' });
-    return;
+    throw new AppError(401, 'Invalid email or password');
   }
 
-  const valid = await bcrypt.compare(password, user.password_hash);
+  const valid = await bcrypt.compare(password, user.password_hash!);
   if (!valid) {
     logger.warn({ action: 'login_failed', userId: user.user_id }, 'Invalid credentials (wrong password)');
-    res.status(401).json({ error: 'unauthorized', message: 'Invalid email or password' });
-    return;
+    throw new AppError(401, 'Invalid email or password');
   }
 
   const token = generateToken(user);
@@ -313,7 +326,7 @@ export async function logout(req: AuthRequest, res: Response): Promise<void> {
     const cookieHeader = req.headers.cookie || '';
     const match = cookieHeader.match(/(?:^|;\s*)token=([^;]+)/);
     if (match) {
-      const decoded = jwt.verify(match[1], JWT_SECRET) as any;
+      const decoded = jwt.verify(match[1], JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload;
       if (decoded.jti && decoded.exp) {
         blacklistToken(decoded.jti, decoded.exp);
       }

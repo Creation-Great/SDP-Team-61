@@ -13,8 +13,8 @@ import {
   getMyGradesSummary,
 } from '../controllers/submissionController.js';
 import { h } from '../utils/asyncHandler.js';
-import { validate } from '../middleware/validate.js';
-import { uploadSubmissionSchema, updateSubmissionSchema } from '../schemas.js';
+import { validate, validateParams } from '../middleware/validate.js';
+import { uploadSubmissionSchema, updateSubmissionSchema, uuidParamSchema } from '../schemas.js';
 
 const router = Router();
 
@@ -35,8 +35,8 @@ router.get('/reviews/my-tasks', h(getMyReviewTasks));
 router.get('/my-grades', h(requireRole('student')), h(getMyGradesSummary));
 
 // Student: edit/withdraw own submission (before review exists)
-router.patch('/:id', h(requireRole('student')), validate(updateSubmissionSchema), h(updateSubmission));
-router.patch('/:id/replace-file', h(requireRole('student')), upload.single('file'), h(validateFileContent), h(replaceSubmissionFile));
-router.delete('/:id', h(requireRole('student')), h(withdrawSubmission));
+router.patch('/:id', validateParams(uuidParamSchema), h(requireRole('student')), validate(updateSubmissionSchema), h(updateSubmission));
+router.patch('/:id/replace-file', validateParams(uuidParamSchema), h(requireRole('student')), upload.single('file'), h(validateFileContent), h(replaceSubmissionFile));
+router.delete('/:id', validateParams(uuidParamSchema), h(requireRole('student')), h(withdrawSubmission));
 
 export default router;

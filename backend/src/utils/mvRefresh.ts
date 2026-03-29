@@ -26,19 +26,36 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let refreshing = false;
 let periodicHandle: ReturnType<typeof setInterval> | null = null;
 
+/** Consecutive failure count for backoff calculation. */
+let consecutiveFailures = 0;
+const MAX_RETRY_BACKOFF = 3;
+
 /**
  * Actually execute the refresh.  Uses CONCURRENTLY so reads are not blocked.
  * Errors are logged but never propagated — stale MV data is better than a crash.
+ * On failure, retries up to MAX_RETRY_BACKOFF times with exponential backoff.
  */
 async function doRefresh(): Promise<void> {
   if (refreshing) return;           // skip if already running
   refreshing = true;
   try {
     await pool.query('SELECT refresh_mv_instructor_cohort()');
-    log.info('mv_instructor_cohort refreshed');
+    if (consecutiveFailures > 0) {
+      log.info({ previousFailures: consecutiveFailures }, 'mv_instructor_cohort refreshed (recovered)');
+    } else {
+      log.info('mv_instructor_cohort refreshed');
+    }
+    consecutiveFailures = 0;
   } catch (err) {
-    // The MV or function may not exist yet (fresh DB before migrations)
-    log.warn({ err }, 'Refresh failed (non-fatal)');
+    consecutiveFailures++;
+    log.warn({ err, consecutiveFailures }, 'Refresh failed (non-fatal)');
+
+    // Schedule a retry with exponential backoff if under limit
+    if (consecutiveFailures <= MAX_RETRY_BACKOFF) {
+      const backoffMs = DEBOUNCE_MS * Math.pow(2, consecutiveFailures);
+      log.info({ retryIn: backoffMs, attempt: consecutiveFailures }, 'Scheduling MV refresh retry');
+      setTimeout(() => void doRefresh(), backoffMs);
+    }
   } finally {
     refreshing = false;
   }

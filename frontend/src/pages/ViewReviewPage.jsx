@@ -32,8 +32,7 @@ export default function ViewReviewPage() {
         const res = await API.get(`/reviews/by-submission/${submissionId}`);
         setSubmission(res.data.submission);
         setReviews(res.data.reviews);
-      } catch (err) {
-        console.error('Error loading reviews:', err);
+      } catch {
         setError('Failed to load reviews');
       } finally {
         setLoading(false);
