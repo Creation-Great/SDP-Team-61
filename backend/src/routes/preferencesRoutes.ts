@@ -38,7 +38,7 @@ router.patch('/', validate(userPreferencesSchema), async (req, res: Response) =>
 
   const { rows } = await pool.query(
     `INSERT INTO user_preferences (user_id, theme, font_size, high_contrast, preferences)
-     VALUES ($1, $2, $3, $4, $5)
+     VALUES ($1, COALESCE($2, 'light'), COALESCE($3, 'medium'), COALESCE($4, false), COALESCE($5, '{}'::jsonb))
      ON CONFLICT (user_id) DO UPDATE SET
        theme = COALESCE($2, user_preferences.theme),
        font_size = COALESCE($3, user_preferences.font_size),

@@ -97,46 +97,77 @@ app.use(cors({
 app.use(express.json());
 app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => (req as any).url === '/healthz' } }));
 
-// ── Rate limiting ──
-// In-memory rate limiting (Redis store can be added when Redis is initialised)
+// ── Rate Limiting ──
+// University-wide deployment: thousands of students may share a few campus NAT IPs.
+// Strategy: use User ID (from JWT) for authenticated routes, IP only for unauthenticated.
+// This prevents one abusive user from blocking an entire campus subnet.
+
 const rateLimitStore = {};
 
-// Global: 100 requests per minute per IP
+// Helper: extract user ID from JWT cookie for per-user rate limiting
+function getUserIdFromRequest(req: Request): string {
+  try {
+    const cookie = req.headers.cookie || '';
+    const match = cookie.match(/(?:^|;\s*)token=([^;]+)/);
+    if (match) {
+      const payload = JSON.parse(Buffer.from(match[1].split('.')[1], 'base64').toString());
+      return `user:${payload.user_id}`;
+    }
+  } catch { /* fall through to IP */ }
+  // Fallback: Authorization header
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ')) {
+    try {
+      const payload = JSON.parse(Buffer.from(auth.split(' ')[1].split('.')[1], 'base64').toString());
+      return `user:${payload.user_id}`;
+    } catch { /* fall through to IP */ }
+  }
+  return req.ip || 'unknown';
+}
+
+// Global: 600 req/min per user (or per IP for unauthenticated)
+// A normal page load generates ~10-20 requests; polling adds ~2/min.
+// 600/min supports heavy usage without hitting limits.
 const globalLimiter = rateLimit({
   ...rateLimitStore,
   windowMs: 60 * 1000,
-  max: 100,
+  max: 600,
+  keyGenerator: getUserIdFromRequest,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests', message: 'Too many requests, please try again later' },
 });
 app.use(globalLimiter);
 
-// Strict limiter for auth endpoints (login / register / CAS callback)
+// Auth: per-IP only (no JWT yet). 100 attempts per 15 minutes.
+// Prevents brute-force but allows classroom demos with multiple logins.
 const authLimiter = rateLimit({
   ...rateLimitStore,
-  windowMs: 5 * 60 * 1000,    // 5 minutes
-  max: 20,                     // 20 attempts — prevents brute-force
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'too_many_requests', message: 'Too many authentication attempts, try again in 5 minutes' },
+  message: { error: 'too_many_requests', message: 'Too many authentication attempts, try again in 15 minutes' },
 });
 
-// Write-heavy operation limiter: 30 requests per 10 minutes (peer-review sessions, bulk assign, enrollments)
+// Write operations: 300 per 10 min per user.
+// Instructor bulk operations (assign 30 students × multiple API calls) need headroom.
 const writeLimiter = rateLimit({
   ...rateLimitStore,
   windowMs: 10 * 60 * 1000,
-  max: 30,
+  max: 300,
+  keyGenerator: getUserIdFromRequest,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests', message: 'Too many write operations, try again later' },
 });
 
-// Upload limiter: 100 uploads per 10 minutes
+// Upload: 50 per 10 min per user. File uploads are heavy; this is still generous.
 const uploadLimiter = rateLimit({
   ...rateLimitStore,
   windowMs: 10 * 60 * 1000,
-  max: 100,
+  max: 50,
+  keyGenerator: getUserIdFromRequest,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'too_many_requests', message: 'Upload rate limit exceeded' },

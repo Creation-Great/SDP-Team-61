@@ -15,7 +15,7 @@ export default function AdvancedAnalyticsPage() {
   useEffect(() => {
     Promise.all([
       API.get('/instructor/overview').then((r) => r.data).catch(() => null),
-      API.get('/submissions/all').then((r) => r.data).catch(() => []),
+      API.get('/submissions/all').then((r) => r.data?.submissions || r.data || []).catch(() => []),
     ])
       .then(([ov, subs]) => {
         setOverview(ov);

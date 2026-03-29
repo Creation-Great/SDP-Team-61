@@ -58,6 +58,20 @@
   color: var(--text-primary);
 }
 
+/* High contrast mode */
+.high-contrast {
+  --text-primary: #000000;
+  --text-secondary: #1a1a1a;
+  --text-muted: #333333;
+}
+.high-contrast body {
+  font-weight: 500;
+}
+.high-contrast .bg-slate-50,
+.high-contrast .bg-slate-100 {
+  background-color: #e2e2e2 !important;
+}
+
 /* ── Base ── */
 @layer base {
   html {

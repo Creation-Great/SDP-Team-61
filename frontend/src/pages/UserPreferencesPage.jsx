@@ -26,12 +26,49 @@ export default function UserPreferencesPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const save = () => {
+  // Apply preferences to the actual page DOM
+  const applyPrefs = (p) => {
+    // Theme
+    if (p.theme === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+    localStorage.setItem('theme', p.theme);
+
+    // Font size — set CSS variable on root
+    const sizeMap = { small: '14px', medium: '16px', large: '18px' };
+    document.documentElement.style.fontSize = sizeMap[p.font_size] || '16px';
+    localStorage.setItem('fontSize', p.font_size);
+
+    // High contrast
+    if (p.high_contrast) document.documentElement.classList.add('high-contrast');
+    else document.documentElement.classList.remove('high-contrast');
+    localStorage.setItem('highContrast', String(p.high_contrast));
+  };
+
+  // Apply on initial load
+  useEffect(() => {
+    if (!loading) applyPrefs(prefs);
+  }, [loading]);
+
+  const save = (overridePrefs) => {
+    const toSave = overridePrefs || prefs;
     setSaving(true);
-    API.patch('/preferences', prefs)
-      .then(() => showToast('Preferences saved', 'success'))
+    API.patch('/preferences', toSave)
+      .then(() => {
+        showToast('Preferences saved', 'success');
+        applyPrefs(toSave);
+      })
       .catch(() => showToast('Failed to save preferences', 'error'))
       .finally(() => setSaving(false));
+  };
+
+  // Auto-save when any toggle changes
+  const updateAndSave = (updater) => {
+    setPrefs(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+      // Save in next tick after state update
+      setTimeout(() => save(next), 0);
+      return next;
+    });
   };
 
   if (loading) return <div className="max-w-2xl mx-auto p-6"><div className="animate-pulse h-64 bg-slate-100 rounded-2xl" /></div>;
@@ -53,7 +90,7 @@ export default function UserPreferencesPage() {
             </div>
           </div>
           <button
-            onClick={() => setPrefs(p => ({ ...p, theme: p.theme === 'light' ? 'dark' : 'light' }))}
+            onClick={() => updateAndSave(p => ({ ...p, theme: p.theme === 'light' ? 'dark' : 'light' }))}
             className={`relative w-14 h-7 rounded-full transition-colors ${prefs.theme === 'dark' ? 'bg-[#000E2F]' : 'bg-slate-200'}`}
           >
             <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${prefs.theme === 'dark' ? 'translate-x-7' : 'translate-x-0.5'}`} />
@@ -72,7 +109,7 @@ export default function UserPreferencesPage() {
             {FONT_SIZES.map(fs => (
               <button
                 key={fs.value}
-                onClick={() => setPrefs(p => ({ ...p, font_size: fs.value }))}
+                onClick={() => updateAndSave(p => ({ ...p, font_size: fs.value }))}
                 className={`flex-1 py-2 rounded-lg text-center font-medium transition-colors ${fs.class} ${
                   prefs.font_size === fs.value
                     ? 'bg-[#000E2F] text-white'
@@ -95,7 +132,7 @@ export default function UserPreferencesPage() {
               </div>
             </div>
             <button
-              onClick={() => setPrefs(p => ({ ...p, high_contrast: !p.high_contrast }))}
+              onClick={() => updateAndSave(p => ({ ...p, high_contrast: !p.high_contrast }))}
               className={`relative w-14 h-7 rounded-full transition-colors ${prefs.high_contrast ? 'bg-[#000E2F]' : 'bg-slate-200'}`}
             >
               <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${prefs.high_contrast ? 'translate-x-7' : 'translate-x-0.5'}`} />

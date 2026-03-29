@@ -18,7 +18,7 @@ export default function SemesterManagementPage() {
   const fetchSemesters = () => {
     setLoading(true);
     API.get('/semesters')
-      .then(r => setSemesters(r.data || []))
+      .then(r => setSemesters(Array.isArray(r.data) ? r.data : []))
       .catch(() => showToast('Failed to load semesters', 'error'))
       .finally(() => setLoading(false));
   };

@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import API from '../services/api';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/ui/ToastProvider';
 import { Settings, Download, Save } from 'lucide-react';
 
 export default function GradeManagementPage() {
-  const { courseId } = useParams();
+  const { user } = useAuth();
   const { showToast } = useToast();
+  const courseId = user?.course_id || user?.enrollments?.[0]?.course_id || 'CSE4939W';
+
   const [weights, setWeights] = useState({ file_review_weight: 40, peer_review_weight: 40, checkin_weight: 20 });
   const [drops, setDrops] = useState({ drop_highest: 0, drop_lowest: 0 });
   const [grades, setGrades] = useState([]);
@@ -16,21 +18,30 @@ export default function GradeManagementPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!courseId) { setLoading(false); return; }
     Promise.all([
-      API.get(`/grades/weights/${courseId}`),
-      API.get(`/grades/final/${courseId}`),
+      API.get(`/grades/weights/${courseId}`).catch(() => ({ data: null })),
+      API.get(`/grades/final/${courseId}`).catch(() => ({ data: [] })),
     ])
       .then(([wRes, gRes]) => {
-        if (wRes.data) { setWeights(wRes.data.weights || wRes.data); setDrops(wRes.data.drops || drops); }
-        setGrades(gRes.data || []);
+        if (wRes.data) {
+          const w = wRes.data;
+          setWeights({
+            file_review_weight: Math.round(Number(w.file_review_weight) || 40),
+            peer_review_weight: Math.round(Number(w.peer_review_weight) || 40),
+            checkin_weight: Math.round(Number(w.checkin_weight) || 20),
+          });
+          setDrops({ drop_highest: w.drop_highest ?? 0, drop_lowest: w.drop_lowest ?? 0 });
+        }
+        const g = gRes.data;
+        setGrades(Array.isArray(g) ? g : []);
       })
-      .catch(() => showToast('Failed to load grade data', 'error'))
       .finally(() => setLoading(false));
   }, [courseId]);
 
   const saveWeights = () => {
     setSaving(true);
-    API.post(`/grades/weights/${courseId}`, { ...weights, ...drops })
+    API.put(`/grades/weights/${courseId}`, { ...weights, ...drops })
       .then(() => showToast('Weights saved', 'success'))
       .catch(() => showToast('Failed to save weights', 'error'))
       .finally(() => setSaving(false));
@@ -38,10 +49,10 @@ export default function GradeManagementPage() {
 
   const exportCsv = () => {
     const header = 'Student,File Avg,Peer Avg,Checkin Avg,Weighted Total\n';
-    const rows = grades.map(g => `${g.student_name},${g.file_avg},${g.peer_avg},${g.checkin_avg},${g.weighted_total}`).join('\n');
+    const rows = grades.map(g => `${g.student_name || g.name || ''},${g.file_avg ?? ''},${g.peer_avg ?? ''},${g.checkin_avg ?? ''},${g.weighted_total ?? ''}`).join('\n');
     const blob = new Blob([header + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'grades.csv'; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = `grades-${courseId}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -51,7 +62,10 @@ export default function GradeManagementPage() {
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#000E2F] flex items-center gap-2"><Settings size={24} /> Grade Management</h1>
-        <Button variant="outline" onClick={exportCsv}><Download size={16} className="mr-2" /> Export CSV</Button>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500">Course: <strong>{courseId}</strong></span>
+          <Button variant="secondary" onClick={exportCsv}><Download size={16} className="mr-2" /> Export CSV</Button>
+        </div>
       </div>
 
       <Card className="p-6">
@@ -70,18 +84,21 @@ export default function GradeManagementPage() {
             </div>
           ))}
         </div>
+        {(weights.file_review_weight + weights.peer_review_weight + weights.checkin_weight) !== 100 && (
+          <p className="text-sm text-amber-600 mt-2">⚠ Weights sum to {weights.file_review_weight + weights.peer_review_weight + weights.checkin_weight}% (should be 100%)</p>
+        )}
         <div className="grid grid-cols-2 gap-6 mt-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Drop Highest</label>
             <input type="number" min={0} max={5} value={drops.drop_highest}
               onChange={e => setDrops(prev => ({ ...prev, drop_highest: Number(e.target.value) }))}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]" />
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Drop Lowest</label>
             <input type="number" min={0} max={5} value={drops.drop_lowest}
               onChange={e => setDrops(prev => ({ ...prev, drop_lowest: Number(e.target.value) }))}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]" />
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm" />
           </div>
         </div>
         <div className="mt-4 flex justify-end">
@@ -104,15 +121,15 @@ export default function GradeManagementPage() {
           <tbody className="divide-y divide-slate-100">
             {grades.map((g, i) => (
               <tr key={i} className="hover:bg-slate-50">
-                <td className="p-3 font-medium text-slate-900">{g.student_name}</td>
-                <td className="p-3 text-center">{g.file_avg?.toFixed(1)}</td>
-                <td className="p-3 text-center">{g.peer_avg?.toFixed(1)}</td>
-                <td className="p-3 text-center">{g.checkin_avg?.toFixed(1)}</td>
-                <td className="p-3 text-center font-semibold text-[#000E2F]">{g.weighted_total?.toFixed(1)}</td>
+                <td className="p-3 font-medium text-slate-900">{g.student_name || g.name || 'Unknown'}</td>
+                <td className="p-3 text-center">{g.file_avg != null ? Number(g.file_avg).toFixed(1) : '—'}</td>
+                <td className="p-3 text-center">{g.peer_avg != null ? Number(g.peer_avg).toFixed(1) : '—'}</td>
+                <td className="p-3 text-center">{g.checkin_avg != null ? Number(g.checkin_avg).toFixed(1) : '—'}</td>
+                <td className="p-3 text-center font-semibold text-[#000E2F]">{g.weighted_total != null ? Number(g.weighted_total).toFixed(1) : '—'}</td>
               </tr>
             ))}
             {grades.length === 0 && (
-              <tr><td colSpan={5} className="p-8 text-center text-slate-400">No grade data available</td></tr>
+              <tr><td colSpan={5} className="p-8 text-center text-slate-400">No grade data available yet. Students need to submit work and receive reviews first.</td></tr>
             )}
           </tbody>
         </table>

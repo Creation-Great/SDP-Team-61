@@ -5,11 +5,13 @@ import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/ToastProvider';
+import { useAuth } from '../contexts/AuthContext';
 import { Search, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export default function SimilarityDashboardPage() {
   const [searchParams] = useSearchParams();
-  const courseId = searchParams.get('course_id') || '';
+  const { user } = useAuth();
+  const courseId = searchParams.get('course_id') || user?.course_id || user?.enrollments?.[0]?.course_id || '';
   const [pairs, setPairs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -18,7 +20,7 @@ export default function SimilarityDashboardPage() {
   const fetchData = () => {
     setLoading(true);
     API.get(`/similarity/dashboard?course_id=${courseId}`)
-      .then(r => setPairs(r.data))
+      .then(r => setPairs(Array.isArray(r.data) ? r.data : []))
       .catch(() => showToast('Failed to load similarity data', 'error'))
       .finally(() => setLoading(false));
   };

@@ -67,7 +67,7 @@ MAX_TEXT_LENGTH = 10_000  # Maximum characters for AI text input
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["120 per minute"],
+    default_limits=["300 per minute"],
     storage_uri="memory://",
 )
 
@@ -237,7 +237,7 @@ Return ONLY valid JSON, no markdown fences."""
 
 @app.route("/api/ai/feedback", methods=["POST"])
 @require_api_key
-@limiter.limit("30 per minute")
+@limiter.limit("60 per minute")
 def generate_feedback():
     """
     Analyse a review comment with OpenAI and persist to ml_outputs.
@@ -345,7 +345,7 @@ Return ONLY valid JSON, no markdown fences."""
 
 @app.route("/api/ai/rewrite", methods=["POST"])
 @require_api_key
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 def suggest_rewrite():
     """
     Suggest improved version of a review comment and persist to rewrite_suggestions.
@@ -455,7 +455,7 @@ Return ONLY valid JSON, no markdown fences."""
 
 @app.route("/api/ai/polish", methods=["POST"])
 @require_api_key
-@limiter.limit("30 per minute")
+@limiter.limit("60 per minute")
 def polish_text():
     """
     Polish a review comment text.
@@ -522,7 +522,7 @@ Return ONLY valid JSON, no markdown fences."""
 
 @app.route("/api/ai/summarize", methods=["POST"])
 @require_api_key
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 def summarize_reviews():
     """
     Summarize multiple reviews for a submission.
@@ -757,7 +757,7 @@ REVIEW_DEPTH_SYSTEM_PROMPT = """You are an AI that evaluates the depth and quali
 
 @app.route("/api/ai/review-depth", methods=["POST"])
 @require_api_key
-@limiter.limit("30 per minute")
+@limiter.limit("60 per minute")
 def review_depth():
     """
     Evaluate depth and quality of a peer review comment.
@@ -836,7 +836,7 @@ SCORE_SUGGESTION_SYSTEM_PROMPT = """You are an AI grading assistant. Given the t
 
 @app.route("/api/ai/score-suggestion", methods=["POST"])
 @require_api_key
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 def score_suggestion():
     """
     Suggest a score range for a submission based on rubric.
@@ -889,7 +889,7 @@ CALIBRATION_SYSTEM_PROMPT = """You are a peer review calibration assistant. Give
 
 @app.route("/api/ai/calibration", methods=["POST"])
 @require_api_key
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 def calibration():
     """
     Provide calibration advice for a reviewer's score.
@@ -956,7 +956,7 @@ SCORE_REASONING_SYSTEM_PROMPT = """You are a peer review assistant that helps re
 
 @app.route("/api/ai/score-reasoning", methods=["POST"])
 @require_api_key
-@limiter.limit("20 per minute")
+@limiter.limit("60 per minute")
 def score_reasoning():
     """
     Generate reasoning for a peer review score.
@@ -1001,7 +1001,7 @@ def score_reasoning():
 # ---------------------------------------------------------------------------
 @app.route("/api/ai/similarity", methods=["POST"])
 @require_api_key
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def similarity():
     """
     Compute pairwise similarity between submissions using TF-IDF + cosine similarity.
@@ -1066,7 +1066,7 @@ def similarity():
 # ---------------------------------------------------------------------------
 @app.route("/api/ai/similarity/turnitin", methods=["POST"])
 @require_api_key
-@limiter.limit("10 per minute")
+@limiter.limit("60 per minute")
 def similarity_turnitin():
     """
     Mock Turnitin endpoint — returns simulated plagiarism results.
@@ -1151,7 +1151,7 @@ def call_openai_chat(*, model: str, temperature: float, system_prompt: str,
 
 @app.route("/api/ai/chat", methods=["POST"])
 @require_api_key
-@limiter.limit("30 per minute")
+@limiter.limit("60 per minute")
 def ai_chat():
     """
     Multi-turn conversational AI assistant for peer review.
