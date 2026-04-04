@@ -110,6 +110,27 @@
 
 ### v3.0 — New Features
 
+#### Module Maturity
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| Anonymous Reviews | **Production** | Per-session config, stable pseudonyms |
+| Multi-Round Review | **Production** | Revision chain, auto-reassignment, diff view |
+| Assignment Strategy | **Production** | 4 strategies, exclusion rules |
+| Review Quality | **Production** | Helpfulness voting, reputation, consistency alerts |
+| AI Feedback / Rewrite / Polish / Summarize | **Production** | OpenAI-powered, cached, persisted |
+| Grade Management | **Production** | Weighted calculation, drop lowest/highest, CSV export |
+| Semester Management | **Production** | CRUD with active/inactive toggle |
+| Deadline & Reminders | **Production** | Automated scheduler, grace periods, extensions |
+| Notifications | **Production** | 9 event types, polling, push subscriptions |
+| User Preferences | **Production** | Theme, font size, contrast |
+| Audit & Compliance | **Production** | GDPR export, deletion requests, audit log |
+| AI Scoring & Calibration | **Beta** | Score suggestion, calibration, reasoning — functional, limited validation |
+| AI Chat | **Beta** | Multi-turn conversation, 3 context modes — functional |
+| Similarity Detection (TF-IDF) | **Beta** | Basic cosine similarity — works but not production-grade plagiarism detection |
+| LMS Integration | **Mock** | Simulated LTI 1.3, grade passback, roster import — no real LMS connection |
+| Turnitin Integration | **Mock** | Returns randomized scores — no real Turnitin API connection |
+
 #### Anonymous Review System
 - **Single-blind**: Reviewer identity hidden from author (Author sees "Anonymous Reviewer #N")
 - **Double-blind**: Both reviewer and author identities hidden from each other
@@ -229,7 +250,7 @@
 - **ESLint 9 Flat Config**: TypeScript-ESLint for backend, React Hooks + Refresh for frontend
 - **Prettier**: Unified code formatting across the monorepo
 - **Backend Tests**: Jest — 14 suites / 67 tests (utils, middleware, auth, submissions, peer review, instructor, AI controller, review, rubric, enrollment, assignment template). Test counts are for the v2.0 baseline; v3.0 controllers added but tests pending.
-- **AI Service Tests**: pytest — 7 tests (healthz, feedback, polish, search)
+- **AI Service Tests**: pytest — 90 tests across 11 modules (health, feedback, rewrite, polish, summarize, scoring, similarity, chat, logs, search, extensions) with 88% coverage
 - **Frontend Unit Tests**: Vitest — 6 suites / 38 tests (`useFilteredList`, `useSSE`, `csvHelpers`, EmptyState, Button, OfflineBanner)
 - **E2E**: Playwright — login, submission, instructor dashboard, peer review flows (runs Chromium in CI)
 - **GitHub Actions CI**: 5-job pipeline (backend with coverage / frontend / AI service with pytest / Docker / security scan via Trivy)

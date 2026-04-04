@@ -121,7 +121,7 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 
 ```bash
 cd backend && npm test    # Jest — 14 suites, 67 tests
-cd ai-service && python -m pytest tests/ -v   # 7 tests
+cd ai-service && python -m pytest tests/ -v   # 11 suites, 90 tests
 ```
 
 - Backend tests in `backend/tests/` — use mock factories from `helpers.ts`
@@ -153,6 +153,14 @@ cd ai-service && python -m pytest tests/ -v   # 7 tests
 15. **TA role**: Treated like instructor for reads, restricted for session creation
 
 ## New Features (v3.0)
+
+### Module Maturity
+
+| Status | Modules |
+|--------|---------|
+| **Production** | Anonymous Reviews, Multi-Round Review, Assignment Strategy, Review Quality, AI Feedback/Rewrite/Polish/Summarize, Grade Management, Semester Management, Deadlines & Reminders, Notifications, User Preferences, Audit & Compliance |
+| **Beta** | AI Scoring & Calibration, AI Chat, Similarity Detection (TF-IDF) |
+| **Mock** | LMS Integration (simulated LTI), Turnitin (randomized scores) |
 
 ### Anonymous Reviews
 - `anonymity_level` enum: none, single_blind, double_blind

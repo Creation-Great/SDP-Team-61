@@ -16,6 +16,12 @@ dump.rdb
 dist/sw.js
 dist/workbox-*.js
 
+# Python test/coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+__pycache__/
+
 # Test artifacts
 frontend/e2e-artifacts/
 frontend/playwright-report/

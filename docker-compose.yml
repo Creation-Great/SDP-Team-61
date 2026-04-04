@@ -76,6 +76,9 @@ services:
       AI_PORT: "5001"
       FLASK_DEBUG: "0"
       FRONTEND_URL: ${FRONTEND_URL:-https://www.peer.review.uconn.edu}
+      GUNICORN_WORKERS: "4"
+      GUNICORN_WORKER_CLASS: "gevent"
+      GUNICORN_WORKER_CONNECTIONS: "100"
     depends_on:
       db:
         condition: service_healthy

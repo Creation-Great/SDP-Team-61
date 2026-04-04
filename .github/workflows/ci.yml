@@ -146,8 +146,8 @@ jobs:
       - name: Python syntax check
         run: python -m py_compile app.py
 
-      - name: Run AI service tests
-        run: python -m pytest tests/ -v
+      - name: Run AI service tests with coverage
+        run: python -m pytest tests/ -v --cov=. --cov-report=term-missing --cov-fail-under=60
         env:
           AI_API_KEY: test-key
           OPENAI_API_KEY: test-openai-key

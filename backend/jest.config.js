@@ -17,5 +17,13 @@ export default {
     '!src/migrate.ts',
     '!src/server.ts',
   ],
+  coverageThreshold: {
+    global: {
+      branches: 60,
+      functions: 60,
+      lines: 60,
+      statements: 60,
+    },
+  },
   setupFiles: ['<rootDir>/tests/envSetup.ts'],
 };
