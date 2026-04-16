@@ -78,22 +78,36 @@ export default function ReviewPage() {
   // Load backend draft (wins over local draft if exists)
   useEffect(() => {
     if (!id) return;
-    API.get(`/reviews/${id}/draft`)
+    const controller = new AbortController();
+    API.get(`/reviews/${id}/draft`, { signal: controller.signal })
       .then((res) => {
+        if (controller.signal.aborted) return;
         const d = res.data || {};
         if (typeof d.score === 'number') setScore(d.score);
         if (typeof d.comments === 'string') setComments(d.comments);
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (err?.name === 'CanceledError' || controller.signal.aborted) return;
+        // Backend draft is optional — local draft is already loaded; surface
+        // unexpected errors only in dev so load failures don't block the form.
+        if (err?.response?.status !== 404) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to load backend draft', err);
+        }
+      });
+    return () => controller.abort();
   }, [id]);
 
   // Persist draft while editing; skip when a review is already submitted.
   useEffect(() => {
     if (!id || review?.review_id) return;
     const timer = setTimeout(() => {
-      API.patch(`/reviews/${id}/draft`, { score, comments }).then(() => {
-        setDraftStatus('Draft saved');
-      }).catch(() => {});
+      API.patch(`/reviews/${id}/draft`, { score, comments })
+        .then(() => setDraftStatus('Draft saved'))
+        .catch((err) => {
+          if (err?.name === 'CanceledError') return;
+          setDraftStatus('Draft save failed');
+        });
     }, 700);
     try {
       localStorage.setItem(draftKey, JSON.stringify({ score, comments, updatedAt: Date.now() }));
@@ -150,7 +164,7 @@ export default function ReviewPage() {
     setError('');
     try {
       await API.post(`/reviews/${id}/submit`, { score, comments });
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch { /* private mode / quota */ }
       navigate('/reviews');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to submit review');

@@ -88,7 +88,10 @@ function AppLayout({ children }) {
   const location = useLocation();
   return (
     <div className="min-h-screen flex">
-      <Sidebar />
+      {/* Isolate sidebar crashes so they don't kill the main content area */}
+      <ErrorBoundary fallback={<div className="w-16 border-r border-slate-200" aria-hidden="true" />}>
+        <Sidebar />
+      </ErrorBoundary>
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative"
         style={{ backgroundImage: "url('/images/background3.jpg')", backgroundSize: '100% 100%', backgroundColor: '#FFFFFF' }}
       >
@@ -100,13 +103,18 @@ function AppLayout({ children }) {
         <OfflineBanner />
         {/* Subtle grid overlay on top of background image */}
         <InfiniteGridBackground />
-        {/* Desktop top header */}
+        {/* Desktop top header — search and bell are isolated so one failing
+            (e.g. NotificationBell poll error) doesn't take down the whole app */}
         <header className="hidden md:flex h-16 bg-white/90 backdrop-blur-md border-b border-slate-200 items-center justify-between px-6 shrink-0 z-10">
           <div className="flex flex-1">
-            <HeaderSearchBar />
+            <ErrorBoundary fallback={<div className="h-10" aria-hidden="true" />}>
+              <HeaderSearchBar />
+            </ErrorBoundary>
           </div>
           <div className="flex items-center gap-4">
-            <NotificationBell />
+            <ErrorBoundary fallback={<div className="w-10 h-10" aria-hidden="true" />}>
+              <NotificationBell />
+            </ErrorBoundary>
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:mt-0 mt-14 relative z-[1] outline-none">

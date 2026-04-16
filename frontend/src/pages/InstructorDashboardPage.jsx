@@ -81,7 +81,10 @@ export default function InstructorDashboardPage() {
             setTotalSubmissions(d.total ?? list.length);
             setSubmissionsPage(1);
           })
-          .catch(() => {});
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn('Submissions refresh failed', err);
+          });
       }
     }, [buildFilterParams]),
   });
@@ -172,7 +175,10 @@ export default function InstructorDashboardPage() {
             setSubmissions(d.submissions ?? (Array.isArray(d) ? d : []));
             if (d.total != null) setTotalSubmissions(d.total);
           })
-          .catch(() => {});
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn('Submissions refresh failed', err);
+          });
       }
     } catch (err) {
       setAssignMsg({ type: 'err', text: err.response?.data?.message || 'Assignment failed.' });

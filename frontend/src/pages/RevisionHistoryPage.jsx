@@ -13,18 +13,25 @@ export default function RevisionHistoryPage() {
   const [diff, setDiff] = useState(null);
   const [diffLoading, setDiffLoading] = useState(false);
 
+  const [error, setError] = useState('');
+
   useEffect(() => {
     API.get(`/revisions/${id}/history`)
       .then(r => setRevisions(r.data))
-      .catch(() => {})
+      .catch((err) => {
+        setError(err.response?.data?.message || 'Failed to load revision history');
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
   const loadDiff = (subId) => {
     setDiffLoading(true);
+    setDiff(null);
     API.get(`/revisions/${subId}/diff`)
       .then(r => setDiff(r.data))
-      .catch(() => {})
+      .catch((err) => {
+        setDiff({ error: err.response?.data?.message || 'Failed to load diff' });
+      })
       .finally(() => setDiffLoading(false));
   };
 
@@ -37,6 +44,12 @@ export default function RevisionHistoryPage() {
         <h1 className="text-2xl font-bold text-[#000E2F]">Revision History</h1>
         <Badge type="info">{revisions.length} revision{revisions.length !== 1 ? 's' : ''}</Badge>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          {error}
+        </div>
+      )}
 
       <div className="space-y-4">
         {revisions.map((rev, i) => (

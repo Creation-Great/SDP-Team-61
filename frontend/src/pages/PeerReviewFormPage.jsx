@@ -110,14 +110,23 @@ export default function PeerReviewFormPage() {
   const fetchTeamReviews = useCallback(() => {
     API.get(`/peer-review/sessions/${sessionId}/team-reviews`)
       .then((res) => setTeamData(res.data))
-      .catch(() => {});
+      .catch((err) => {
+        if (err?.name === 'CanceledError') return;
+        // Polling call — keep UI quiet but log for debugging
+        // eslint-disable-next-line no-console
+        console.warn('Team reviews poll failed', err);
+      });
   }, [sessionId]);
 
   useVisibilityPolling(fetchTeamReviews, POLL_INTERVAL, !success);
 
   useEffect(() => {
-    API.get(`/peer-review/sessions/${sessionId}/my-team`)
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    API.get(`/peer-review/sessions/${sessionId}/my-team`, { signal })
       .then((res) => {
+        if (signal.aborted) return;
         const { session: sess, teammates: tm, existingReviews, teamChemistry: tc, groupId: gid, authenticatedUserId } = res.data;
         if (authenticatedUserId && user?.id && authenticatedUserId !== user.id) setSessionMismatch(true);
         setSession(sess);
@@ -154,21 +163,32 @@ export default function PeerReviewFormPage() {
         setReviews(merged);
 
         // Then try backend draft and apply on top (cross-device source)
-        API.get(`/peer-review/sessions/${sessionId}/draft`)
-          .then((draftRes) => {
-            const payload = draftRes.data?.payload || {};
-            const backendReviews = payload?.reviews;
-            const backendChem = payload?.teamChemistry;
-            if (backendReviews && typeof backendReviews === 'object') {
-              setReviews((prev) => ({ ...prev, ...backendReviews }));
-            }
-            if (backendChem !== undefined) setTeamChemistry(backendChem);
-          })
-          .catch(() => {});
+        return API.get(`/peer-review/sessions/${sessionId}/draft`, { signal });
       })
-      .catch((err) => setError(err.response?.data?.message || 'Failed to load team data'))
-      .finally(() => setLoading(false));
-  }, [sessionId, draftKey]);
+      .then((draftRes) => {
+        if (!draftRes || signal.aborted) return;
+        const payload = draftRes.data?.payload || {};
+        const backendReviews = payload?.reviews;
+        const backendChem = payload?.teamChemistry;
+        if (backendReviews && typeof backendReviews === 'object') {
+          setReviews((prev) => ({ ...prev, ...backendReviews }));
+        }
+        if (backendChem !== undefined) setTeamChemistry(backendChem);
+      })
+      .catch((err) => {
+        if (err?.name === 'CanceledError' || signal.aborted) return;
+        // Only surface primary team fetch errors; backend draft is optional
+        if (err?.config?.url?.includes('/my-team')) {
+          setError(err.response?.data?.message || 'Failed to load team data');
+        } else {
+          // eslint-disable-next-line no-console
+          console.warn('Backend draft load failed, using local draft only', err);
+        }
+      })
+      .finally(() => { if (!signal.aborted) setLoading(false); });
+
+    return () => controller.abort();
+  }, [sessionId, draftKey, user?.id]);
 
   // Persist local draft while editing.
   useEffect(() => {
@@ -178,7 +198,12 @@ export default function PeerReviewFormPage() {
       API.patch(`/peer-review/sessions/${sessionId}/draft`, {
         reviews,
         teamChemistry,
-      }).then(() => setDraftStatus('Draft saved')).catch(() => {});
+      })
+        .then(() => setDraftStatus('Draft saved'))
+        .catch((err) => {
+          if (err?.name === 'CanceledError') return;
+          setDraftStatus('Draft save failed');
+        });
     }, 900);
     try {
       localStorage.setItem(draftKey, JSON.stringify({
@@ -237,7 +262,7 @@ export default function PeerReviewFormPage() {
       };
       await API.post(`/peer-review/sessions/${sessionId}/submit`, payload);
       setSuccess('Peer reviews submitted successfully!');
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch { /* private mode / quota */ }
       fetchTeamReviews();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to submit reviews');

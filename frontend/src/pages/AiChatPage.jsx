@@ -19,10 +19,15 @@ export default function AiChatPage() {
   const [conversationId, setConversationId] = useState(null);
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Abort any in-flight chat request when the page unmounts so the setState
+  // calls below don't fire on an unmounted component
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const sendMessage = async (e) => {
     e.preventDefault();
@@ -32,18 +37,25 @@ export default function AiChatPage() {
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setSending(true);
 
+    // Cancel any previous in-flight request before starting a new one
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await API.post('/api/ai/chat', {
         message: text,
         context_type: contextType,
         conversation_id: conversationId,
-      });
+      }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (res.data.conversation_id) setConversationId(res.data.conversation_id);
       setMessages(prev => [...prev, { role: 'assistant', content: res.data.reply }]);
-    } catch {
+    } catch (err) {
+      if (err?.name === 'CanceledError' || controller.signal.aborted) return;
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }]);
     } finally {
-      setSending(false);
+      if (!controller.signal.aborted) setSending(false);
     }
   };
 

@@ -26,22 +26,26 @@ export default function UserPreferencesPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Apply preferences to the actual page DOM
+  // Apply preferences to the actual page DOM.
+  // localStorage.setItem is wrapped in try/catch so we don't crash in private
+  // browsing modes where storage is blocked — the DOM changes above still work.
   const applyPrefs = (p) => {
+    const safeSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode / quota */ } };
+
     // Theme
     if (p.theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
-    localStorage.setItem('theme', p.theme);
+    safeSet('theme', p.theme);
 
     // Font size — set CSS variable on root
     const sizeMap = { small: '14px', medium: '16px', large: '18px' };
     document.documentElement.style.fontSize = sizeMap[p.font_size] || '16px';
-    localStorage.setItem('fontSize', p.font_size);
+    safeSet('fontSize', p.font_size);
 
     // High contrast
     if (p.high_contrast) document.documentElement.classList.add('high-contrast');
     else document.documentElement.classList.remove('high-contrast');
-    localStorage.setItem('highContrast', String(p.high_contrast));
+    safeSet('highContrast', String(p.high_contrast));
   };
 
   // Apply on initial load

@@ -109,7 +109,11 @@ export default function InstructorAnalyticsPage() {
     if (!cid) return;
     API.get('/instructor/submission-policy', { params: { course_id: cid } })
       .then((res) => setAllowAfterReview(Boolean(res.data?.allow_edit_withdraw_after_reviews)))
-      .catch(() => {});
+      .catch((err) => {
+        // Non-fatal: keep default policy but log for debugging
+        // eslint-disable-next-line no-console
+        console.warn('Failed to load submission policy', err);
+      });
   }, [policyCourseId, courseFilter]);
 
   useEffect(() => {

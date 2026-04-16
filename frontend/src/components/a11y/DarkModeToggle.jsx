@@ -1,21 +1,30 @@
 import { useState, useEffect } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
+/** Safe localStorage accessors — avoid hard-crash in private / incognito modes */
+function safeGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function safeSet(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* private mode / quota */ }
+}
+
 export default function DarkModeToggle() {
   const [dark, setDark] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return localStorage.getItem('theme') === 'dark' ||
-      (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const stored = safeGet('theme');
+    return stored === 'dark' ||
+      (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
 
   useEffect(() => {
     const root = document.documentElement;
     if (dark) {
       root.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+      safeSet('theme', 'dark');
     } else {
       root.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      safeSet('theme', 'light');
     }
   }, [dark]);
 

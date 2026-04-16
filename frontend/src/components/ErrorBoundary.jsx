@@ -20,6 +20,9 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      // Optional compact fallback for small/isolated UI regions (e.g. sidebar,
+      // header controls). When not provided, fall back to the full-page error UI.
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
           <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mb-4">
