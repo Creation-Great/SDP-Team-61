@@ -3,7 +3,7 @@ import { useRef, useEffect, useCallback, useState } from 'react';
 export default function useAutoSave({ data, saveFn, intervalMs = 30000, enabled = true }) {
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
-  const [version, setVersion] = useState(1);
+  const versionRef = useRef(1);
   const dirtyRef = useRef(false);
   const dataRef = useRef(data);
 
@@ -16,18 +16,18 @@ export default function useAutoSave({ data, saveFn, intervalMs = 30000, enabled 
     if (!dirtyRef.current || !enabled) return;
     setSaving(true);
     try {
-      await saveFn(dataRef.current, version);
+      await saveFn(dataRef.current, versionRef.current);
       dirtyRef.current = false;
       setLastSaved(new Date());
-      setVersion(v => v + 1);
+      versionRef.current += 1;
     } catch (err) {
       if (err?.response?.status === 409) {
-        console.warn('Draft version conflict');
+        // Draft version conflict — silently handled; next auto-save will retry
       }
     } finally {
       setSaving(false);
     }
-  }, [saveFn, version, enabled]);
+  }, [saveFn, enabled]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -35,5 +35,5 @@ export default function useAutoSave({ data, saveFn, intervalMs = 30000, enabled 
     return () => clearInterval(id);
   }, [save, intervalMs, enabled]);
 
-  return { saving, lastSaved, version, save };
+  return { saving, lastSaved, version: versionRef.current, save };
 }

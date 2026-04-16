@@ -213,9 +213,11 @@ export default function PeerReviewFormPage() {
     try {
       const res = await API.post('/api/ai/polish', { text });
       updateReview(userId, 'individual_comments', res.data?.polished || text);
-    } catch {
-      /* Fallback: just append a note */
+    } catch (err) {
+      // Keep original text and show inline note so user knows AI was unavailable
       updateReview(userId, 'individual_comments', text + '\n\n(AI polish unavailable — original kept)');
+      setError('AI polish is temporarily unavailable. Your original text has been preserved.');
+      setTimeout(() => setError(''), 5000);
     } finally {
       setPolishingFor(null);
     }

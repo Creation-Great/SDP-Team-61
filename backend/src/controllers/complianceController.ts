@@ -13,9 +13,9 @@ export async function exportUserData(req: AuthRequest, res: Response): Promise<v
   const { user_id: requestor_id, role } = req.user;
   const { userId } = req.params;
 
-  // Only admins or the user themselves can export
-  if (role !== 'admin' && requestor_id !== userId) {
-    throw new AppError(403, 'You can only export your own data', 'forbidden');
+  // Only admins can export other users' data; all other roles (instructor, ta, student) can only export their own
+  if (requestor_id !== userId && role !== 'admin') {
+    throw new AppError(403, 'Only administrators can export other users\' data', 'forbidden');
   }
 
   const data = await withDb(requestor_id, role, async (client) => {

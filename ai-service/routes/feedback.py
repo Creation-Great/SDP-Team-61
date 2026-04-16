@@ -1,6 +1,7 @@
 """AI Feedback — analyse a review text for toxicity, politeness, sentiment."""
 
 import json
+import uuid as _uuid
 
 from flask import Blueprint, jsonify, request
 import psycopg2.extras
@@ -40,6 +41,12 @@ def generate_feedback():
 
     if not review_id or not text:
         return jsonify(error="validation", message="review_id and text are required"), 400
+
+    # Validate UUID format
+    try:
+        _uuid.UUID(str(review_id))
+    except ValueError:
+        return jsonify(error="validation", message="review_id must be a valid UUID"), 400
 
     if len(text) > MAX_TEXT_LENGTH:
         return jsonify(error="validation", message=f"Text exceeds maximum length of {MAX_TEXT_LENGTH} characters"), 400
@@ -125,6 +132,11 @@ def generate_feedback():
 @require_api_key
 def get_feedback(review_id):
     """Return stored ML analysis for a review, or 404."""
+    try:
+        _uuid.UUID(str(review_id))
+    except ValueError:
+        return jsonify(error="validation", message="review_id must be a valid UUID"), 400
+
     conn = get_db()
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("SELECT * FROM ml_outputs WHERE review_id = %s", (review_id,))

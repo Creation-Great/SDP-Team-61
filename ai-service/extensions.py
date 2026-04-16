@@ -28,16 +28,18 @@ from config import (
     MAX_RETRIES,
     OPENAI_API_KEY,
     OPENAI_MODEL,
+    REDIS_URL,
     log,
 )
 
 # ---------------------------------------------------------------------------
 # Rate limiter (initialised without app — call limiter.init_app(app) later)
 # ---------------------------------------------------------------------------
+_limiter_storage = REDIS_URL if REDIS_URL else "memory://"
 limiter = Limiter(
     get_remote_address,
     default_limits=["300 per minute"],
-    storage_uri="memory://",
+    storage_uri=_limiter_storage,
 )
 
 # ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ def _get_openai() -> OpenAI:
     if _openai_client is None:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY is not configured")
-        _openai_client = OpenAI(api_key=OPENAI_API_KEY, timeout=30.0)
+        _openai_client = OpenAI(api_key=OPENAI_API_KEY, base_url="https://api.x.ai/v1", timeout=20.0)
     return _openai_client
 
 
@@ -168,10 +170,23 @@ def validate_feedback(result: dict) -> dict:
     result["politeness"] = max(0.0, min(1.0, float(politeness))) if isinstance(politeness, (int, float)) else 0.0
     if result.get("sentiment") not in ("positive", "negative", "neutral", "mixed"):
         result["sentiment"] = "neutral"
-    if not isinstance(result.get("identity_spans"), list):
-        result["identity_spans"] = []
-    if not isinstance(result.get("evidence_spans"), list):
-        result["evidence_spans"] = []
+    # Validate and sanitize span arrays
+    for key in ("identity_spans", "evidence_spans"):
+        raw = result.get(key)
+        if not isinstance(raw, list):
+            result[key] = []
+        else:
+            valid_spans = []
+            for span in raw:
+                if isinstance(span, dict):
+                    start = span.get("start", 0)
+                    end = span.get("end", 0)
+                    if isinstance(start, (int, float)) and isinstance(end, (int, float)) and start >= 0 and start < end:
+                        # Sanitize label to string type
+                        if "label" in span and not isinstance(span["label"], str):
+                            span["label"] = str(span["label"]) if span["label"] is not None else ""
+                        valid_spans.append(span)
+            result[key] = valid_spans
     result.setdefault("confidence", 0.5)
     return result
 
@@ -188,7 +203,7 @@ def _get_pool():
     if _db_pool is None:
         _db_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=1,
-            maxconn=10,
+            maxconn=25,
             dsn=DATABASE_URL,
             connect_timeout=10,
             options="-c statement_timeout=30000",

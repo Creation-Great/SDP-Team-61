@@ -7,14 +7,20 @@ import { gradeWeightsSchema } from '../schemas.js';
 import type { AuthRequest } from '../types.js';
 import { pool } from '../db.js';
 import { logger } from '../utils/logger.js';
+import { verifyCourseAccess } from '../utils/enrollment.js';
+import { z } from 'zod';
 
 const router = Router();
 
 // All routes require authentication
 router.use(h(authenticate));
 
+const courseIdParamSchema = z.object({
+  courseId: z.string().min(1, 'courseId is required'),
+});
+
 /** GET /weights/:courseId — Get grade weights for a course */
-router.get('/weights/:courseId', async (req, res: Response) => {
+router.get('/weights/:courseId', validateParams(courseIdParamSchema), async (req, res: Response) => {
   const { courseId } = req.params;
   const { rows } = await pool.query(
     'SELECT * FROM grade_weights WHERE course_id = $1',
@@ -30,9 +36,12 @@ router.get('/weights/:courseId', async (req, res: Response) => {
 });
 
 /** PUT /weights/:courseId — Create or update grade weights (instructor, admin) */
-router.put('/weights/:courseId', h(requireRole('instructor')), validate(gradeWeightsSchema), async (req, res: Response) => {
+router.put('/weights/:courseId', h(requireRole('instructor')), validateParams(courseIdParamSchema), validate(gradeWeightsSchema), async (req, res: Response) => {
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
+
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
+
   const { file_review_weight, peer_review_weight, checkin_weight, drop_lowest, drop_highest } = authReq.body;
 
   const { rows } = await pool.query(
@@ -53,8 +62,11 @@ router.put('/weights/:courseId', h(requireRole('instructor')), validate(gradeWei
 });
 
 /** GET /final/:courseId — Calculate final grades (instructor, admin) */
-router.get('/final/:courseId', h(requireRole('instructor')), async (req, res: Response) => {
+router.get('/final/:courseId', h(requireRole('instructor')), validateParams(courseIdParamSchema), async (req, res: Response) => {
+  const authReq = req as AuthRequest;
   const { courseId } = req.params;
+
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
 
   // Get weights
   const { rows: weightRows } = await pool.query(
@@ -82,8 +94,11 @@ router.get('/final/:courseId', h(requireRole('instructor')), async (req, res: Re
 });
 
 /** GET /export/:courseId — Export grades as CSV (instructor, admin) */
-router.get('/export/:courseId', h(requireRole('instructor')), async (req, res: Response) => {
+router.get('/export/:courseId', h(requireRole('instructor')), validateParams(courseIdParamSchema), async (req, res: Response) => {
+  const authReq = req as AuthRequest;
   const { courseId } = req.params;
+
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
 
   const { rows: students } = await pool.query(
     `SELECT ue.user_id, u.name, u.email
@@ -94,9 +109,14 @@ router.get('/export/:courseId', h(requireRole('instructor')), async (req, res: R
     [courseId]
   );
 
-  // Build CSV
+  // Build CSV (escape formula-injection characters)
+  const safeCsv = (val: string) => {
+    const escaped = val.replace(/"/g, '""');
+    const sanitized = /^[=+\-@\t\r]/.test(escaped) ? `'${escaped}` : escaped;
+    return `"${sanitized}"`;
+  };
   const header = 'Name,Email,User ID\n';
-  const csvRows = students.map((s: any) => `"${s.name}","${s.email}","${s.user_id}"`).join('\n');
+  const csvRows = students.map((s: any) => `${safeCsv(s.name)},${safeCsv(s.email)},${safeCsv(s.user_id)}`).join('\n');
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="grades-${courseId}.csv"`);

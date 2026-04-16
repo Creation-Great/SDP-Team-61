@@ -1,5 +1,6 @@
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { Enrollment } from '../types.js';
+import { AppError } from './AppError.js';
 
 /**
  * Look up the group_id for a user in a specific course via user_enrollments.
@@ -98,4 +99,62 @@ export async function getTeammatesByCourse(
     [groupId]
   );
   return r.rows;
+}
+
+/**
+ * Verify that an instructor/TA is enrolled in the given course.
+ * Admins bypass this check. Throws 403 if not enrolled.
+ * Works with both Pool and PoolClient.
+ */
+export async function verifyCourseAccess(
+  db: Pool | PoolClient,
+  userId: string,
+  role: string,
+  courseId: string
+): Promise<void> {
+  if (role === 'admin') return;
+
+  const r = await db.query(
+    `SELECT 1 FROM user_enrollments
+     WHERE user_id = $1 AND course_id = $2 AND role IN ('instructor', 'ta')
+     LIMIT 1`,
+    [userId, courseId]
+  );
+
+  if (r.rows.length === 0) {
+    throw new AppError(403, 'You do not have access to this course', 'forbidden');
+  }
+}
+
+/**
+ * Verify that a session belongs to a course the instructor teaches.
+ * Admins bypass this check. Throws 403 if not authorized.
+ */
+export async function verifySessionAccess(
+  db: Pool | PoolClient,
+  userId: string,
+  role: string,
+  sessionId: string
+): Promise<void> {
+  if (role === 'admin') return;
+
+  const r = await db.query(
+    `SELECT 1 FROM peer_review_sessions prs
+     WHERE prs.session_id = $1
+       AND (
+         prs.created_by = $2
+         OR EXISTS (
+           SELECT 1 FROM user_enrollments ue
+           WHERE ue.course_id = prs.course_id
+             AND ue.user_id = $2
+             AND ue.role IN ('instructor', 'ta')
+         )
+       )
+     LIMIT 1`,
+    [sessionId, userId]
+  );
+
+  if (r.rows.length === 0) {
+    throw new AppError(403, 'You do not have access to this session', 'forbidden');
+  }
 }

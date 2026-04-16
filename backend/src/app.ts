@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import crypto from 'crypto';
 import pinoHttpModule from 'pino-http';
 import { logger } from './utils/logger.js';
 
@@ -95,7 +96,19 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
-app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => (req as any).url === '/healthz' } }));
+
+// Request correlation ID — attach a unique ID to each request for tracing
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  const correlationId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  (req as any).correlationId = correlationId;
+  next();
+});
+
+app.use(pinoHttp({
+  logger,
+  autoLogging: { ignore: (req) => (req as any).url === '/healthz' },
+  customProps: (req) => ({ correlationId: (req as any).correlationId }),
+}));
 
 // ── Rate Limiting ──
 // University-wide deployment: thousands of students may share a few campus NAT IPs.
@@ -198,9 +211,9 @@ app.get('/uploads/:filename', h(authenticate), async (req, res) => {
   if (role !== 'instructor' && role !== 'admin') {
     const access = await pool.query(
       `SELECT 1 FROM submissions s
-       LEFT JOIN assignments a ON a.submission_id = s.submission_id
        WHERE s.file_url LIKE '%' || $1
-         AND (s.user_id = $2 OR a.reviewer_id = $2)
+         AND (s.user_id = $2
+              OR EXISTS (SELECT 1 FROM assignments a WHERE a.submission_id = s.submission_id AND a.reviewer_id = $2))
        LIMIT 1`,
       [filename, userId]
     );

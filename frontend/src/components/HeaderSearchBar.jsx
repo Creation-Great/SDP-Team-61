@@ -14,6 +14,7 @@ export default function HeaderSearchBar() {
   const [loading, setLoading] = useState(false);
   const wrapperRef = useRef(null);
   const debounceRef = useRef(null);
+  const abortRef = useRef(null);
   const navigate = useNavigate();
 
   // Close dropdown when clicking outside
@@ -27,20 +28,38 @@ export default function HeaderSearchBar() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Debounced search
+  // Cleanup on unmount: abort in-flight request and cancel debounce timer
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  // Debounced search with AbortController to prevent out-of-order results
   const doSearch = useCallback(async (q) => {
+    // Cancel any in-flight request
+    abortRef.current?.abort();
+
     if (!q || q.trim().length < 2) {
       setResults({ submissions: [], users: [] });
       setOpen(false);
       return;
     }
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     try {
-      const res = await API.get('/api/ai/search', { params: { q: q.trim() } });
+      const res = await API.get('/api/ai/search', {
+        params: { q: q.trim() },
+        signal: controller.signal,
+      });
       setResults(res.data);
       setOpen(true);
-    } catch {
-      setResults({ submissions: [], users: [] });
+    } catch (err) {
+      if (err?.name !== 'CanceledError') {
+        setResults({ submissions: [], users: [] });
+      }
     } finally {
       setLoading(false);
     }

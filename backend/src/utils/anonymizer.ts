@@ -45,6 +45,8 @@ export async function getAnonymousId(
 
   const nextId = maxRow[0].next_id;
 
+  // Use INSERT ... ON CONFLICT DO NOTHING, then re-query to handle concurrent inserts.
+  // This avoids depending on a specific composite unique constraint name.
   await client.query(
     `INSERT INTO anonymous_reviewer_map (session_id, submission_id, user_id, anonymous_id)
      VALUES ($1, $2, $3, $4)
@@ -52,7 +54,17 @@ export async function getAnonymousId(
     [sessionId, submissionId, userId, nextId],
   );
 
-  return nextId;
+  // Re-query to get the actual stored ID (may differ from nextId if a concurrent insert won)
+  const { rows: stored } = await client.query(
+    `SELECT anonymous_id FROM anonymous_reviewer_map
+     WHERE user_id = $1
+       AND (session_id = $2 OR ($2 IS NULL AND session_id IS NULL))
+       AND (submission_id = $3 OR ($3 IS NULL AND submission_id IS NULL))
+     LIMIT 1`,
+    [userId, sessionId, submissionId],
+  );
+
+  return stored.length > 0 ? stored[0].anonymous_id : nextId;
 }
 
 /**

@@ -136,49 +136,73 @@ export async function getSessions(req: AuthRequest, res: Response): Promise<void
         [groupId]
       );
 
-      // Also indicate whether they have already submitted
-      for (const s of result.rows) {
-        const myReviews = await client.query(
-          `SELECT COUNT(*) AS cnt FROM peer_reviews
-           WHERE session_id = $1 AND reviewer_id = $2`,
-          [s.session_id, user_id]
+      // Batch load submission status for all sessions
+      const sessionIds = result.rows.map(s => s.session_id);
+      const submittedMap = new Map<string, boolean>();
+      if (sessionIds.length > 0) {
+        const submitted = await client.query(
+          `SELECT session_id, COUNT(*) AS cnt
+           FROM peer_reviews
+           WHERE session_id = ANY($1::uuid[]) AND reviewer_id = $2
+           GROUP BY session_id`,
+          [sessionIds, user_id]
         );
-        const hasSubmitted = parseInt(myReviews.rows[0].cnt) > 0;
+        for (const row of submitted.rows) {
+          submittedMap.set(row.session_id, parseInt(row.cnt) > 0);
+        }
+      }
+
+      // Build deadline reminder links that need checking
+      const reminderChecks: Array<{ sessionIndex: number; key: string; link: string }> = [];
+      const now = Date.now();
+      const oneHour = 60 * 60 * 1000;
+      const twentyFourHours = 24 * oneHour;
+      const windows = [
+        { key: '24h', lower: twentyFourHours - oneHour, upper: twentyFourHours },
+        { key: '1h', lower: oneHour - 15 * 60 * 1000, upper: oneHour },
+      ];
+
+      for (let i = 0; i < result.rows.length; i++) {
+        const s = result.rows[i];
+        const hasSubmitted = submittedMap.get(s.session_id) ?? false;
         s.my_submitted = hasSubmitted;
 
-        // Lazy deadline reminders: create in-app notification at 24h / 1h windows.
         if (!hasSubmitted && s.is_open && s.deadline) {
-          const now = Date.now();
           const deadlineMs = new Date(s.deadline).getTime();
           const diffMs = deadlineMs - now;
-          const oneHour = 60 * 60 * 1000;
-          const twentyFourHours = 24 * oneHour;
-          const windows = [
-            { key: '24h', lower: twentyFourHours - oneHour, upper: twentyFourHours },
-            { key: '1h', lower: oneHour - 15 * 60 * 1000, upper: oneHour },
-          ];
-
           for (const w of windows) {
             if (diffMs <= w.upper && diffMs >= w.lower) {
-              const reminderLink = `/peer-review/${s.session_id}?deadline_reminder=${w.key}`;
-              const exists = await client.query(
-                `SELECT 1 FROM notifications
-                 WHERE user_id = $1
-                   AND type = 'deadline'
-                   AND link = $2
-                 LIMIT 1`,
-                [user_id, reminderLink]
-              );
-              if (exists.rows.length === 0) {
-                await createNotification(client, {
-                  userId: user_id,
-                  type: 'deadline',
-                  title: `Peer review deadline in ${w.key}`,
-                  body: `Session "${s.title}" is due soon. Submit your review before the deadline.`,
-                  link: reminderLink,
-                });
-              }
+              reminderChecks.push({
+                sessionIndex: i,
+                key: w.key,
+                link: `/peer-review/${s.session_id}?deadline_reminder=${w.key}`,
+              });
             }
+          }
+        }
+      }
+
+      // Batch check existing deadline notifications
+      if (reminderChecks.length > 0) {
+        const links = reminderChecks.map(r => r.link);
+        const existingNotifs = await client.query(
+          `SELECT link FROM notifications
+           WHERE user_id = $1 AND type = 'deadline' AND link = ANY($2::text[])`,
+          [user_id, links]
+        );
+        const existingLinks = new Set(existingNotifs.rows.map(r => r.link));
+
+        // Create only missing reminders
+        for (const rc of reminderChecks) {
+          if (!existingLinks.has(rc.link)) {
+            const s = result.rows[rc.sessionIndex];
+            await createNotification(client, {
+              userId: user_id,
+              type: 'deadline',
+              title: `Peer review deadline in ${rc.key}`,
+              body: `Session "${s.title}" is due soon. Submit your review before the deadline.`,
+              link: rc.link,
+            });
           }
         }
       }
@@ -223,7 +247,8 @@ export async function toggleSession(req: AuthRequest, res: Response): Promise<vo
       `SELECT session_id, title, deadline, is_open,
               (SELECT COUNT(*)::int FROM peer_reviews pr WHERE pr.session_id = s.session_id) AS review_count
        FROM peer_review_sessions s
-       WHERE session_id = $1`,
+       WHERE session_id = $1
+       FOR UPDATE`,
       [sessionId]
     );
     if (existing.rows.length === 0) {
@@ -639,7 +664,8 @@ export async function getSessionResults(req: AuthRequest, res: Response): Promis
       const mappings = new Map<string, number>();
       for (const row of detailRows) {
         const reviewerId = row.reviewer_id || row.reviewer_name;
-        if (reviewerId && !mappings.has(reviewerId)) {
+        if (!reviewerId) continue;
+        if (!mappings.has(reviewerId)) {
           const anonId = await getAnonymousId(client, reviewerId, String(sessionId), null);
           mappings.set(reviewerId, anonId);
         }

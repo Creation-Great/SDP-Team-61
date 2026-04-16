@@ -7,6 +7,7 @@ import { scheduleMvRefresh } from '../utils/mvRefresh.js';
 import { getGroupForCourse } from '../utils/enrollment.js';
 import { emitSseEvent } from '../utils/sse.js';
 import { createNotification } from '../utils/notifications.js';
+import { logger } from '../utils/logger.js';
 import type { AuthRequest } from '../types.js';
 
 /** Default reviewer count if not specified (zod schema enforces 1–3 range) */
@@ -421,7 +422,7 @@ export async function replaceSubmissionFile(req: AuthRequest, res: Response): Pr
 
   if (updated.oldFilename && updated.oldFilename !== filename) {
     const oldPath = `${process.env.UPLOAD_DIR || './uploads'}/${updated.oldFilename}`;
-    fs.unlink(oldPath, () => {});
+    fs.promises.unlink(oldPath).catch(err => logger.warn({ err, oldPath }, 'Failed to delete old submission file'));
   }
 
   res.json(updated.row);

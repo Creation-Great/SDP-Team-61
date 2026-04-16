@@ -253,7 +253,7 @@ export const helpfulnessVoteSchema = z.object({
 // ── LMS ────────────────────────────────────────────────────
 export const lmsConfigSchema = z.object({
   provider: z.string().min(1),
-  api_url: z.string().optional(),
+  api_url: z.preprocess(v => (v === '' ? undefined : v), z.string().url().optional()),
   api_key: z.string().optional(),
   config_json: z.record(z.string(), z.unknown()).optional(),
 });

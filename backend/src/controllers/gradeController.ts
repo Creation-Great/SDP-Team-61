@@ -79,65 +79,66 @@ export async function calculateFinalGrades(req: AuthRequest, res: Response): Pro
       drop_lowest: 0, drop_highest: 0,
     };
 
-    // Fetch all students in this course
-    const students = await client.query(
-      `SELECT ue.user_id, u.name, u.email
+    // Batch query: compute all scores for all students in one query using CTEs
+    const gradeData = await client.query(
+      `WITH file_scores AS (
+         SELECT s.user_id, COALESCE(AVG(r.score), 0) AS avg_score
+         FROM reviews r
+         JOIN submissions s ON s.submission_id = r.submission_id
+         WHERE s.course_id = $1 AND r.score IS NOT NULL
+         GROUP BY s.user_id
+       ),
+       peer_scores AS (
+         SELECT pr.reviewee_id AS user_id, COALESCE(AVG(pr.score), 0) AS avg_score
+         FROM peer_reviews pr
+         WHERE pr.session_id IN (
+           SELECT session_id FROM peer_review_sessions WHERE course_id = $1
+         ) AND pr.score IS NOT NULL
+         GROUP BY pr.reviewee_id
+       ),
+       checkin_stats AS (
+         SELECT user_id,
+                COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status = 'present')::int AS present
+         FROM checkins
+         WHERE course_id = $1
+         GROUP BY user_id
+       )
+       SELECT ue.user_id, u.name, u.email,
+              COALESCE(fs.avg_score, 0) AS file_review_avg,
+              COALESCE(ps.avg_score, 0) AS peer_review_avg,
+              COALESCE(cs.total, 0)::int AS checkin_total,
+              COALESCE(cs.present, 0)::int AS checkin_present
        FROM user_enrollments ue
        JOIN users u ON u.user_id = ue.user_id
+       LEFT JOIN file_scores fs ON fs.user_id = ue.user_id
+       LEFT JOIN peer_scores ps ON ps.user_id = ue.user_id
+       LEFT JOIN checkin_stats cs ON cs.user_id = ue.user_id
        WHERE ue.course_id = $1 AND ue.role = 'student'`,
       [courseId]
     );
 
-    const results = [];
-    for (const student of students.rows) {
-      // Average file review score
-      const fileReviews = await client.query(
-        `SELECT COALESCE(AVG(r.score), 0) AS avg_score
-         FROM reviews r
-         JOIN submissions s ON s.submission_id = r.submission_id
-         WHERE s.user_id = $1 AND s.course_id = $2 AND r.score IS NOT NULL`,
-        [student.user_id, courseId]
-      );
-
-      // Average peer review score
-      const peerReviews = await client.query(
-        `SELECT COALESCE(AVG(pr.score), 0) AS avg_score
-         FROM peer_reviews pr
-         WHERE pr.reviewee_id = $1 AND pr.session_id IN (
-           SELECT session_id FROM peer_review_sessions WHERE course_id = $2
-         ) AND pr.score IS NOT NULL`,
-        [student.user_id, courseId]
-      );
-
-      // Checkin score (attendance ratio)
-      const checkins = await client.query(
-        `SELECT COUNT(*)::int AS total,
-                COUNT(*) FILTER (WHERE status = 'present')::int AS present
-         FROM checkins
-         WHERE user_id = $1 AND course_id = $2`,
-        [student.user_id, courseId]
-      );
-
-      const fileScore = parseFloat(fileReviews.rows[0].avg_score);
-      const peerScore = parseFloat(peerReviews.rows[0].avg_score);
-      const checkinTotal = checkins.rows[0].total || 1;
-      const checkinScore = (checkins.rows[0].present / checkinTotal) * 100;
+    const results = gradeData.rows.map(row => {
+      const fileScore = parseFloat(row.file_review_avg);
+      const peerScore = parseFloat(row.peer_review_avg);
+      const checkinTotal = row.checkin_total || 1;
+      const checkinScore = (row.checkin_present / checkinTotal) * 100;
 
       const finalGrade =
         fileScore * weights.file_review_weight +
         peerScore * weights.peer_review_weight +
         checkinScore * weights.checkin_weight;
 
-      results.push({
-        user_id: student.user_id,
-        name: student.name,
-        email: student.email,
+      return {
+        user_id: row.user_id,
+        name: row.name,
+        email: row.email,
         file_review_avg: fileScore,
         peer_review_avg: peerScore,
         checkin_score: checkinScore,
         final_grade: Math.round(finalGrade * 100) / 100,
-      });
-    }
+      };
+    });
 
     return results;
   });

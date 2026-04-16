@@ -7,6 +7,8 @@ import { deadlineExtensionSchema, reminderConfigSchema } from '../schemas.js';
 import type { AuthRequest } from '../types.js';
 import { pool } from '../db.js';
 import { logger } from '../utils/logger.js';
+import { verifySessionAccess } from '../utils/enrollment.js';
+import { AppError } from '../utils/AppError.js';
 
 const router = Router();
 
@@ -35,6 +37,13 @@ router.get('/calendar', async (req, res: Response) => {
 router.post('/extensions', h(requireRole('instructor')), validate(deadlineExtensionSchema), async (req, res: Response) => {
   const authReq = req as AuthRequest;
   const { user_id, entity_type, entity_id, extended_to, reason } = authReq.body;
+
+  // Verify entity exists and instructor has access
+  if (entity_type === 'session') {
+    await verifySessionAccess(pool, authReq.user.user_id, authReq.user.role, entity_id);
+  } else {
+    throw new AppError(400, `Unsupported entity_type: ${entity_type}`, 'validation');
+  }
 
   const { rows } = await pool.query(
     `INSERT INTO deadline_extensions (user_id, entity_type, entity_id, extended_to, reason, granted_by)
@@ -71,6 +80,20 @@ router.get('/extensions', async (req, res: Response) => {
 router.post('/reminders', h(requireRole('instructor')), validate(reminderConfigSchema), async (req, res: Response) => {
   const authReq = req as AuthRequest;
   const { entity_type, entity_id, reminder_hours } = authReq.body;
+
+  // Verify entity exists and instructor has access
+  if (entity_type === 'session') {
+    const exists = await pool.query(
+      'SELECT 1 FROM peer_review_sessions WHERE session_id = $1 LIMIT 1',
+      [entity_id]
+    );
+    if (exists.rows.length === 0) {
+      throw new AppError(404, 'Session not found', 'not_found');
+    }
+    await verifySessionAccess(pool, authReq.user.user_id, authReq.user.role, entity_id);
+  } else {
+    throw new AppError(400, `Unsupported entity_type: ${entity_type}`, 'validation');
+  }
 
   // Delete existing reminders for this entity, then insert new ones
   await pool.query(

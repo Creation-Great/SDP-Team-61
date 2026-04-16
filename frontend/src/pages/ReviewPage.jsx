@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -51,12 +51,14 @@ export default function ReviewPage() {
   const [deviationData, setDeviationData] = useState(null);
 
   useEffect(() => {
-    API.get(`/reviews/${id}`)
+    const controller = new AbortController();
+    API.get(`/reviews/${id}`, { signal: controller.signal })
       .then((res) => setReview(res.data))
-      .catch(() => {
-        setError('Failed to load review details');
+      .catch((err) => {
+        if (err?.name !== 'CanceledError') setError('Failed to load review details');
       })
       .finally(() => setLoading(false));
+    return () => controller.abort();
   }, [id]);
 
   // Restore local draft (score/comments) on first load.
@@ -120,9 +122,9 @@ export default function ReviewPage() {
   }, [id, review]);
 
   /* useAutoSave: periodically saves draft to backend */
-  const autoSaveFn = async (data) => {
+  const autoSaveFn = useCallback(async (data) => {
     await API.patch(`/reviews/${id}/draft`, data);
-  };
+  }, [id]);
   const { saving: autoSaving, lastSaved: autoSavedAt } = useAutoSave({
     data: { score, comments },
     saveFn: autoSaveFn,
@@ -210,7 +212,7 @@ export default function ReviewPage() {
   };
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex items-center justify-center py-20" role="status" aria-live="polite">
         <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" />
         <span className="ml-2 text-slate-500">Loading review...</span>
       </div>

@@ -140,12 +140,22 @@ if ($Docker) {
         exit 1
     }
 
-    # Root .env (JWT_SECRET etc.) for compose
+    # Root .env (JWT_SECRET, POSTGRES_PASSWORD etc.) for compose
     $rootEnv = Join-Path $ProjectRoot ".env"
     $rootEnvExample = Join-Path $ProjectRoot ".env.example"
     if (-not (Test-Path $rootEnv) -and (Test-Path $rootEnvExample)) {
         Copy-Item $rootEnvExample $rootEnv
-        Write-Warn "Created root .env from .env.example - set JWT_SECRET etc. if needed"
+        Write-Warn "Created root .env from .env.example"
+        Write-Warn "IMPORTANT: Set POSTGRES_PASSWORD and JWT_SECRET in .env before running Docker"
+    }
+    # Verify POSTGRES_PASSWORD is set (required by docker-compose)
+    if (Test-Path $rootEnv) {
+        $envContent = Get-Content $rootEnv -Raw
+        if ($envContent -notmatch 'POSTGRES_PASSWORD=\S+' -or $envContent -match 'POSTGRES_PASSWORD=change-me') {
+            Write-Err "POSTGRES_PASSWORD is not set or still has the default value in .env"
+            Write-Err "Please set a strong password: POSTGRES_PASSWORD=<your-secure-password>"
+            exit 1
+        }
     }
 
     Write-Step "Starting all Docker containers (db + redis + backend + ai-service + frontend)..."
@@ -378,8 +388,17 @@ $backendEnv = Join-Path $BackendDir ".env"
 if (-not (Test-Path $backendEnv)) {
     Copy-Item (Join-Path $BackendDir ".env.example") $backendEnv
     Write-Ok "Created backend/.env from .env.example"
+    Write-Warn "Review backend/.env — set JWT_SECRET to a strong random value for production"
 } else {
     Write-Ok "backend/.env already exists"
+}
+
+# Root .env for docker compose (db container needs POSTGRES_PASSWORD)
+$rootEnv = Join-Path $ProjectRoot ".env"
+$rootEnvExample = Join-Path $ProjectRoot ".env.example"
+if (-not (Test-Path $rootEnv) -and (Test-Path $rootEnvExample)) {
+    Copy-Item $rootEnvExample $rootEnv
+    Write-Warn "Created root .env from .env.example — set POSTGRES_PASSWORD for Docker DB"
 }
 
 if ($WithAI) {

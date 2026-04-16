@@ -46,14 +46,19 @@ export default function useOfflineQueue() {
       });
 
       const { default: API } = await import('../services/api');
+      let synced = 0;
       for (const item of items) {
         try {
           await API({ method: item.method, url: item.url, data: item.body });
           const delTx = db.transaction(STORE_NAME, 'readwrite');
           delTx.objectStore(STORE_NAME).delete(item.id);
-        } catch { break; }
+          synced++;
+        } catch {
+          break;
+        }
       }
-      setQueueSize(0);
+      // Set accurate remaining count instead of unconditional 0
+      setQueueSize(items.length - synced);
     } catch { /* ignore */ }
   }, []);
 

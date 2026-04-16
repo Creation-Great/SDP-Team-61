@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.local
 uploads/*
 !uploads/.gitkeep
 *.log
@@ -12,19 +13,35 @@ cookies*.txt
 # Redis
 dump.rdb
 
-# PWA
+# PWA (built by vite-plugin-pwa)
 dist/sw.js
 dist/workbox-*.js
+
+# TypeScript build cache
+*.tsbuildinfo
 
 # Python test/coverage artifacts
 .coverage
 htmlcov/
 .pytest_cache/
 __pycache__/
+*.pyc
+ai-service/venv/
 
-# Test artifacts
+# Backend test/coverage artifacts
+backend/coverage/
+
+# Frontend test artifacts
 frontend/e2e-artifacts/
 frontend/playwright-report/
 frontend/test-results/
 frontend/debug-*.png
 *.png.bak
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

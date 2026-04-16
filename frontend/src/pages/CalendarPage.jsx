@@ -18,10 +18,12 @@ export default function CalendarPage() {
   const [current, setCurrent] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(null);
 
+  const [error, setError] = useState(null);
+
   useEffect(() => {
     API.get('/deadlines/calendar')
       .then(r => setDeadlines(r.data || []))
-      .catch(() => {})
+      .catch(() => setError('Failed to load calendar deadlines'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -44,6 +46,14 @@ export default function CalendarPage() {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   if (loading) return <div className="max-w-5xl mx-auto p-6"><div className="animate-pulse h-96 bg-slate-100 rounded-2xl" /></div>;
+
+  if (error) return (
+    <div className="max-w-5xl mx-auto p-6">
+      <Card className="text-center py-12 px-6">
+        <p className="text-red-600 text-sm" role="alert">{error}</p>
+      </Card>
+    </div>
+  );
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">

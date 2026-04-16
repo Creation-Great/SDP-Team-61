@@ -36,6 +36,7 @@ export default function GradeManagementPage() {
         const g = gRes.data;
         setGrades(Array.isArray(g) ? g : []);
       })
+      .catch(() => { showToast('Failed to load grade data', 'error'); })
       .finally(() => setLoading(false));
   }, [courseId]);
 

@@ -27,11 +27,12 @@ export default function AuditLogPage() {
         setEvents(r.data.events || r.data || []);
         setTotalPages(r.data.totalPages || Math.ceil((r.data.total || 0) / pageSize) || 1);
       })
-      .catch(() => {})
+      .catch(() => setEvents([]))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchEvents(); }, [page, actionFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchEvents(); }, [page, actionFilter, search]);
 
   const handleSearch = (e) => {
     e.preventDefault();

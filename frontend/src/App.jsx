@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ProtectedRoute from './components/ProtectedRoute';
 import InstructorRoute from './components/InstructorRoute';
@@ -85,6 +85,7 @@ function OfflineBanner() {
 
 /** Sidebar + header layout for authenticated pages */
 function AppLayout({ children }) {
+  const location = useLocation();
   return (
     <div className="min-h-screen flex">
       <Sidebar />
@@ -109,7 +110,7 @@ function AppLayout({ children }) {
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto p-4 sm:p-6 lg:p-8 md:mt-0 mt-14 relative z-[1] outline-none">
-          <ErrorBoundary>
+          <ErrorBoundary key={location.pathname}>
             <Suspense fallback={<PageLoader />}>
               {children}
             </Suspense>

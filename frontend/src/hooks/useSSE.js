@@ -11,11 +11,11 @@ import { API_BASE_URL } from '../config';
  * httpOnly cookie via withCredentials. For cross-origin SSE, pass getToken to append
  * JWT to the URL; backend supports ?token= for EventSource.
  *
- * @param {string|null} url   – SSE endpoint path (e.g. '/instructor/events')
+ * @param {string|null} url   - SSE endpoint path (e.g. '/instructor/events')
  * @param {Object}      opts
- * @param {function(eventName: string, data: Object): void} opts.onEvent – called with (eventName, parsedData)
- * @param {boolean}     [opts.enabled=true] – set to false to disable
- * @param {function(): string | Promise<string>} [opts.getToken] – optional; if provided, append ?token=… to URL for cross-origin auth
+ * @param {function(eventName: string, data: Object): void} opts.onEvent - called with (eventName, parsedData)
+ * @param {boolean}     [opts.enabled=true] - set to false to disable
+ * @param {function(): string | Promise<string>} [opts.getToken] - optional; if provided, append ?token= to URL for cross-origin auth
  * @returns {{ connected: boolean }}
  */
 export default function useSSE(url, { onEvent, enabled = true, getToken } = {}) {
@@ -25,17 +25,25 @@ export default function useSSE(url, { onEvent, enabled = true, getToken } = {}) 
   const retriesRef = useRef(0);
   const silenceTimerRef = useRef(null);
   const onEventRef = useRef(onEvent);
+  const getTokenRef = useRef(getToken);
+
   useEffect(() => {
     onEventRef.current = onEvent;
   }, [onEvent]);
+
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
 
   const connect = useCallback(() => {
     if (!url || !enabled) return;
 
     let fullUrl = `${API_BASE_URL}${url}`;
-    if (typeof getToken === 'function') {
+    const tokenFn = getTokenRef.current;
+    if (typeof tokenFn === 'function') {
       try {
-        const token = typeof getToken() === 'string' ? getToken() : '';
+        const result = tokenFn();
+        const token = typeof result === 'string' ? result : '';
         if (token) {
           fullUrl += (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
         }
@@ -97,7 +105,7 @@ export default function useSSE(url, { onEvent, enabled = true, getToken } = {}) 
       retriesRef.current += 1;
       setTimeout(() => connectRef.current?.(), delay);
     };
-  }, [url, enabled, getToken]);
+  }, [url, enabled]);
 
   useEffect(() => {
     connectRef.current = connect;

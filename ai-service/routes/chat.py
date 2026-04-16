@@ -6,7 +6,7 @@ import uuid as _uuid
 from flask import Blueprint, jsonify, request
 import psycopg2.extras
 
-from config import OPENAI_API_KEY, OPENAI_MODEL, log
+from config import MAX_CONVERSATION_MESSAGES, OPENAI_API_KEY, OPENAI_MODEL, log
 from extensions import call_openai_chat, get_db, limiter, require_api_key
 
 chat_bp = Blueprint("chat", __name__, url_prefix="/api/ai")
@@ -41,6 +41,13 @@ def ai_chat():
     context_id = data.get("context_id")
     conversation_id = data.get("conversation_id")
     user_id = data.get("user_id")
+
+    # Validate conversation_id UUID format if provided
+    if conversation_id:
+        try:
+            _uuid.UUID(str(conversation_id))
+        except ValueError:
+            return jsonify(error="validation", message="conversation_id must be a valid UUID"), 400
 
     if not message:
         return jsonify(error="validation", message="message is required"), 400
@@ -93,6 +100,10 @@ def ai_chat():
         return jsonify(error="ai_error", message=str(e)), 502
 
     messages.append({"role": "assistant", "content": reply})
+
+    # Trim conversation to prevent unbounded storage growth
+    if len(messages) > MAX_CONVERSATION_MESSAGES:
+        messages = messages[-MAX_CONVERSATION_MESSAGES:]
 
     # Persist conversation
     if not conversation_id:

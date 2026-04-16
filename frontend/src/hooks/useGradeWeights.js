@@ -1,9 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import API from '../services/api';
 
 export default function useGradeWeights(courseId) {
   const [weights, setWeights] = useState(null);
   const [loading, setLoading] = useState(true);
+  const courseIdRef = useRef(courseId);
+
+  useEffect(() => {
+    courseIdRef.current = courseId;
+  }, [courseId]);
 
   useEffect(() => {
     if (!courseId) return;
@@ -17,9 +22,9 @@ export default function useGradeWeights(courseId) {
   }, [courseId]);
 
   const save = useCallback(async (newWeights) => {
-    await API.put(`/grades/weights/${courseId}`, newWeights);
+    await API.put(`/grades/weights/${courseIdRef.current}`, newWeights);
     setWeights(newWeights);
-  }, [courseId]);
+  }, []);
 
   return { weights, loading, save, setWeights };
 }

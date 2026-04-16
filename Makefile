@@ -53,7 +53,8 @@ stop: ## Stop all services (Docker + local processes)
 
 # ── Docker Full Stack ──────────────────────────────────────────────────────
 
-docker: ## Start full stack via Docker Compose
+docker: ## Start full stack via Docker Compose (requires POSTGRES_PASSWORD in root .env)
+	@test -f .env || (echo "$(CYAN)Creating .env from .env.example...$(RESET)" && cp .env.example .env)
 	docker compose up -d
 	@echo "$(GREEN)All services starting. Run 'docker compose logs -f' to follow.$(RESET)"
 

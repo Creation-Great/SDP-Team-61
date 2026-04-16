@@ -22,7 +22,7 @@ export default function UserPreferencesPage() {
   useEffect(() => {
     API.get('/preferences')
       .then(r => { if (r.data) setPrefs(prev => ({ ...prev, ...r.data })); })
-      .catch(() => {})
+      .catch(() => { showToast('Failed to load preferences', 'error'); })
       .finally(() => setLoading(false));
   }, []);
 

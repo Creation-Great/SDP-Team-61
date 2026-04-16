@@ -17,6 +17,14 @@ export async function listEnrollments(req: AuthRequest, res: Response): Promise<
     // Instructors/admins see all enrollments (or filtered by ?user_id=xxx)
     // Students only see their own
     if (role === 'instructor' || role === 'admin') {
+      // Admins see all; instructors/TAs see only courses they teach
+      const courseFilter = role === 'admin'
+        ? null
+        : (await client.query(
+            `SELECT course_id FROM user_enrollments WHERE user_id = $1 AND role IN ('instructor', 'ta')`,
+            [user_id]
+          )).rows.map(r => r.course_id);
+
       if (targetUserId) {
         const r = await client.query(
           `SELECT ue.enrollment_id, ue.user_id, ue.course_id, ue.group_id,
@@ -25,8 +33,9 @@ export async function listEnrollments(req: AuthRequest, res: Response): Promise<
            FROM user_enrollments ue
            JOIN users u ON u.user_id = ue.user_id
            WHERE ue.user_id = $1
+             ${courseFilter ? 'AND ue.course_id = ANY($2::text[])' : ''}
            ORDER BY ue.is_primary DESC, ue.enrolled_at ASC`,
-          [targetUserId]
+          courseFilter ? [targetUserId, courseFilter] : [targetUserId]
         );
         return r.rows;
       } else {
@@ -36,7 +45,9 @@ export async function listEnrollments(req: AuthRequest, res: Response): Promise<
                   u.name, u.email
            FROM user_enrollments ue
            JOIN users u ON u.user_id = ue.user_id
-           ORDER BY ue.course_id, ue.group_id NULLS LAST, u.name`
+           ${courseFilter ? 'WHERE ue.course_id = ANY($1::text[])' : ''}
+           ORDER BY ue.course_id, ue.group_id NULLS LAST, u.name`,
+          courseFilter ? [courseFilter] : []
         );
         return r.rows;
       }

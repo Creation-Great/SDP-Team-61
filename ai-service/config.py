@@ -30,7 +30,9 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 # ---------------------------------------------------------------------------
 MAX_TEXT_LENGTH = 10_000          # Maximum characters for AI text input
 MAX_CONTENT_LENGTH = 1 * 1024 * 1024  # 1 MB request body limit
-MAX_RETRIES = 3                  # OpenAI retry attempts
+MAX_RETRIES = 2                  # OpenAI retry attempts (reduced to avoid Gunicorn worker deadlock)
+REDIS_URL = os.getenv("REDIS_URL", "")
+MAX_CONVERSATION_MESSAGES = 50   # Max messages stored per conversation
 
 
 # ---------------------------------------------------------------------------

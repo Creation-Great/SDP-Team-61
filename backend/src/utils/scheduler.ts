@@ -30,9 +30,12 @@ async function checkReminders(): Promise<void> {
     `);
 
     for (const r of reminders) {
+      const client = await pool.connect();
       try {
+        await client.query('BEGIN');
+
         // Get users who haven't submitted for this session
-        const { rows: users } = await pool.query(`
+        const { rows: users } = await client.query(`
           SELECT DISTINCT ue.user_id
           FROM user_enrollments ue
           JOIN peer_review_sessions prs ON prs.session_id = $1
@@ -44,29 +47,40 @@ async function checkReminders(): Promise<void> {
             )
         `, [r.entity_id]);
 
-        // Create notifications (using pool directly since we're outside a request context)
-        for (const u of users) {
-          await pool.query(`
-            INSERT INTO notifications (user_id, type, title, body, link, is_read)
-            VALUES ($1, 'reminder', 'Deadline Approaching',
-                    $2, $3, false)
-            ON CONFLICT DO NOTHING
-          `, [
-            u.user_id,
-            `Peer review deadline is in ${r.reminder_hours} hours`,
-            `/peer-review/${r.entity_id}`,
-          ]);
+        // Batch insert notifications
+        if (users.length > 0) {
+          const values: unknown[] = [];
+          const placeholders: string[] = [];
+          for (let i = 0; i < users.length; i++) {
+            const offset = i * 3;
+            placeholders.push(`($${offset + 1}, 'reminder', 'Deadline Approaching', $${offset + 2}, $${offset + 3}, false)`);
+            values.push(
+              users[i].user_id,
+              `Peer review deadline is in ${r.reminder_hours} hours`,
+              `/peer-review/${r.entity_id}`,
+            );
+          }
+          await client.query(
+            `INSERT INTO notifications (user_id, type, title, body, link, is_read)
+             VALUES ${placeholders.join(', ')}
+             ON CONFLICT DO NOTHING`,
+            values
+          );
         }
 
         // Mark reminder as sent
-        await pool.query(
+        await client.query(
           'UPDATE deadline_reminders SET sent_at = now() WHERE id = $1',
           [r.id]
         );
 
+        await client.query('COMMIT');
         logger.info({ reminderId: r.id, usersNotified: users.length }, 'Deadline reminder sent');
       } catch (err) {
+        await client.query('ROLLBACK');
         logger.warn({ err, reminderId: r.id }, 'Failed to process reminder');
+      } finally {
+        client.release();
       }
     }
   } catch (err) {

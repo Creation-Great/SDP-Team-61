@@ -5,7 +5,7 @@
 SDP Peer Review System — an AI-enhanced peer review platform for university courses.
 - **Monorepo**: backend (Express/TS), frontend (React/Vite), ai-service (Flask/Python)
 - **Theme**: UConn Blue `#000E2F` — all primary colors use this value
-- **Database**: PostgreSQL 16 with RLS, 20 versioned migrations via `node-pg-migrate`
+- **Database**: PostgreSQL 16 with RLS, 37 versioned migrations (001–037)
 
 ## Quick Reference
 
@@ -35,14 +35,14 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 - **Pattern**: MVC — controllers in `src/controllers/`, routes in `src/routes/`
 - **Auth**: JWT httpOnly cookies (cookie + Bearer header only; no query param). Middleware: `authenticate` → `requireRole()`. JWT verified with `algorithms: ['HS256']`.
 - **DB**: `pool` from `src/db.ts`. Use `pool.query()` with parameterized queries. Never string-interpolate SQL.
-- **Migrations**: Numbered SQL files in `backend/migrations/` (001–020). Auto-run on startup via `src/migrate.ts`.
+- **Migrations**: Numbered SQL files in `backend/migrations/` (001–037). Auto-run on startup via `src/migrate.ts`.
 - **Logging**: Use `logger` from `src/utils/logger.ts` (Pino). Never `console.log` in production code.
 - **Error handling**: Throw `AppError(statusCode, message)`. Async routes wrapped with `h()` from `asyncHandler.ts`.
 - **Validation**: Use Zod schemas in `src/schemas.ts` + `validate` middleware. Route params validated via `validateParams()` (UUID schemas).
 - **Notification routes** use `notificationController.ts` (10 exported functions). Routes in `notificationRoutes.ts` are thin wrappers.
 
 ### Frontend (React 19 + Vite + Tailwind)
-- **Layout**: `App.jsx` uses `React.lazy()` for all 22 page components (route-level code splitting). `<AppLayout>` wraps `<Sidebar>` + header + `<Suspense>` fallback.
+- **Layout**: `App.jsx` uses `React.lazy()` for all 33 page components (route-level code splitting). `<AppLayout>` wraps `<Sidebar>` + header + `<Suspense>` fallback. `<ErrorBoundary key={location.pathname}>` resets on route navigation.
 - **New Pages (v3.0)**: 11 additional pages — RevisionHistory, SimilarityDashboard, AiChat, GradeManagement, LmsConfig, SemesterManagement, Calendar, AdvancedAnalytics, AuditLog, UserPreferences, DataExport (total: 33 pages)
 - **Styling**: Tailwind CSS utility classes. Primary color: `#000E2F` (used as `bg-[#000E2F]`, `text-[#000E2F]`, etc.)
 - **CSS Variables**: Defined in `index.css` — `--primary: #000E2F`, `--uconn-blue: #000E2F`
@@ -58,9 +58,9 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 - **Endpoints** (Express side, all under `/api/ai`): `feedback` (POST + GET), `rewrite` (POST + GET + PATCH adopt), `polish` (POST), `summarize` (POST), `logs` (GET), `search` (GET) — 9 endpoints total. POST endpoints validated via Zod schemas; `:reviewId` params validated via `validateParams(reviewIdParamSchema)`.
 - **Flask paths**: Most map 1:1 (`/api/ai/*`), except search which proxies to `/api/search` on the Flask side
 - **Auth**: Inter-service `X-AI-API-Key` header validated by `@require_api_key` decorator (fail closed — rejects when key unset)
-- **DB**: `psycopg2.pool.ThreadedConnectionPool` (1–10 connections, 10s connect timeout, 30s statement timeout)
+- **DB**: `psycopg2.pool.ThreadedConnectionPool` (1–25 connections, 10s connect timeout, 30s statement timeout)
 - **Rate limiting**: Flask-Limiter per endpoint (30/min for polish, 20/min for rewrite/summarize)
-- **Retry**: OpenAI calls retry up to 3 times with exponential backoff on APIConnectionError/RateLimitError/APITimeoutError
+- **Retry**: OpenAI calls retry up to 2 times with exponential backoff on APIConnectionError/RateLimitError/APITimeoutError (timeout: 20s)
 - **Logging**: Structured JSON logs; each OpenAI call logs prompt_tokens/completion_tokens/total_tokens
 - **New AI endpoints** (v3.0): `review-depth` (POST), `score-suggestion` (POST), `calibration` (POST), `score-reasoning` (POST), `similarity` (POST), `similarity/turnitin` (POST), `chat` (POST) — 7 additional endpoints under `/api/ai`
 
@@ -97,7 +97,7 @@ docker compose up --build -d    # db + backend + ai-service + frontend
 - `/quality` — Helpfulness voting, reputation, consistency alerts
 
 ### Database
-- 36 sequential migrations (001–036) — **never modify existing migration files**, always add new ones
+- 37 sequential migrations (001–037) — **never modify existing migration files**, always add new ones
 - `ai_activity_logs.user_id` is VARCHAR (not UUID FK) — may be "unknown" for anonymous calls
 - `notifications.user_id` is UUID FK → `users(user_id)` ON DELETE CASCADE
 - Use `ILIKE` for case-insensitive search in PostgreSQL
@@ -140,17 +140,22 @@ cd ai-service && python -m pytest tests/ -v   # 11 suites, 90 tests
 2. **Express route order**: Parameterized routes (`/:id`) catch everything — put specific routes first
 3. **AI service search SQL**: `submissions` table uses `user_id` (not `student_id`), column is `title` (not `original_filename`)
 4. **Notification polling**: Bell polls every 30s — don't add WebSocket unless explicitly needed
-5. **Migration numbering**: Next migration should be `037_*.sql`
-6. **Enrollment controller**: Instructors see all enrollments; students only see their own (role-based filtering in `listEnrollments`)
+5. **Migration numbering**: Next migration should be `038_*.sql`
+6. **Enrollment controller**: Instructors see only enrollments for courses they teach; admins see all; students see their own. Uses `verifyCourseAccess()` from `src/utils/enrollment.ts`
 7. **Peer review team_size**: `getSessions` for instructors filters `team_size` by `user_enrollments` matching the session's `course_id` — not a global student count
 8. **AI activity logs**: `user_name` is resolved via JOIN with `users` table; if no match found, frontend falls back to `user_id` or `'A user'`
 9. **Session deadline**: `createSessionSchema` uses `z.string().min(1).nullish()` for `course_id` (not UUID) since course IDs are text like `"CSE4939W"`
 10. **Redis optional**: All Redis operations have in-memory fallbacks; system works without Redis
 11. **Anonymity column**: Column is `anonymity` (not `anonymity_level`) on `peer_review_sessions` and `submissions`
 12. **Assignment strategy**: Column is on `submissions` table (not `peer_review_sessions`)
-13. **Legacy vs numbered migrations**: `sql/migrations.sql` has full schema; numbered migrations (001-036) add incremental changes. Docker init runs legacy file first, then numbered migrations.
+13. **Legacy vs numbered migrations**: `sql/migrations.sql` has full schema; numbered migrations (001-037) add incremental changes. Docker init runs legacy file first, then numbered migrations.
 14. **AI conversations**: Table PK is `id` (not `conversation_id`); user_id must be valid UUID FK
 15. **TA role**: Treated like instructor for reads, restricted for session creation
+16. **Course access checks**: All grade/LMS/deadline/anonymity routes require course ownership via `verifyCourseAccess()` or `verifySessionAccess()` (admins bypass). These are in `src/utils/enrollment.ts`
+17. **Request correlation ID**: Every request gets a UUID (`req.correlationId`) injected into Pino logs via middleware in `app.ts`
+18. **Docker Compose credentials**: `POSTGRES_PASSWORD` is required (no default). Must be set in root `.env` before `docker compose up`
+19. **Batch notifications**: `createNotifications()` uses a single INSERT for the rows, then per-notification channel delivery (email/push)
+20. **CSV formula injection**: Grade CSV export uses `safeCsv()` to prefix formula characters (`=+\-@`) with `'`
 
 ## New Features (v3.0)
 
@@ -221,4 +226,4 @@ cd ai-service && python -m pytest tests/ -v   # 11 suites, 90 tests
 - Enhanced audit log viewer
 
 ### Migrations
-- 021-036: New tables and schema extensions
+- 021-037: New tables, schema extensions, and performance indexes

@@ -6,17 +6,19 @@ const SIZES = [
   { key: 'lg', label: 'L', value: '18px' },
 ];
 
+/** Safe localStorage getter — returns fallback in private browsing mode */
+function safeGetItem(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
 export default function FontSizeSelector() {
-  const [active, setActive] = useState(() => {
-    if (typeof window === 'undefined') return 'md';
-    return localStorage.getItem('fontSize') || 'md';
-  });
+  const [active, setActive] = useState(() => safeGetItem('fontSize', 'md'));
 
   useEffect(() => {
     const size = SIZES.find(s => s.key === active);
     if (size) {
       document.documentElement.style.setProperty('--font-size-base', size.value);
-      localStorage.setItem('fontSize', active);
+      try { localStorage.setItem('fontSize', active); } catch { /* private mode */ }
     }
   }, [active]);
 
