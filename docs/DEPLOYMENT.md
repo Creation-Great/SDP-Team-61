@@ -15,7 +15,8 @@ This document describes security and configuration for deploying the SDP Peer Re
 | Frontend (nginx) | 80 / 443 | Production reverse proxy and static assets |
 | Backend (Express) | 8080 | API, SSE, auth |
 | PostgreSQL | 5432 | Database |
-| AI Service (Flask) | 5001 | Feedback, rewrite, polish, summarize, search |
+| AI Service (Flask) | 5001 | Feedback, rewrite, polish, summarize, search, chat, scoring |
+| Redis | 6379 | Cache, token blacklist, rate limiting (optional — graceful fallback to in-memory) |
 
 Ensure the backend, DB, and AI service can reach each other in production; the frontend talks to the backend (and AI) via nginx proxy.
 
@@ -51,10 +52,12 @@ Ensure the backend, DB, and AI service can reach each other in production; the f
 - Required and optional variables are documented in **backend/.env.example** and **ai-service/.env.example**.
 - The root **.env.example** is for docker-compose and root-level config; per-service config lives in each subdirectory.
 - In production, set:
+  - **POSTGRES_PASSWORD**: Strong database password (required — docker-compose will refuse to start without it).
   - **JWT_SECRET**: Strong random string (e.g. `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`).
   - **NODE_ENV=production** (backend).
   - **FRONTEND_URL** / **CORS_ORIGINS** to the actual frontend origin(s).
   - If using the AI service: **OPENAI_API_KEY** and **AI_API_KEY** matching the backend.
+  - **REDIS_URL** (optional): `redis://redis:6379` — both backend and ai-service support it for rate limiting and caching.
 
 ---
 
@@ -222,7 +225,7 @@ The production nginx.conf includes these security headers:
 - Redis is **optional**: system degrades gracefully to in-memory caching/blacklisting
 - Recommended: 256MB maxmemory with `allkeys-lru` eviction policy
 
-### New Database Migrations (021-036)
+### New Database Migrations (021-037)
 Run automatically on backend startup via `migrateUp()`. Key tables added:
 - `semesters` — Academic semester management
 - `announcements` — Enhanced announcements with pinned/scheduled/attachments
@@ -244,7 +247,8 @@ Run automatically on backend startup via `migrateUp()`. Key tables added:
 ### New Environment Variables
 | Variable | Service | Default | Description |
 |----------|---------|---------|-------------|
-| `REDIS_URL` | Backend | _(none)_ | Redis connection URL |
+| `POSTGRES_PASSWORD` | Root .env | _(required)_ | PostgreSQL password for docker-compose |
+| `REDIS_URL` | Backend + AI | _(none)_ | Redis connection URL; optional with in-memory fallback |
 | `OBJECT_STORAGE_TYPE` | Backend | `local` | `local` or `mock-s3` |
 | `REMINDER_CHECK_INTERVAL_MS` | Backend | `900000` | Deadline reminder check interval (ms) |
 
@@ -274,4 +278,14 @@ Ensure all new route prefixes have proxy `location` blocks:
 
 ---
 
-*Document version: 3.0 — 2026-03*
+### Authorization Enforcement (v3.1)
+- All grade/LMS/deadline/anonymity routes now enforce **course ownership** via `verifyCourseAccess()` / `verifySessionAccess()` in `backend/src/utils/enrollment.ts`
+- Instructors can only access data for courses they teach; admins bypass all checks
+- `deadlineRoutes` reject non-session entity types with 400 (default-deny)
+- Grade CSV export includes formula-injection protection (`safeCsv()` prefixes `=+\-@` characters)
+
+### Request Tracing (v3.1)
+- Every request receives a correlation ID (`X-Request-Id` header or auto-generated UUID)
+- Injected into all Pino log entries via `customProps` for end-to-end tracing
+
+*Document version: 3.1 — 2026-04*

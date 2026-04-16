@@ -1,7 +1,8 @@
 # Database Schema — Entity Relationship Diagram
 
-> Auto-generated from 36 migration files (001–036) + base schema.
-> **41 tables** across 11 domains. Last updated: 2026-04-04.
+> Auto-generated from 37 migration files (001–037) + base schema.
+> **41 tables** across 11 domains. Last updated: 2026-04-16.
+> Migration 037 adds performance indexes on `ai_activity_logs(user_id, created_at)` and a CHECK constraint on `similarity_reports(submission_id_a < submission_id_b)`.
 
 ## Full ERD
 

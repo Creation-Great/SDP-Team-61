@@ -294,14 +294,18 @@ npm run dev             # Vite on :5173, API proxy to :8080
 ```bash
 cd ai-service
 pip install -r requirements.txt
-OPENAI_API_KEY=sk-... python app.py     # Flask on :5001
+cp .env.example .env                     # Then set OPENAI_API_KEY in .env
+python app.py                            # Flask on :5001
 ```
 
 ### One-command (from root)
 
 ```bash
-docker compose up -d            # All 5 services
-# or for dev:
+# Docker full-stack (requires POSTGRES_PASSWORD in root .env)
+cp .env.example .env            # Then edit .env — set POSTGRES_PASSWORD and JWT_SECRET
+docker compose up -d            # All 5 services (db + redis + backend + ai-service + frontend)
+
+# or for local dev:
 npm run install:all             # installs backend + frontend
 npm run dev                     # runs backend + frontend concurrently
 ```
