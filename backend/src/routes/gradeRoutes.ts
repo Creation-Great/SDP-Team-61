@@ -7,7 +7,8 @@ import { gradeWeightsSchema } from '../schemas.js';
 import type { AuthRequest } from '../types.js';
 import { pool } from '../db.js';
 import { logger } from '../utils/logger.js';
-import { verifyCourseAccess } from '../utils/enrollment.js';
+import { verifyCourseAccess, verifyCourseEnrollment } from '../utils/enrollment.js';
+import { exportLimiter } from '../middleware/exportLimiter.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -19,9 +20,18 @@ const courseIdParamSchema = z.object({
   courseId: z.string().min(1, 'courseId is required'),
 });
 
-/** GET /weights/:courseId — Get grade weights for a course */
+/** GET /weights/:courseId — Get grade weights for a course.
+ *  Any user enrolled in the course (student/TA/instructor) may read the weights,
+ *  since students legitimately need to understand how their grade is computed.
+ *  Cross-course access is blocked to prevent instructors/TAs from discovering
+ *  other courses' grading policies. Admins bypass this check.
+ */
 router.get('/weights/:courseId', validateParams(courseIdParamSchema), async (req, res: Response) => {
+  const authReq = req as AuthRequest;
   const { courseId } = req.params;
+
+  await verifyCourseEnrollment(pool, authReq.user.user_id, authReq.user.role, courseId as string);
+
   const { rows } = await pool.query(
     'SELECT * FROM grade_weights WHERE course_id = $1',
     [courseId]
@@ -94,7 +104,7 @@ router.get('/final/:courseId', h(requireRole('instructor')), validateParams(cour
 });
 
 /** GET /export/:courseId — Export grades as CSV (instructor, admin) */
-router.get('/export/:courseId', h(requireRole('instructor')), validateParams(courseIdParamSchema), async (req, res: Response) => {
+router.get('/export/:courseId', exportLimiter, h(requireRole('instructor')), validateParams(courseIdParamSchema), async (req, res: Response) => {
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
 

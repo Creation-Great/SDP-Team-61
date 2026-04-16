@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/roleGuard.js';
 import { h } from '../utils/asyncHandler.js';
+import { exportLimiter } from '../middleware/exportLimiter.js';
 import type { AuthRequest } from '../types.js';
 import { pool } from '../db.js';
 import { logger } from '../utils/logger.js';
@@ -11,8 +12,10 @@ const router = Router();
 // All routes require authentication
 router.use(h(authenticate));
 
-/** GET /export/:userId — Export user data (admin or self) */
-router.get('/export/:userId', async (req, res: Response) => {
+/** GET /export/:userId — Export user data (admin or self).
+ *  Rate-limited to prevent bulk scraping of PII even by authorized users.
+ */
+router.get('/export/:userId', exportLimiter, async (req, res: Response) => {
   const authReq = req as unknown as AuthRequest;
   const { userId } = req.params;
 

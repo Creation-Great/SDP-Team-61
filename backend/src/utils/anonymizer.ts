@@ -13,8 +13,23 @@ export interface AnonymousMapping {
 }
 
 /**
- * Get or create a stable anonymous ID for a user within a session.
- * Returns the anonymous number (1-based).
+ * Get or create a stable anonymous ID for a user within a session/submission context.
+ *
+ * Collision model
+ * ---------------
+ * The anonymous_reviewer_map table has UNIQUE(session_id, user_id) and
+ * UNIQUE(submission_id, user_id) but NO unique constraint on
+ * (session_id, anonymous_id). That means two different users can race to claim
+ * the same anonymous_id (e.g. both computing MAX+1=5 at the same time) and both
+ * inserts will succeed, producing two "Reviewer #5"s in the same session.
+ *
+ * To prevent this without migrating historical rows, we use a guarded insert
+ * (`INSERT ... WHERE NOT EXISTS`) that atomically fails if the target
+ * anonymous_id is already taken in this context, and we retry with a fresh
+ * MAX+1 on collision.
+ *
+ * Under the common case (no concurrent reviewers for the same session) this
+ * is still a single INSERT after the existence check.
  */
 export async function getAnonymousId(
   client: PoolClient,
@@ -22,7 +37,7 @@ export async function getAnonymousId(
   sessionId: string | null,
   submissionId: string | null,
 ): Promise<number> {
-  // Check for existing mapping
+  // Fast path: existing mapping for this user
   const { rows: existing } = await client.query(
     `SELECT anonymous_id FROM anonymous_reviewer_map
      WHERE user_id = $1
@@ -31,40 +46,56 @@ export async function getAnonymousId(
      LIMIT 1`,
     [userId, sessionId, submissionId],
   );
-
   if (existing.length > 0) return existing[0].anonymous_id;
 
-  // Get next available ID in this context
-  const { rows: maxRow } = await client.query(
-    `SELECT COALESCE(MAX(anonymous_id), 0) + 1 AS next_id
-     FROM anonymous_reviewer_map
-     WHERE (session_id = $1 OR ($1 IS NULL AND session_id IS NULL))
-       AND (submission_id = $2 OR ($2 IS NULL AND submission_id IS NULL))`,
-    [sessionId, submissionId],
+  const MAX_ATTEMPTS = 10;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    // Compute next_id inside the loop so concurrent winners don't trick us into reusing their ID
+    const { rows: maxRow } = await client.query(
+      `SELECT COALESCE(MAX(anonymous_id), 0) + 1 AS next_id
+       FROM anonymous_reviewer_map
+       WHERE (session_id = $1 OR ($1 IS NULL AND session_id IS NULL))
+         AND (submission_id = $2 OR ($2 IS NULL AND submission_id IS NULL))`,
+      [sessionId, submissionId],
+    );
+    const nextId = maxRow[0].next_id;
+
+    // Guarded insert: only commit if the chosen anonymous_id is not already taken
+    // in this context. ON CONFLICT (session_id, user_id) DO NOTHING covers the
+    // "same user being inserted twice" race (we'll re-query below).
+    const insertResult = await client.query(
+      `INSERT INTO anonymous_reviewer_map (session_id, submission_id, user_id, anonymous_id)
+       SELECT $1, $2, $3, $4
+       WHERE NOT EXISTS (
+         SELECT 1 FROM anonymous_reviewer_map
+         WHERE anonymous_id = $4
+           AND (session_id = $1 OR ($1 IS NULL AND session_id IS NULL))
+           AND (submission_id = $2 OR ($2 IS NULL AND submission_id IS NULL))
+       )
+       ON CONFLICT (session_id, user_id) DO NOTHING
+       RETURNING anonymous_id`,
+      [sessionId, submissionId, userId, nextId],
+    );
+
+    if (insertResult.rows.length > 0) return insertResult.rows[0].anonymous_id;
+
+    // Either the target anonymous_id was already taken (retry with a new MAX+1)
+    // or this user was inserted concurrently by another request (re-query to find out).
+    const { rows: stored } = await client.query(
+      `SELECT anonymous_id FROM anonymous_reviewer_map
+       WHERE user_id = $1
+         AND (session_id = $2 OR ($2 IS NULL AND session_id IS NULL))
+         AND (submission_id = $3 OR ($3 IS NULL AND submission_id IS NULL))
+       LIMIT 1`,
+      [userId, sessionId, submissionId],
+    );
+    if (stored.length > 0) return stored[0].anonymous_id;
+    // else: anonymous_id collision with a different user — retry
+  }
+
+  throw new Error(
+    `Failed to assign anonymous ID after ${MAX_ATTEMPTS} attempts (session=${sessionId ?? 'null'}, submission=${submissionId ?? 'null'}, user=${userId})`,
   );
-
-  const nextId = maxRow[0].next_id;
-
-  // Use INSERT ... ON CONFLICT DO NOTHING, then re-query to handle concurrent inserts.
-  // This avoids depending on a specific composite unique constraint name.
-  await client.query(
-    `INSERT INTO anonymous_reviewer_map (session_id, submission_id, user_id, anonymous_id)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT DO NOTHING`,
-    [sessionId, submissionId, userId, nextId],
-  );
-
-  // Re-query to get the actual stored ID (may differ from nextId if a concurrent insert won)
-  const { rows: stored } = await client.query(
-    `SELECT anonymous_id FROM anonymous_reviewer_map
-     WHERE user_id = $1
-       AND (session_id = $2 OR ($2 IS NULL AND session_id IS NULL))
-       AND (submission_id = $3 OR ($3 IS NULL AND submission_id IS NULL))
-     LIMIT 1`,
-    [userId, sessionId, submissionId],
-  );
-
-  return stored.length > 0 ? stored[0].anonymous_id : nextId;
 }
 
 /**

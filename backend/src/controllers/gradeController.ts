@@ -148,10 +148,10 @@ export async function calculateFinalGrades(req: AuthRequest, res: Response): Pro
 
 /**
  * GET /grades/export/:courseId
- * Returns CSV download of final grades.
+ * Returns CSV download of final grades. Uses the same single-query CTE pattern as
+ * calculateFinalGrades to avoid the N+1 fan-out that used to run 3 queries per student.
  */
 export async function exportGradesCsv(req: AuthRequest, res: Response): Promise<void> {
-  // Reuse the same calculation logic by calling the handler internally
   const { user_id, role } = req.user;
   const { courseId } = req.params;
 
@@ -165,55 +165,80 @@ export async function exportGradesCsv(req: AuthRequest, res: Response): Promise<
       file_review_weight: 0.4, peer_review_weight: 0.4, checkin_weight: 0.2,
     };
 
-    const students = await client.query(
-      `SELECT ue.user_id, u.name, u.email
+    // Single batch query: join students with their aggregated file/peer/checkin stats.
+    const gradeData = await client.query(
+      `WITH file_scores AS (
+         SELECT s.user_id, COALESCE(AVG(r.score), 0) AS avg_score
+         FROM reviews r
+         JOIN submissions s ON s.submission_id = r.submission_id
+         WHERE s.course_id = $1 AND r.score IS NOT NULL
+         GROUP BY s.user_id
+       ),
+       peer_scores AS (
+         SELECT pr.reviewee_id AS user_id, COALESCE(AVG(pr.score), 0) AS avg_score
+         FROM peer_reviews pr
+         WHERE pr.session_id IN (
+           SELECT session_id FROM peer_review_sessions WHERE course_id = $1
+         ) AND pr.score IS NOT NULL
+         GROUP BY pr.reviewee_id
+       ),
+       checkin_stats AS (
+         SELECT user_id,
+                COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status = 'present')::int AS present
+         FROM checkins
+         WHERE course_id = $1
+         GROUP BY user_id
+       )
+       SELECT ue.user_id, u.name, u.email,
+              COALESCE(fs.avg_score, 0) AS file_review_avg,
+              COALESCE(ps.avg_score, 0) AS peer_review_avg,
+              COALESCE(cs.total, 0)::int AS checkin_total,
+              COALESCE(cs.present, 0)::int AS checkin_present
        FROM user_enrollments ue
        JOIN users u ON u.user_id = ue.user_id
-       WHERE ue.course_id = $1 AND ue.role = 'student'`,
+       LEFT JOIN file_scores fs ON fs.user_id = ue.user_id
+       LEFT JOIN peer_scores ps ON ps.user_id = ue.user_id
+       LEFT JOIN checkin_stats cs ON cs.user_id = ue.user_id
+       WHERE ue.course_id = $1 AND ue.role = 'student'
+       ORDER BY u.name`,
       [courseId]
     );
 
-    const results = [];
-    for (const student of students.rows) {
-      const fileReviews = await client.query(
-        `SELECT COALESCE(AVG(r.score), 0) AS avg_score
-         FROM reviews r JOIN submissions s ON s.submission_id = r.submission_id
-         WHERE s.user_id = $1 AND s.course_id = $2 AND r.score IS NOT NULL`,
-        [student.user_id, courseId]
-      );
-      const peerReviews = await client.query(
-        `SELECT COALESCE(AVG(pr.score), 0) AS avg_score
-         FROM peer_reviews pr WHERE pr.reviewee_id = $1
-         AND pr.session_id IN (SELECT session_id FROM peer_review_sessions WHERE course_id = $2)
-         AND pr.score IS NOT NULL`,
-        [student.user_id, courseId]
-      );
-      const checkins = await client.query(
-        `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'present')::int AS present
-         FROM checkins WHERE user_id = $1 AND course_id = $2`,
-        [student.user_id, courseId]
-      );
-
-      const fileScore = parseFloat(fileReviews.rows[0].avg_score);
-      const peerScore = parseFloat(peerReviews.rows[0].avg_score);
-      const checkinTotal = checkins.rows[0].total || 1;
-      const checkinScore = (checkins.rows[0].present / checkinTotal) * 100;
-      const finalGrade = fileScore * weights.file_review_weight +
+    return gradeData.rows.map((row) => {
+      const fileScore = parseFloat(row.file_review_avg);
+      const peerScore = parseFloat(row.peer_review_avg);
+      const checkinTotal = row.checkin_total || 1;
+      const checkinScore = (row.checkin_present / checkinTotal) * 100;
+      const finalGrade =
+        fileScore * weights.file_review_weight +
         peerScore * weights.peer_review_weight +
         checkinScore * weights.checkin_weight;
 
-      results.push({
-        name: student.name, email: student.email,
-        file_review_avg: fileScore, peer_review_avg: peerScore,
-        checkin_score: checkinScore, final_grade: Math.round(finalGrade * 100) / 100,
-      });
-    }
-    return results;
+      return {
+        name: row.name,
+        email: row.email,
+        file_review_avg: fileScore,
+        peer_review_avg: peerScore,
+        checkin_score: checkinScore,
+        final_grade: Math.round(finalGrade * 100) / 100,
+      };
+    });
   });
 
+  // Escape CSV fields: double up quotes, and prefix formula-injection characters with '
+  // so spreadsheet apps don't auto-execute cells starting with = + - @ \t \r.
+  const safeCsv = (val: string | number): string => {
+    const s = String(val).replace(/"/g, '""');
+    const sanitized = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    return `"${sanitized}"`;
+  };
+
   const header = 'Name,Email,File Review Avg,Peer Review Avg,Checkin Score,Final Grade\n';
-  const rows = grades.map(g =>
-    `"${g.name}","${g.email}",${g.file_review_avg},${g.peer_review_avg},${g.checkin_score},${g.final_grade}`
+  const rows = grades.map((g) =>
+    [g.name, g.email, g.file_review_avg, g.peer_review_avg, g.checkin_score, g.final_grade]
+      .map(safeCsv)
+      .join(','),
   ).join('\n');
 
   res.setHeader('Content-Type', 'text/csv');

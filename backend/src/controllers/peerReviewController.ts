@@ -658,12 +658,14 @@ export async function getSessionResults(req: AuthRequest, res: Response): Promis
       }
     }
 
-    // Apply anonymity-level filtering for students
+    // Apply anonymity-level filtering for students.
+    // Keying must match the consumer: anonymizeReviews() looks up mappings.get(copy.reviewer_id),
+    // so we key the map on row.reviewer_id (not reviewer_name) to avoid a silent "#0" fallback.
     const anonymityLevel = session.rows[0].anonymity || 'none';
     if (anonymityLevel !== 'none' && role === 'student') {
       const mappings = new Map<string, number>();
       for (const row of detailRows) {
-        const reviewerId = row.reviewer_id || row.reviewer_name;
+        const reviewerId = row.reviewer_id;
         if (!reviewerId) continue;
         if (!mappings.has(reviewerId)) {
           const anonId = await getAnonymousId(client, reviewerId, String(sessionId), null);

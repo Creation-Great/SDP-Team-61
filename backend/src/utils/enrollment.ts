@@ -127,6 +127,31 @@ export async function verifyCourseAccess(
 }
 
 /**
+ * Verify that a user is enrolled in the given course in any role (student/ta/instructor).
+ * Use for read-only endpoints where students also have a legitimate need to view course-level
+ * config (e.g. grade weights). Admins bypass this check. Throws 403 if not enrolled.
+ */
+export async function verifyCourseEnrollment(
+  db: Pool | PoolClient,
+  userId: string,
+  role: string,
+  courseId: string
+): Promise<void> {
+  if (role === 'admin') return;
+
+  const r = await db.query(
+    `SELECT 1 FROM user_enrollments
+     WHERE user_id = $1 AND course_id = $2
+     LIMIT 1`,
+    [userId, courseId]
+  );
+
+  if (r.rows.length === 0) {
+    throw new AppError(403, 'You are not enrolled in this course', 'forbidden');
+  }
+}
+
+/**
  * Verify that a session belongs to a course the instructor teaches.
  * Admins bypass this check. Throws 403 if not authorized.
  */
