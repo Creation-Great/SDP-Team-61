@@ -159,6 +159,8 @@ export default function App() {
           <AppLayout><AssignedReviewsPage /></AppLayout>
         </ProtectedRoute>
       } />
+      {/* Legacy notification link redirect */}
+      <Route path="/assigned-reviews" element={<Navigate to="/reviews" replace />} />
       <Route path="/review/:id" element={
         <ProtectedRoute>
           <AppLayout><ReviewPage /></AppLayout>

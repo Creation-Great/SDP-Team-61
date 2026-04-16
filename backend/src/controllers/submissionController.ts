@@ -171,7 +171,7 @@ export async function uploadSubmission(req: AuthRequest, res: Response): Promise
         type: 'review_assigned',
         title: 'New review assignment',
         body: `You have been assigned to review "${submission.title}".`,
-        link: '/assigned-reviews',
+        link: '/reviews',
       });
 
       assignedReviewers.push(row.user_id);

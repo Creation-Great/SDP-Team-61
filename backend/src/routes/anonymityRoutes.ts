@@ -26,7 +26,7 @@ router.patch('/sessions/:sessionId/anonymity', h(requireRole('instructor', 'admi
   const { sessionId } = req.params;
 
   // Verify instructor owns this session's course
-  await verifySessionAccess(pool, authReq.user.user_id, authReq.user.role, sessionId);
+  await verifySessionAccess(pool, authReq.user.user_id, authReq.user.role, sessionId as string);
 
   await ctrl.updateAnonymityConfig(authReq, res);
 });

@@ -49,7 +49,7 @@ router.get('/:courseId', h(requireRole('instructor')), validateParams(courseIdPa
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
 
-  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId as string);
 
   const { rows } = await pool.query(
     'SELECT * FROM lms_config WHERE course_id = $1',
@@ -63,7 +63,7 @@ router.put('/:courseId', h(requireRole('instructor')), validateParams(courseIdPa
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
 
-  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId as string);
 
   const { provider, api_url, api_key, config_json } = authReq.body;
 

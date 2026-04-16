@@ -40,7 +40,7 @@ router.put('/weights/:courseId', h(requireRole('instructor')), validateParams(co
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
 
-  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId as string);
 
   const { file_review_weight, peer_review_weight, checkin_weight, drop_lowest, drop_highest } = authReq.body;
 
@@ -66,7 +66,7 @@ router.get('/final/:courseId', h(requireRole('instructor')), validateParams(cour
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
 
-  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId as string);
 
   // Get weights
   const { rows: weightRows } = await pool.query(
@@ -98,7 +98,7 @@ router.get('/export/:courseId', h(requireRole('instructor')), validateParams(cou
   const authReq = req as AuthRequest;
   const { courseId } = req.params;
 
-  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId);
+  await verifyCourseAccess(pool, authReq.user.user_id, authReq.user.role, courseId as string);
 
   const { rows: students } = await pool.query(
     `SELECT ue.user_id, u.name, u.email

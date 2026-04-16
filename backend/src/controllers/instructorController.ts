@@ -88,7 +88,7 @@ export async function assignReviewer(req: AuthRequest, res: Response): Promise<v
         type: 'review_assigned',
         title: 'New review assignment',
         body: `You have been assigned to review "${submissionInfo.rows[0]?.title || 'a submission'}".`,
-        link: '/assigned-reviews',
+        link: '/reviews',
       });
       return { code: 201, body: ins.rows[0] };
     }
@@ -121,7 +121,7 @@ export async function assignReviewer(req: AuthRequest, res: Response): Promise<v
         type: 'review_assigned',
         title: 'Review assignment restored',
         body: `Your review task for "${submissionInfo.rows[0]?.title || 'a submission'}" is active again.`,
-        link: '/assigned-reviews',
+        link: '/reviews',
       });
       return { code: 201, body: upd.rows[0] };
     }
@@ -212,7 +212,7 @@ export async function bulkAssignReviewers(req: AuthRequest, res: Response): Prom
           type: 'review_assigned',
           title: 'New review assignment',
           body: `You have been assigned to review "${sub.title}".`,
-          link: '/assigned-reviews',
+          link: '/reviews',
         });
       }
 
