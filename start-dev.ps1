@@ -223,8 +223,8 @@ if ($Docker) {
     Write-Host "  SDP Peer Review System started (Docker full-stack mode)" -ForegroundColor Green
     Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Green
     Write-Host ""
-    Write-Host "  HTTPS：     " -NoNewline; Write-Host "https://www.peer.review.uconn.edu" -ForegroundColor Cyan
-    Write-Host "  HTTP：      " -NoNewline; Write-Host "http://www.peer.review.uconn.edu (redirects to HTTPS)" -ForegroundColor Gray
+    Write-Host "  HTTPS:       " -NoNewline; Write-Host "https://www.peer.review.uconn.edu" -ForegroundColor Cyan
+    Write-Host "  HTTP:        " -NoNewline; Write-Host "http://www.peer.review.uconn.edu (redirects to HTTPS)" -ForegroundColor Gray
     Write-Host "  Backend API: " -NoNewline; Write-Host "http://localhost:8080" -ForegroundColor Gray
     Write-Host "  API docs:    " -NoNewline; Write-Host "http://localhost:8080/api-docs" -ForegroundColor Gray
     Write-Host "  AI service:  " -NoNewline; Write-Host "http://localhost:5001" -ForegroundColor Gray
