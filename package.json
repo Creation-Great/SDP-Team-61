@@ -1,15 +1,23 @@
 {
-  "name": "ai-peer-review-system",
-  "version": "1.0.0",
+  "name": "sdp-team-61-peer-review",
+  "version": "3.0.0",
   "description": "AI Integrated Peer Review System",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "test": "cd backend && npm test",
+    "lint": "cd backend && npm run lint && cd ../frontend && npm run lint",
+    "lint:fix": "cd backend && npm run lint:fix && cd ../frontend && npm run lint:fix",
+    "format": "cd backend && npm run format && cd ../frontend && npm run format",
+    "format:check": "cd backend && npm run format:check && cd ../frontend && npm run format:check"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "eslint": "^10.0.0",
+    "prettier": "^3.8.1"
+  }
 }

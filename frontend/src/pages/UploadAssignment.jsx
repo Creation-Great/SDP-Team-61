@@ -1,218 +1,249 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import API from "../services/api";
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Upload, FileUp, CheckCircle, AlertCircle } from 'lucide-react';
+import API from '../services/api';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
 
+/**
+ * Student assignment upload: multipart POST /submissions/upload (title, description, file).
+ * Rendered at /upload.
+ * @returns {JSX.Element}
+ */
 export default function UploadAssignment() {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const navigate = useNavigate();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [file, setFile] = useState(null);
-  const [message, setMessage] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [enrollments, setEnrollments] = useState([]);
+  const [selectedCourseId, setSelectedCourseId] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+  useEffect(() => {
+    API.get('/enrollments')
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setEnrollments(rows);
+        const primary = rows.find((r) => r.is_primary) || rows[0];
+        if (primary?.course_id) setSelectedCourseId(primary.course_id);
+      })
+      .catch(() => setEnrollments([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCourseId) {
+      setTemplates([]);
+      setSelectedTemplateId('');
+      return;
+    }
+    API.get('/assignment-templates', {
+      params: { course_id: selectedCourseId, active: true },
+    })
+      .then((res) => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setTemplates(rows);
+        setSelectedTemplateId(rows[0]?.template_id || '');
+      })
+      .catch(() => {
+        setTemplates([]);
+        setSelectedTemplateId('');
+      });
+  }, [selectedCourseId]);
 
   const handleUpload = async (e) => {
     e.preventDefault();
+    setError('');
+    setMessage('');
 
-    if (!title || !file) {
-      setMessage("Please enter a title and choose a file.");
+    if (!title.trim()) {
+      setError('Please enter a title.');
+      return;
+    }
+    if (!file) {
+      setError('Please select a file to upload.');
+      return;
+    }
+    if (enrollments.length > 0 && !selectedCourseId) {
+      setError('Please select a course.');
       return;
     }
 
     const formData = new FormData();
-    formData.append("title", title);
-    formData.append("description", description);
-    formData.append("file", file);
+    formData.append('title', title);
+    formData.append('description', description);
+    formData.append('file', file);
+    if (selectedCourseId) formData.append('course_id', selectedCourseId);
+    if (selectedTemplateId) formData.append('assignment_template_id', selectedTemplateId);
 
+    setLoading(true);
     try {
-      await API.post("/assignments/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      const res = await API.post('/submissions/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-
-      setMessage("Upload successful!");
-      setTitle("");
-      setDescription("");
+      setMessage(res.data.message || 'Upload successful!');
+      setTitle('');
+      setDescription('');
       setFile(null);
+      setTimeout(() => navigate('/dashboard'), 1500);
     } catch (err) {
-      console.error(err);
-      setMessage("Upload failed. Try again.");
+      setError(err.response?.data?.message || 'Upload failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const placeholderStyle = `
-    ::placeholder {
-      color: rgba(255,255,255,0.88) !important;
-      opacity: 1 !important;
-    }
-  `;
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = () => setIsDragging(false);
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-    }
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) setFile(droppedFile);
   };
 
+  const inputClass =
+    'w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 text-sm ' +
+    'placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#000E2F]/10 ' +
+    'focus:border-[#000E2F]/20 transition-all';
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        paddingTop: "120px",
-        paddingBottom: "60px",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "flex-start",
-        width: "100%",
-      }}
-    >
-      <style>{placeholderStyle}</style>
+    <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Upload Assignment</h1>
+          <p className="text-slate-500 mt-1">Submit your project deliverables for this week</p>
+        </div>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 25 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        style={{
-          width: "90%",
-          maxWidth: "720px",
-          backdropFilter: "blur(20px)",
-          background: "rgba(255,255,255,0.12)",
-          border: "1px solid rgba(255,255,255,0.25)",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-          borderRadius: "20px",
-          padding: "45px",
-        }}
-      >
-        <h1
-          style={{
-            color: "white",
-            textAlign: "center",
-            marginBottom: "25px",
-            fontSize: "38px",
-            fontWeight: "700",
-          }}
-        >
-          Upload Assignment
-        </h1>
-
-        <form
-          onSubmit={handleUpload}
-          style={{ display: "flex", flexDirection: "column", gap: "22px" }}
-        >
-          <input
-            type="text"
-            placeholder="Assignment Title *"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            style={{
-              padding: "16px",
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.25)",
-              background: "rgba(255,255,255,0.25)", // FIXED CONTRAST
-              color: "rgba(255,255,255,0.95)",      // FIXED TEXT BRIGHTNESS
-              fontSize: "17px",
-              outline: "none",
-              backdropFilter: "blur(5px)",
-            }}
-          />
-
-          <textarea
-            placeholder="Description (optional)"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            style={{
-              padding: "16px",
-              minHeight: "150px",
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.25)",
-              background: "rgba(255,255,255,0.25)", // FIXED CONTRAST
-              color: "rgba(255,255,255,0.95)",      // FIXED TEXT BRIGHTNESS
-              fontSize: "17px",
-              resize: "vertical",
-              outline: "none",
-              backdropFilter: "blur(5px)",
-            }}
-          />
-
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            style={{
-              border: "2px dashed rgba(255,255,255,0.4)",
-              borderRadius: "16px",
-              padding: "35px",
-              textAlign: "center",
-              color: "white",
-              cursor: "pointer",
-              transition: "0.25s",
-              background: isDragging
-                ? "rgba(255,255,255,0.18)"
-                : "rgba(255,255,255,0.12)",
-              backdropFilter: "blur(5px)",
-            }}
-            onClick={() => document.getElementById("fileInput").click()}
-          >
-            {file ? (
-              <span style={{ fontSize: "17px" }}>📄 {file.name}</span>
-            ) : (
-              <span style={{ fontSize: "17px", opacity: 0.95 }}>
-                Drag & drop a file here, or click to browse
-              </span>
-            )}
+      <form onSubmit={handleUpload} className="space-y-6">
+        {/* Title & Description */}
+        <Card className="p-6 space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="title">Title</label>
             <input
-              id="fileInput"
-              type="file"
-              onChange={(e) => setFile(e.target.files[0])}
-              style={{ display: "none" }}
+              id="title"
+              className={inputClass}
+              type="text"
+              placeholder="Assignment title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="description">Description (optional)</label>
+            <textarea
+              id="description"
+              className={inputClass + ' min-h-[100px] resize-y'}
+              placeholder="Brief description of your assignment..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+          {enrollments.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="course">Course</label>
+              <select
+                id="course"
+                className={inputClass}
+                value={selectedCourseId}
+                onChange={(e) => setSelectedCourseId(e.target.value)}
+                required
+              >
+                <option value="">Select a course</option>
+                {enrollments.map((en) => (
+                  <option key={en.enrollment_id} value={en.course_id}>
+                    {en.course_id}{en.group_id ? ` (Group ${en.group_id})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {selectedCourseId && templates.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="assignment-template">Assignment</label>
+              <select
+                id="assignment-template"
+                className={inputClass}
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+              >
+                <option value="">No template (custom submission)</option>
+                {templates.map((tpl) => (
+                  <option key={tpl.template_id} value={tpl.template_id}>
+                    {tpl.title}{tpl.due_at ? ` (Due ${new Date(tpl.due_at).toLocaleDateString()})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </Card>
 
-          <motion.button
-            type="submit"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.96 }}
-            style={{
-              background: "linear-gradient(135deg, #56CCF2, #2F80ED)",
-              padding: "15px",
-              borderRadius: "14px",
-              color: "white",
-              fontSize: "20px",
-              fontWeight: "600",
-              border: "none",
-              cursor: "pointer",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-            }}
-          >
-            Upload
-          </motion.button>
-        </form>
+        {/* Drag & Drop Zone (prototype style) */}
+        <Card
+          className={`p-8 border-dashed border-2 flex flex-col items-center justify-center min-h-[300px] transition-all cursor-pointer ${
+            isDragging
+              ? 'border-[#000E2F]/30 bg-[#000E2F]/5'
+              : file
+                ? 'border-emerald-300 bg-emerald-50/50'
+                : 'border-slate-300 bg-slate-50'
+          }`}
+          onClick={() => document.getElementById('file-input').click()}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          {file ? (
+            <div className="flex flex-col items-center">
+              <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle className="w-10 h-10" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">{file.name}</h3>
+              <p className="text-slate-500 text-sm">({(file.size / 1024).toFixed(1)} KB) — Click to change</p>
+            </div>
+          ) : (
+            <>
+              <div className="w-20 h-20 bg-[#000E2F]/10 text-[#000E2F] rounded-full flex items-center justify-center mb-4">
+                <FileUp className="w-10 h-10" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Drag & Drop files here</h3>
+              <p className="text-slate-500 text-sm mb-6">Supported formats: PDF, ZIP, TXT. Max size: 50MB</p>
+              <Button type="button" icon={Upload}>Browse Files</Button>
+            </>
+          )}
+        </Card>
+        <input
+          id="file-input"
+          type="file"
+          accept=".pdf,.doc,.docx,.txt,.zip"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="hidden"
+        />
 
-        {message && (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            style={{
-              marginTop: "22px",
-              textAlign: "center",
-              color: "white",
-              fontSize: "17px",
-              opacity: 0.9,
-            }}
-          >
-            {message}
-          </motion.p>
+        {/* Error / Success */}
+        {error && (
+          <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm" role="alert" aria-live="assertive">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            {error}
+          </div>
         )}
-      </motion.div>
+        {message && (
+          <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm">
+            <CheckCircle className="w-4 h-4 flex-shrink-0" />
+            {message}
+          </div>
+        )}
+
+        <Button type="submit" className="w-full" loading={loading}>
+          <Upload className="w-4 h-4 mr-2" />
+          {loading ? 'Uploading...' : 'Submit Assignment'}
+        </Button>
+      </form>
     </div>
   );
 }

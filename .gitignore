@@ -1,17 +1,50 @@
-# OS junk
-.DS_Store
+node_modules/
+dist/
+.env
+.env.local
+uploads/*
+!uploads/.gitkeep
+*.log
+*.pem
+ssl/
 
-# IDE stuff
-.vscode/
+cookies*.txt
+
+# Redis
+dump.rdb
+
+# PWA (built by vite-plugin-pwa)
+dist/sw.js
+dist/workbox-*.js
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Python test/coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+__pycache__/
+*.pyc
+ai-service/venv/
+
+# Backend test/coverage artifacts
+backend/coverage/
+
+# Frontend test artifacts
+frontend/e2e-artifacts/
+frontend/playwright-report/
+frontend/test-results/
+frontend/debug-*.png
+*.png.bak
+
+# IDE
+.vscode/settings.json
 .idea/
 
-# Environment variables
-.env
-*.env
+# OS
+.DS_Store
+Thumbs.db
 
-# Ignore node_modules ONLY inside backend and frontend
-backend/node_modules/
-frontend/node_modules/
-
-# Ignore uploads ONLY in backend
-backend/uploads/
+# Local Claude working notes — kept local only, not pushed.
+CLAUDE.md

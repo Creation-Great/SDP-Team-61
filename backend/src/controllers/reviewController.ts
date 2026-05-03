@@ -1,0 +1,299 @@
+import { Response } from 'express';
+import { withDb } from '../db.js';
+import { audit } from '../utils/audit.js';
+import { AppError } from '../utils/AppError.js';
+import { scheduleMvRefresh } from '../utils/mvRefresh.js';
+import { emitSseEvent } from '../utils/sse.js';
+import { logger } from '../utils/logger.js';
+import { createNotification } from '../utils/notifications.js';
+import { computeReviewHash } from '../utils/hashIntegrity.js';
+import { anonymizeReviews, getAnonymousId } from '../utils/anonymizer.js';
+import type { AuthRequest } from '../types.js';
+
+/**
+ * GET /reviews/:id
+ * Get a specific review/assignment details for the reviewer.
+ */
+export async function getReviewById(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { id } = req.params; // assignment_id
+
+  const row = await withDb(user_id, role, async (client) => {
+    const result = await client.query(
+      `SELECT a.assignment_id, a.submission_id, a.reviewer_id,
+              a.status AS assignment_status,
+              s.title, s.filename, s.file_url, s.description, s.course_id,
+              s.user_id AS submission_owner_id,
+              u.name AS student_name,
+              r.review_id, r.score, r.comments, r.created_at AS review_date
+       FROM assignments a
+       JOIN submissions s ON s.submission_id = a.submission_id
+       JOIN users u ON u.user_id = s.user_id
+       LEFT JOIN reviews r ON r.submission_id = a.submission_id AND r.reviewer_id = a.reviewer_id
+       WHERE a.assignment_id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      throw new AppError(404, 'Review assignment not found');
+    }
+
+    const row = result.rows[0];
+
+    // Only the assigned reviewer, the submission owner, or instructor/admin may view
+    const isReviewer = row.reviewer_id === user_id;
+    const isOwner = row.submission_owner_id === user_id;
+    const isPrivileged = role === 'instructor' || role === 'admin';
+    if (!isReviewer && !isOwner && !isPrivileged) {
+      throw new AppError(403, 'You do not have permission to view this review assignment');
+    }
+
+    // Strip internal id before returning
+    const { reviewer_id: _rid, submission_owner_id: _soid, ...safe } = row;
+    return safe;
+  });
+
+  res.json(row);
+}
+
+/**
+ * POST /reviews/:id/submit
+ * Submit a review for an assignment.
+ */
+export async function submitReview(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { id } = req.params; // assignment_id
+  const { score, comments } = req.body;
+
+  const numScore = Number(score);
+
+  const result = await withDb(user_id, role, async (client) => {
+    // Verify the assignment belongs to this reviewer
+    const assignment = await client.query(
+      `SELECT assignment_id, submission_id, reviewer_id, status
+       FROM assignments WHERE assignment_id = $1`,
+      [id]
+    );
+
+    if (assignment.rows.length === 0) {
+      throw new AppError(404, 'Assignment not found');
+    }
+
+    const assign = assignment.rows[0];
+    if (assign.reviewer_id !== user_id) {
+      throw new AppError(403, 'You are not the assigned reviewer');
+    }
+
+    if (assign.status === 'completed') {
+      throw new AppError(400, 'Review already submitted');
+    }
+
+    // Insert review
+    const review = await client.query(
+      `INSERT INTO reviews (submission_id, reviewer_id, score, comments)
+       VALUES ($1, $2, $3, $4)
+       RETURNING review_id, created_at`,
+      [assign.submission_id, user_id, numScore, comments || '']
+    );
+
+    // Compute and store integrity hash
+    const reviewHash = computeReviewHash(numScore, comments || '');
+    await client.query(
+      `UPDATE reviews SET review_hash = $1 WHERE review_id = $2`,
+      [reviewHash, review.rows[0].review_id]
+    );
+
+    // Update assignment status
+    await client.query(
+      `UPDATE assignments SET status = 'completed' WHERE assignment_id = $1`,
+      [id]
+    );
+    await client.query(
+      `DELETE FROM file_review_drafts WHERE assignment_id = $1 AND reviewer_id = $2`,
+      [id, user_id]
+    );
+
+    // Update submission status if all assignments are completed
+    const pending = await client.query(
+      `SELECT COUNT(*) AS cnt FROM assignments
+       WHERE submission_id = $1 AND status = 'pending'`,
+      [assign.submission_id]
+    );
+
+    if (parseInt(pending.rows[0].cnt) === 0) {
+      await client.query(
+        `UPDATE submissions SET status = 'reviewed' WHERE submission_id = $1`,
+        [assign.submission_id]
+      );
+    }
+
+    const submissionOwner = await client.query(
+      `SELECT user_id, title FROM submissions WHERE submission_id = $1`,
+      [assign.submission_id]
+    );
+    if (submissionOwner.rows.length > 0 && submissionOwner.rows[0].user_id !== user_id) {
+      await createNotification(client, {
+        userId: submissionOwner.rows[0].user_id,
+        type: 'review_received',
+        title: 'Your submission received a new review',
+        body: `A new review was submitted for "${submissionOwner.rows[0].title}".`,
+        link: '/dashboard',
+      });
+    }
+
+    await audit(client, user_id, 'REVIEW', 'review', review.rows[0].review_id, {
+      assignment_id: id,
+      submission_id: assign.submission_id,
+      score: numScore,
+    });
+
+    return review.rows[0];
+  });
+
+  scheduleMvRefresh();
+
+  // Emit SSE event for real-time instructor dashboard
+  const sseChannel = req.user.course_id ? `course:${req.user.course_id}` : `instructor:global`;
+  emitSseEvent(sseChannel, 'review_submitted', {
+    review_id: result.review_id,
+    assignment_id: id,
+    reviewer_name: req.user.name,
+  });
+
+  logger.info(
+    { action: 'review_submitted', userId: req.user.user_id, assignmentId: id, reviewId: result.review_id },
+    'Review submitted'
+  );
+  res.status(201).json({ message: 'Review submitted successfully', review: result });
+}
+
+/**
+ * GET /reviews/:id/draft
+ * Get backend-saved draft for this assignment review.
+ */
+export async function getReviewDraft(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { id } = req.params;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const assignment = await client.query(
+      `SELECT assignment_id, reviewer_id, status
+       FROM assignments
+       WHERE assignment_id = $1`,
+      [id]
+    );
+    if (assignment.rows.length === 0) throw new AppError(404, 'Assignment not found');
+    if (assignment.rows[0].reviewer_id !== user_id) throw new AppError(403, 'You are not the assigned reviewer');
+
+    const draft = await client.query(
+      `SELECT score, comments, updated_at
+       FROM file_review_drafts
+       WHERE assignment_id = $1 AND reviewer_id = $2`,
+      [id, user_id]
+    );
+    return draft.rows[0] || null;
+  });
+
+  res.json(row || { score: null, comments: '', updated_at: null });
+}
+
+/**
+ * PATCH /reviews/:id/draft
+ * Save backend draft for this assignment review.
+ */
+export async function upsertReviewDraft(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { id } = req.params;
+  const { score, comments } = req.body;
+
+  const row = await withDb(user_id, role, async (client) => {
+    const assignment = await client.query(
+      `SELECT assignment_id, reviewer_id, status
+       FROM assignments
+       WHERE assignment_id = $1`,
+      [id]
+    );
+    if (assignment.rows.length === 0) throw new AppError(404, 'Assignment not found');
+    if (assignment.rows[0].reviewer_id !== user_id) throw new AppError(403, 'You are not the assigned reviewer');
+    if (assignment.rows[0].status === 'completed') throw new AppError(400, 'Review already submitted');
+
+    const result = await client.query(
+      `INSERT INTO file_review_drafts (assignment_id, reviewer_id, score, comments, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (assignment_id, reviewer_id)
+       DO UPDATE SET score = EXCLUDED.score, comments = EXCLUDED.comments, updated_at = now()
+       RETURNING score, comments, updated_at`,
+      [id, user_id, score ?? null, comments || '']
+    );
+    return result.rows[0];
+  });
+
+  res.json(row);
+}
+
+/**
+ * GET /reviews/by-submission/:submissionId
+ * Get all reviews for a specific submission (for the submission owner).
+ */
+export async function getReviewsBySubmission(req: AuthRequest, res: Response): Promise<void> {
+  const { user_id, role } = req.user;
+  const { submissionId } = req.params;
+
+  const data = await withDb(user_id, role, async (client) => {
+    // Verify ownership
+    const sub = await client.query(
+      `SELECT submission_id, user_id, title, filename, file_url, status, created_at
+       FROM submissions WHERE submission_id = $1`,
+      [submissionId]
+    );
+
+    if (sub.rows.length === 0) {
+      throw new AppError(404, 'Submission not found');
+    }
+
+    const submission = sub.rows[0];
+
+    // Only the submission owner or instructor/admin may view reviews
+    if (submission.user_id !== user_id && role !== 'instructor' && role !== 'admin') {
+      throw new AppError(403, 'You do not have permission to view reviews for this submission');
+    }
+
+    // Get reviews
+    const reviews = await client.query(
+      `SELECT r.review_id, r.reviewer_id, r.score, r.comments, r.created_at,
+              u.name AS reviewer_name
+       FROM reviews r
+       JOIN users u ON u.user_id = r.reviewer_id
+       WHERE r.submission_id = $1
+       ORDER BY r.created_at DESC`,
+      [submissionId]
+    );
+
+    // Check anonymity level for this submission's session
+    const anonQuery = await client.query(
+      `SELECT COALESCE(s.anonymity, 'none') AS anonymity_level
+       FROM submissions sub
+       LEFT JOIN peer_review_sessions s ON s.course_id = sub.course_id
+       WHERE sub.submission_id = $1
+       LIMIT 1`,
+      [submissionId]
+    );
+    const anonymityLevel = anonQuery.rows[0]?.anonymity_level || 'none';
+
+    let reviewRows = reviews.rows;
+    if (anonymityLevel !== 'none' && role === 'student') {
+      // Build anonymous ID mappings for reviewers
+      const mappings = new Map<string, number>();
+      for (const r of reviewRows) {
+        if (!mappings.has(r.reviewer_id)) {
+          const anonId = await getAnonymousId(client, r.reviewer_id, null, String(submissionId));
+          mappings.set(r.reviewer_id, anonId);
+        }
+      }
+      reviewRows = anonymizeReviews(reviewRows, anonymityLevel, mappings, role);
+    }
+
+    return { submission, reviews: reviewRows };
+  });
+
+  res.json(data);
+}

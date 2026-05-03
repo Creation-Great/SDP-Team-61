@@ -1,144 +1,364 @@
-// frontend/src/pages/StudentDashboardPage.jsx
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import API from "../services/api";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import {
+  Upload, CheckSquare, CheckCircle2, Clock, ChevronRight, Star,
+  AlertCircle, MessageSquare, Loader2, Edit, Trash2, RefreshCw,
+} from 'lucide-react';
+import API from '../services/api';
+import { strings } from '../i18n/strings';
+import { useToast } from '../components/ui/ToastProvider';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
+/**
+ * Student dashboard: pending review tasks, weekly check-in entry, average score, and quick actions.
+ * Fetches GET /submissions/reviews/my-tasks and GET /submissions/mine on mount.
+ * @returns {JSX.Element}
+ */
 export default function StudentDashboardPage() {
+  const [tasks, setTasks] = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoadingId, setActionLoadingId] = useState('');
+  const [fileInputTarget, setFileInputTarget] = useState('');
+  const [withdrawTarget, setWithdrawTarget] = useState(null);
+  const [editDialog, setEditDialog] = useState(null);
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   useEffect(() => {
-    API.get("/assignments/mine")
-      .then((res) => setSubmissions(res.data))
-      .catch(() => setSubmissions([]));
+    Promise.all([
+      API.get('/submissions/reviews/my-tasks').then((r) => r.data).catch(() => []),
+      API.get('/submissions/mine').then((r) => r.data).catch(() => []),
+    ])
+      .then(([t, s]) => { setTasks(t); setSubmissions(s); })
+      .finally(() => setLoading(false));
   }, []);
 
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        paddingTop: "120px",
-        paddingBottom: "50px",
-        width: "100%",
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        style={{ maxWidth: "900px", margin: "0 auto" }}
+  /* Compute average score received across all reviews */
+  const avgScore = useMemo(() => {
+    let sum = 0, count = 0;
+    submissions.forEach((s) => {
+      (s.reviews || []).forEach((r) => {
+        if (r.score != null) { sum += Number(r.score); count += 1; }
+      });
+    });
+    return count > 0 ? (sum / count).toFixed(1) : null;
+  }, [submissions]);
+
+  const refreshData = async () => {
+    const [t, s] = await Promise.all([
+      API.get('/submissions/reviews/my-tasks').then((r) => r.data).catch(() => []),
+      API.get('/submissions/mine').then((r) => r.data).catch(() => []),
+    ]);
+    setTasks(t);
+    setSubmissions(s);
+  };
+
+  const handleEditSubmission = (sub) => {
+    setEditDialog({
+      submissionId: sub.submission_id,
+      title: sub.title || '',
+      description: sub.description || '',
+    });
+  };
+
+  const confirmEditSubmission = async () => {
+    const { submissionId, title, description } = editDialog;
+    setEditDialog(null);
+    setActionLoadingId(submissionId);
+    try {
+      await API.patch(`/submissions/${submissionId}`, {
+        title: title.trim(),
+        description,
+      });
+      await refreshData();
+    } catch (err) {
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to update submission' });
+    } finally {
+      setActionLoadingId('');
+    }
+  };
+
+  const confirmWithdraw = async () => {
+    const sub = withdrawTarget;
+    if (!sub) return;
+    setWithdrawTarget(null);
+    setActionLoadingId(sub.submission_id);
+    try {
+      await API.delete(`/submissions/${sub.submission_id}`);
+      await refreshData();
+    } catch (err) {
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to withdraw submission' });
+    } finally {
+      setActionLoadingId('');
+    }
+  };
+
+  const handleReplaceFile = async (sub, file) => {
+    if (!file) return;
+    setActionLoadingId(sub.submission_id);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await API.patch(`/submissions/${sub.submission_id}/replace-file`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await refreshData();
+    } catch (err) {
+      addToast({ type: 'error', message: err.response?.data?.message || 'Failed to replace submission file' });
+    } finally {
+      setActionLoadingId('');
+      setFileInputTarget('');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div
+        className="flex items-center justify-center py-20"
+        aria-busy="true"
+        aria-live="polite"
+        aria-label="Loading dashboard"
       >
-        <h1
-          style={{
-            color: "white",
-            fontSize: "42px",
-            fontWeight: "700",
-            textAlign: "center",
-            marginBottom: "30px",
-          }}
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" aria-hidden />
+        <span className="ml-3 text-slate-500">Loading dashboard...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Student Dashboard</h1>
+          <p className="text-slate-500 mt-1">Welcome back. Here is your overview for this week.</p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="secondary" icon={CheckSquare} onClick={() => navigate('/student/checkins')}>Weekly Check-in</Button>
+          <Button icon={Upload} onClick={() => navigate('/upload')}>Submit Assignment</Button>
+        </div>
+      </div>
+
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Pending Reviews (gradient) */}
+        <Card
+          className="p-6 bg-gradient-to-br from-[#000E2F] to-[#1a3a6b] text-white border-0 shadow-md cursor-pointer"
+          onClick={() => navigate('/reviews')}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/reviews'); } }}
+          aria-label={`Pending reviews: ${tasks.length} task${tasks.length !== 1 ? 's' : ''} need attention. Go to reviews.`}
         >
-          Your Submissions
-        </h1>
+          <h3 className="text-white/80 font-medium mb-1">Pending Reviews</h3>
+          <div className="text-4xl font-bold">{tasks.length}</div>
+          <div className="mt-4 flex items-center text-sm text-white/80 bg-white/10 px-3 py-1.5 rounded-lg w-fit">
+            <Clock className="w-4 h-4 mr-2" /> Needs Attention <ChevronRight className="w-4 h-4 ml-1" />
+          </div>
+        </Card>
 
-        {submissions.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            style={{
-              backdropFilter: "blur(20px)",
-              background: "rgba(255,255,255,0.12)",
-              borderRadius: "18px",
-              padding: "40px",
-              margin: "40px auto",
-              maxWidth: "600px",
-              textAlign: "center",
-              border: "1px solid rgba(255,255,255,0.25)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-              color: "white",
-            }}
-          >
-            <h3>No submissions yet</h3>
-            <p style={{ opacity: 0.8, marginTop: "10px" }}>
-              Upload your first assignment to get started.
-            </p>
+        {/* Check-in Status */}
+        <Card
+          className="p-6 cursor-pointer"
+          onClick={() => navigate('/student/checkins')}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/student/checkins'); } }}
+          aria-label="Weekly check-in: active. Go to check-in page."
+        >
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-slate-500 font-medium mb-1">Weekly Check-in</h3>
+              <div className="text-2xl font-bold text-emerald-600 flex items-center mt-2">
+                <CheckCircle2 className="w-6 h-6 mr-2" /> Active
+              </div>
+            </div>
+            <div className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600">
+              <CheckSquare className="w-5 h-5" />
+            </div>
+          </div>
+        </Card>
 
-            <a
-              href="/upload"
-              style={{
-                marginTop: "20px",
-                display: "inline-block",
-                background: "rgba(255,255,255,0.2)",
-                padding: "12px 24px",
-                borderRadius: "10px",
-                color: "white",
-                textDecoration: "none",
-                border: "1px solid rgba(255,255,255,0.3)",
-                fontWeight: "600",
-              }}
-            >
-              Upload Assignment
-            </a>
-          </motion.div>
+        {/* Avg Score */}
+        <Card
+          className={`p-6 ${submissions[0] ? 'cursor-pointer' : ''}`}
+          onClick={() => submissions[0] ? navigate(`/view-review/${submissions[0].submission_id}`) : undefined}
+          role={submissions[0] ? 'button' : undefined}
+          tabIndex={submissions[0] ? 0 : undefined}
+          onKeyDown={submissions[0] ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/view-review/${submissions[0].submission_id}`); } } : undefined}
+          aria-label={avgScore != null ? `Average score received: ${avgScore} out of 5. View details.` : 'Average score received: no reviews yet.'}
+        >
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="text-slate-500 font-medium mb-1">Avg Score Received</h3>
+              <div className="text-3xl font-bold text-slate-900 mt-1">
+                {avgScore ?? '—'}<span className="text-lg text-slate-400 font-normal">/5.0</span>
+              </div>
+            </div>
+            <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-500">
+              <Star className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3 text-sm text-[#000E2F] font-medium flex items-center">
+            View Details <ChevronRight className="w-4 h-4" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Assigned Peer Reviews Table Card */}
+      <Card className="p-0 overflow-hidden">
+        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center">
+            <MessageSquare className="w-5 h-5 mr-2 text-[#000E2F]" />
+            Assigned Peer Reviews
+          </h2>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/reviews')}>View All</Button>
+        </div>
+
+        {tasks.length === 0 ? (
+          <div className="p-6 text-center text-slate-500">
+            {strings.dashboard.noReviewTasks}
+          </div>
         ) : (
-          submissions.map((s, idx) => {
-            // ⭐ CHECK IF ANY REVIEW FOR THIS ASSIGNMENT IS COMPLETED
-            const hasCompletedReview =
-              s.reviews &&
-              Array.isArray(s.reviews) &&
-              s.reviews.some((r) => r.completed === true);
-
-            return (
-              <motion.div
-                key={s._id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.07 }}
-                whileHover={{ scale: 1.02 }}
-                style={{
-                  backdropFilter: "blur(14px)",
-                  background: "rgba(255,255,255,0.12)",
-                  borderRadius: "16px",
-                  padding: "22px",
-                  marginBottom: "20px",
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-                }}
+          <div className="divide-y divide-slate-100">
+            {tasks.slice(0, 5).map((task) => (
+              <div
+                key={task.assignment_id}
+                className="p-6 hover:bg-slate-50/50 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
               >
-                <h2>{s.title}</h2>
+                <div>
+                  <h4 className="font-semibold text-slate-900 text-lg">{task.title}</h4>
+                  <div className="flex items-center text-sm text-red-500 mt-1.5 font-medium">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    Assigned: {new Date(task.assigned_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <Button onClick={() => navigate(`/review/${task.assignment_id}`)}>
+                  Start Review <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
-                <p style={{ opacity: 0.85 }}>
-                  <strong>Status:</strong> {s.status}
-                </p>
-
-                <p style={{ opacity: 0.6 }}>
-                  Submitted: {new Date(s.createdAt).toLocaleString()}
-                </p>
-
-                {/* ⭐ SHOW VIEW REVIEW BUTTON ONLY IF REVIEW EXISTS */}
-                {hasCompletedReview && (
-                  <button
-                    onClick={() => navigate(`/view-review/${s._id}`)}
-                    style={{
-                      marginTop: "15px",
-                      padding: "10px 18px",
-                      background: "rgba(255,255,255,0.15)",
-                      border: "1px solid rgba(255,255,255,0.3)",
-                      borderRadius: "10px",
-                      color: "white",
-                      cursor: "pointer",
-                      fontWeight: 600,
+      <Card className="p-0 overflow-hidden">
+        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+          <h2 className="text-lg font-bold text-slate-900">My Submissions</h2>
+        </div>
+        {submissions.length === 0 ? (
+          <div className="p-6 text-center text-slate-500">{strings.dashboard.noSubmissions}</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {submissions.slice(0, 6).map((s) => (
+              <div key={s.submission_id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-semibold text-slate-900">{s.title}</h4>
+                  <p className="text-sm text-slate-500 mt-1">{s.description || 'No description'}</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {new Date(s.created_at).toLocaleDateString()} · {s.status}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <Link to={`/submissions/${s.submission_id}/revisions`} className="text-xs text-[#000E2F] hover:underline font-medium">
+                      View History
+                    </Link>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {s.status === 'reviewed' && (
+                    <Link to={`/submissions/${s.submission_id}/revisions`}>
+                      <Button size="sm" variant="secondary" type="button">
+                        <RefreshCw className="w-3.5 h-3.5 mr-1" /> Revise
+                      </Button>
+                    </Link>
+                  )}
+                  <input
+                    type="file"
+                    className="hidden"
+                    id={`replace-file-${s.submission_id}`}
+                    onChange={(e) => handleReplaceFile(s, e.target.files?.[0])}
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={actionLoadingId === s.submission_id}
+                    onClick={() => handleEditSubmission(s)}
+                  >
+                    <Edit className="w-3.5 h-3.5 mr-1" /> Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={actionLoadingId === s.submission_id}
+                    onClick={() => {
+                      setFileInputTarget(s.submission_id);
+                      const el = document.getElementById(`replace-file-${s.submission_id}`);
+                      if (el) el.click();
                     }}
                   >
-                    View Review
-                  </button>
-                )}
-              </motion.div>
-            );
-          })
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                    {actionLoadingId === s.submission_id && fileInputTarget === s.submission_id ? 'Replacing...' : 'Replace File'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={actionLoadingId === s.submission_id}
+                    onClick={() => setWithdrawTarget(s)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Withdraw
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
-      </motion.div>
+      </Card>
+
+      {/* Withdraw confirmation dialog */}
+      <ConfirmDialog
+        open={!!withdrawTarget}
+        title="Withdraw Submission"
+        message={`Withdraw "${withdrawTarget?.title}"? This action cannot be undone.`}
+        confirmLabel="Withdraw"
+        variant="danger"
+        onConfirm={confirmWithdraw}
+        onCancel={() => setWithdrawTarget(null)}
+      />
+
+      {/* Edit submission dialog */}
+      <ConfirmDialog
+        open={!!editDialog}
+        title="Edit Submission"
+        message="Update the title and description for this submission."
+        confirmLabel="Save"
+        variant="primary"
+        onConfirm={confirmEditSubmission}
+        onCancel={() => setEditDialog(null)}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Title</label>
+            <input
+              type="text"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+              value={editDialog?.title ?? ''}
+              onChange={(e) => setEditDialog((prev) => ({ ...prev, title: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Description</label>
+            <textarea
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000E2F]/30"
+              rows={3}
+              value={editDialog?.description ?? ''}
+              onChange={(e) => setEditDialog((prev) => ({ ...prev, description: e.target.value }))}
+            />
+          </div>
+        </div>
+      </ConfirmDialog>
     </div>
   );
 }

@@ -1,12 +1,7 @@
-# Node modules
 node_modules/
-
-# Environment variables
+dist/
 .env
-
-# Uploaded files directory
 uploads/*
 !uploads/.gitkeep
-
-# Logs
 *.log
+.DS_Store

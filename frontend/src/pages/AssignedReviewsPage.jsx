@@ -1,119 +1,98 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import API from "../services/api";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ClipboardList, Loader2 } from 'lucide-react';
+import API from '../services/api';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Badge from '../components/ui/Badge';
 
+/**
+ * List of peer review tasks assigned to the current student (GET /submissions/reviews/my-tasks).
+ * Each task links to the review form. Shown when navigating to /reviews.
+ * @returns {JSX.Element}
+ */
 export default function AssignedReviewsPage() {
-  const [reviews, setReviews] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    API.get("/assignments/reviews/my-tasks")
-      .then((res) => setReviews(res.data))
-      .catch((err) => {
-        console.error("Failed to load assigned tasks:", err);
-        setReviews([]);
-      });
+    API.get('/submissions/reviews/my-tasks')
+      .then((res) => setTasks(res.data))
+      .catch(() => {
+        setTasks([]);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        paddingTop: "120px",
-        paddingBottom: "50px",
-        width: "100%",
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        style={{ maxWidth: "900px", margin: "0 auto" }}
+  if (loading) {
+    return (
+      <div
+        className="flex items-center justify-center py-20"
+        aria-busy="true"
+        aria-live="polite"
+        aria-label="Loading review tasks"
       >
-        <h1
-          style={{
-            color: "white",
-            fontSize: "42px",
-            fontWeight: "700",
-            textAlign: "center",
-            marginBottom: "40px",
-          }}
-        >
-          Assigned Reviews
-        </h1>
+        <Loader2 className="w-6 h-6 animate-spin text-[#000E2F]" aria-hidden />
+        <span className="ml-3 text-slate-500">Loading your review tasks...</span>
+      </div>
+    );
+  }
 
-        {reviews.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.92 }}
-            animate={{ opacity: 1, scale: 1 }}
-            style={{
-              backdropFilter: "blur(20px)",
-              background: "rgba(255,255,255,0.12)",
-              borderRadius: "18px",
-              padding: "40px",
-              margin: "40px auto",
-              maxWidth: "600px",
-              textAlign: "center",
-              border: "1px solid rgba(255,255,255,0.25)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-              color: "white",
-            }}
-          >
-            <h3>No review tasks assigned yet</h3>
-            <p style={{ opacity: 0.8, marginTop: "10px" }}>
-              When assignments are uploaded, you will receive peer review tasks here.
-            </p>
-          </motion.div>
-        ) : (
-          reviews.map((r, idx) => (
-            <motion.div
-              key={r._id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.07 }}
-              whileHover={{ scale: 1.02 }}
-              style={{
-                backdropFilter: "blur(14px)",
-                background: "rgba(255,255,255,0.12)",
-                borderRadius: "16px",
-                padding: "22px",
-                marginBottom: "20px",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.2)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-              }}
-            >
-              <h2>{r.assignment?.title || "Untitled Assignment"}</h2>
+  return (
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Assigned Peer Reviews</h1>
+        <p className="text-slate-500 mt-1">Please complete these reviews before the deadlines.</p>
+      </div>
 
-              <p style={{ opacity: 0.85 }}>
-                <strong>Student:</strong>{" "}
-                {r.assignment?.user?.name || "Unknown"}
-              </p>
-
-              <p style={{ opacity: 0.6 }}>
-                Assigned: {new Date(r.createdAt).toLocaleString()}
-              </p>
-
-              <button
-                onClick={() => navigate(`/review/${r._id}`)}
-                style={{
-                  marginTop: "15px",
-                  background: "rgba(255,255,255,0.25)",
-                  padding: "12px 20px",
-                  borderRadius: "10px",
-                  color: "white",
-                  border: "1px solid rgba(255,255,255,0.35)",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                }}
-              >
-                Start Review
-              </button>
-            </motion.div>
-          ))
-        )}
-      </motion.div>
+      {tasks.length === 0 ? (
+        <Card className="text-center px-6 py-12">
+          <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ClipboardList className="w-8 h-8 text-emerald-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900 mb-2">No pending reviews</h3>
+          <p className="text-slate-500">You're all caught up! Check back later for new review assignments.</p>
+        </Card>
+      ) : (
+        <Card className="p-0 overflow-hidden">
+          <div className="overflow-x-auto" role="region" aria-label="Assigned review tasks">
+            <table className="w-full text-left">
+              <caption className="sr-only">Your assigned peer review tasks</caption>
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-sm border-b border-slate-100">
+                  <th className="p-4 font-medium">Target / Artifact</th>
+                  <th className="p-4 font-medium">Student</th>
+                  <th className="p-4 font-medium">Assigned</th>
+                  <th className="p-4 font-medium">Status</th>
+                  <th className="p-4 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tasks.map((task) => (
+                  <tr key={task.assignment_id} className="hover:bg-slate-50/50">
+                    <td className="p-4 font-medium text-slate-900">{task.title}</td>
+                    <td className="p-4 text-slate-500 text-sm">{task.student_name}</td>
+                    <td className="p-4 text-red-500 text-sm font-medium">
+                      {new Date(task.assigned_at).toLocaleDateString()}
+                    </td>
+                    <td className="p-4"><Badge type="warning">Pending</Badge></td>
+                    <td className="p-4">
+                      <Button
+                        size="sm"
+                        onClick={() => navigate(`/review/${task.assignment_id}`)}
+                        aria-label={`Evaluate review for ${task.title || 'submission'}`}
+                      >
+                        Evaluate
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
