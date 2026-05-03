@@ -2,350 +2,557 @@ openapi: 3.0.3
 info:
   title: SDP Peer Review System API
   description: |
-    AI-enhanced peer review platform. Auth via JWT httpOnly cookie or Bearer token.
-    SSE at GET /instructor/events. Rate limits per IP:
-    - Global: 100 req/min
-    - Auth endpoints: 20 req/5 min
-    - Upload: 100 req/10 min
-    - AI feedback/polish: 30 req/min
-    - AI rewrite/summarize: 20 req/min
-  version: 2.2.0
+    AI-enhanced peer review platform.
+
+    Authentication: JWT signed HS256, delivered via httpOnly `token` cookie or
+    `Authorization: Bearer <jwt>` header. Query-parameter tokens are not accepted.
+
+    Rate limits (`backend/src/app.ts`):
+    - **Global**: 600 req/min per user (or per IP for unauthenticated)
+    - **Auth**: 100 req/15 min per IP
+    - **Write**: 300 req/10 min per user
+    - **Upload**: 50 req/10 min per user
+    - **Export** (`/grades/export/*`, `/compliance/export/*`): 10 req/60 min per user
+
+    Server-Sent Events at `GET /instructor/events`. SSE authenticates via cookie
+    (same-origin). All `/api/ai/*` endpoints are forwarded to the Flask AI service
+    using the shared `X-AI-API-Key` header.
+
+  version: 3.0.0
 
 servers:
   - url: http://localhost:8080
-    description: Local backend
+    description: Local backend (direct)
+  - url: http://localhost:5173
+    description: Local frontend (Vite proxy → backend)
   - url: https://www.peer.review.uconn.edu
-    description: Production (via nginx proxy)
+    description: Production (via nginx)
 
 tags:
   - name: Auth
   - name: Submissions
   - name: Reviews
   - name: Instructor
-  - name: Peer Review
-  - name: Check-ins
+  - name: PeerReview
+  - name: CheckIns
   - name: Enrollments
   - name: AI
   - name: Notifications
   - name: Rubrics
-  - name: Assignment Templates
+  - name: AssignmentTemplates
+  - name: Semesters
+  - name: Revisions
+  - name: Grades
+  - name: LMS
+  - name: Deadlines
+  - name: Preferences
+  - name: Compliance
+  - name: Similarity
+  - name: Anonymity
+  - name: AssignmentStrategy
+  - name: Quality
+  - name: System
+
+security:
+  - cookieAuth: []
+  - bearerAuth: []
 
 paths:
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # System
+  # ═══════════════════════════════════════════════════════════════════════════
   /healthz:
     get:
-      summary: Health check (with optional DB ping when DATABASE_URL is set)
+      tags: [System]
+      summary: Liveness check + optional DB ping
+      security: []
       responses:
         '200':
-          description: OK; body `{ ok: true, db?: "ok" }` when DB is reachable
+          description: '`{ ok: true, db?: "ok" }`'
         '503':
-          description: Service unavailable when DB ping fails; body `{ ok: false, db: "error" }`
+          description: 'DB unreachable: `{ ok: false, db: "error" }`'
 
-  /auth/me:
+  /uploads/{filename}:
     get:
-      tags: [Auth]
-      summary: Current user (cookie or Bearer)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      tags: [System]
+      summary: Authenticated file download
+      description: |
+        Serves files under `UPLOAD_DIR`. Path traversal is sanitised.
+        Instructors / admins can access any file. Other users must own the submission
+        or be assigned as a reviewer.
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema: { type: string }
       responses:
-        '200':
-          description: User profile with enrollments
-        '401':
-          description: Unauthorized
+        '200': { description: File contents }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Auth
+  # ═══════════════════════════════════════════════════════════════════════════
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                name: { type: string }
+                role:
+                  type: string
+                  enum: [student, instructor]
+      responses:
+        '200': { description: '`{ token, user }`; sets `token` cookie' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Email already in use }
 
   /auth/login:
     post:
       tags: [Auth]
-      summary: Local login (dev)
+      security: []
+      summary: Email + password login
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               required: [email, password]
               properties:
-                email: { type: string }
+                email: { type: string, format: email }
                 password: { type: string }
       responses:
-        '200':
-          description: Sets httpOnly cookie, returns user
-        '401':
-          description: Invalid credentials
-
-  /auth/register:
-    post:
-      tags: [Auth]
-      summary: Local registration (dev)
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, email, password]
-              properties:
-                name: { type: string }
-                email: { type: string }
-                password: { type: string }
-                role: { type: string, enum: [student, instructor] }
-      responses:
-        '201':
-          description: Registered
-        '409':
-          description: Email already registered
+        '200': { description: '`{ token, user }`; sets `token` cookie' }
+        '401': { description: Invalid credentials }
 
   /auth/logout:
     post:
       tags: [Auth]
-      summary: Logout / clear cookie
+      summary: Revoke current JWT
+      responses:
+        '200': { description: Cookie cleared, `jti` blacklisted }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user with enrollments
       responses:
         '200':
-          description: Cookie cleared
+          description: User object
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   /auth/profile:
     patch:
       tags: [Auth]
-      summary: Update current user profile (e.g. name)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Update name / password
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
                 name: { type: string }
+                password: { type: string, minLength: 8 }
       responses:
-        '200':
-          description: Profile updated
-        '400':
-          description: Validation error
+        '200': { description: Updated user }
+        '400': { $ref: '#/components/responses/BadRequest' }
 
-  /enrollments:
+  /auth/cas/login:
     get:
-      tags: [Enrollments]
-      summary: List enrollments (instructor or own)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      tags: [Auth]
+      security: []
+      summary: Begin CAS SSO flow (production)
       responses:
-        '200':
-          description: List of enrollments
-    post:
-      tags: [Enrollments]
-      summary: Add enrollment (instructor)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [user_id, course_id]
-              properties:
-                user_id: { type: string }
-                course_id: { type: string }
-                group_id: { type: string }
-                is_primary: { type: boolean }
-      responses:
-        '201':
-          description: Enrollment created
-        '400':
-          description: Validation error
-        '403':
-          description: Instructor only
+        '302': { description: Redirect to UConn CAS }
 
-  /enrollments/{enrollmentId}:
-    patch:
-      tags: [Enrollments]
-      summary: Update enrollment (instructor)
-      parameters:
-        - name: enrollmentId
-          in: path
-          required: true
-          schema: { type: string }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                group_id: { type: string }
-                is_primary: { type: boolean }
-      responses:
-        '200':
-          description: Updated
-        '403':
-          description: Instructor only
-    delete:
-      tags: [Enrollments]
-      summary: Remove enrollment (instructor)
-      parameters:
-        - name: enrollmentId
-          in: path
-          required: true
-          schema: { type: string }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Removed
-        '403':
-          description: Instructor only
-
-  /enrollments/course/{courseId}/members:
+  /auth/cas/callback:
     get:
-      tags: [Enrollments]
-      summary: List members in a course (instructor)
+      tags: [Auth]
+      security: []
+      summary: CAS ticket callback
       parameters:
-        - name: courseId
-          in: path
+        - name: ticket
+          in: query
           required: true
           schema: { type: string }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
       responses:
-        '200':
-          description: List of course members
+        '302': { description: Redirect to frontend with cookie set }
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Submissions
+  # ═══════════════════════════════════════════════════════════════════════════
   /submissions/upload:
     post:
       tags: [Submissions]
-      summary: Upload assignment (multipart)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Upload a submission (multipart)
       requestBody:
+        required: true
         content:
           multipart/form-data:
+            schema:
+              type: object
+              required: [file, title]
+              properties:
+                file: { type: string, format: binary }
+                title: { type: string }
+                description: { type: string }
+                course_id: { type: string }
+                assignment_template_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Created submission }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413': { description: File too large }
+
+  /submissions/mine:
+    get:
+      tags: [Submissions]
+      summary: Current user's submissions
+      responses:
+        '200': { description: Array of submissions }
+
+  /submissions/all:
+    get:
+      tags: [Submissions]
+      summary: All submissions visible to instructor
+      responses:
+        '200': { description: Array of submissions }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /submissions/reviews/my-tasks:
+    get:
+      tags: [Submissions]
+      summary: Pending review tasks for current user
+      responses:
+        '200': { description: Array of tasks }
+
+  /submissions/my-grades:
+    get:
+      tags: [Submissions]
+      summary: Per-submission grade summary for current student
+      responses:
+        '200': { description: Array of grade rows }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /submissions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
+    patch:
+      tags: [Submissions]
+      summary: Edit title or description (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
             schema:
               type: object
               properties:
                 title: { type: string }
                 description: { type: string }
+      responses:
+        '200': { description: Updated submission }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Submissions]
+      summary: Withdraw a submission (owner only)
+      responses:
+        '200': { description: Removed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /submissions/{id}/replace-file:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
+    patch:
+      tags: [Submissions]
+      summary: Upload a replacement file (owner only)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
                 file: { type: string, format: binary }
       responses:
-        '201':
-          description: Submission created
-        '400':
-          description: Validation error
+        '200': { description: Updated submission }
 
-  /submissions/mine:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Reviews
+  # ═══════════════════════════════════════════════════════════════════════════
+  /reviews/by-submission/{submissionId}:
+    parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
     get:
-      tags: [Submissions]
-      summary: Student's own submissions
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      tags: [Reviews]
+      summary: Reviews for a submission
       responses:
-        '200':
-          description: List of submissions
-
-  /submissions/all:
-    get:
-      tags: [Submissions]
-      summary: All submissions (instructor). Optional server-side pagination.
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      parameters:
-        - name: page
-          in: query
-          schema: { type: integer, minimum: 1, default: 1 }
-          description: Page number when pageSize is set
-        - name: pageSize
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 100 }
-          description: Items per page (1–100). Omit for legacy array response.
-      responses:
-        '200':
-          description: With page/pageSize returns { submissions, total }; otherwise array of submissions
+        '200': { description: Array of reviews }
 
   /reviews/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
     get:
       tags: [Reviews]
-      summary: Single review detail
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Get a review
       responses:
-        '200':
-          description: Review detail
-        '404':
-          description: Not found
-    post:
+        '200': { description: Review }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /reviews/{id}/draft:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
+    get:
       tags: [Reviews]
-      summary: Submit a review
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+      summary: Get draft (assignment-id is the path id)
+      responses:
+        '200': { description: Draft }
+    patch:
+      tags: [Reviews]
+      summary: Save draft
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [score]
               properties:
-                score: { type: number, minimum: 1, maximum: 5 }
+                score: { type: integer, minimum: 1, maximum: 5 }
                 comments: { type: string }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+                draft_version: { type: integer }
       responses:
-        '200':
-          description: Review submitted
-        '400':
-          description: Validation error
+        '200': { description: Saved }
+        '409': { description: Conflicting draft version }
 
+  /reviews/{id}/submit:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
+    post:
+      tags: [Reviews]
+      summary: Submit final review (assignment-id is the path id)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score, comments]
+              properties:
+                score: { type: integer, minimum: 1, maximum: 5 }
+                comments: { type: string }
+      responses:
+        '200': { description: Submitted review }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Instructor
+  # ═══════════════════════════════════════════════════════════════════════════
   /instructor/overview:
     get:
       tags: [Instructor]
-      summary: Cohort overview (materialized view)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Aggregated dashboard data
       responses:
-        '200':
-          description: Overview data
+        '200': { description: Overview payload }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /instructor/unified-dashboard:
     get:
       tags: [Instructor]
-      summary: Unified dashboard data
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Combined stats + AI logs + activity
       responses:
-        '200':
-          description: Dashboard payload
+        '200': { description: Dashboard payload }
 
-  /instructor/events:
+  /instructor/assign:
+    post:
+      tags: [Instructor]
+      summary: Assign a single reviewer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submission_id, reviewer_id]
+              properties:
+                submission_id: { type: string, format: uuid }
+                reviewer_id:   { type: string, format: uuid }
+      responses:
+        '200': { description: Created assignment }
+
+  /instructor/assign/bulk:
+    post:
+      tags: [Instructor]
+      summary: Bulk reviewer assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assignments]
+              properties:
+                assignments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      submission_id: { type: string, format: uuid }
+                      reviewer_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Created count }
+
+  /instructor/announcements:
+    post:
+      tags: [Instructor]
+      summary: Post a course announcement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, body]
+              properties:
+                title: { type: string }
+                body: { type: string }
+                course_id: { type: string }
+                is_pinned: { type: boolean }
+                scheduled_at: { type: string, format: date-time }
+      responses:
+        '200': { description: Announcement created }
+
+  /instructor/peer-review/aggregate:
+    post:
+      tags: [Instructor]
+      summary: Upload up to 30 peer-review CSV files
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        '200': { description: Aggregated metrics }
+
+  /instructor/checkins/current:
     get:
       tags: [Instructor]
-      summary: SSE stream (submission_created, review_submitted, peer_review_submitted)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      parameters:
-        - name: token
-          in: query
-          description: JWT for EventSource (optional when cookie sent)
-          schema: { type: string }
-      responses:
-        '200':
-          description: text/event-stream
+      summary: Active check-in worksheet
+      responses: { '200': { description: Worksheet } }
+    post:
+      tags: [Instructor]
+      summary: Save check-in worksheet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses: { '200': { description: Saved } }
 
   /instructor/checkins/students:
     get:
       tags: [Instructor]
-      summary: List students for check-ins (course/group scoped). Optional pagination.
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      parameters:
-        - name: page
-          in: query
-          schema: { type: integer, minimum: 1 }
-        - name: pageSize
-          in: query
-          schema: { type: integer, minimum: 1, maximum: 200 }
+      summary: Students for check-in dropdown
+      responses: { '200': { description: Array of students } }
+
+  /instructor/checkins/insights:
+    get:
+      tags: [Instructor]
+      summary: Aggregated check-in metrics
+      responses: { '200': { description: Insight payload } }
+
+  /instructor/quality-flags:
+    get:
+      tags: [Instructor]
+      summary: File-review quality flags (identical scores, short comments)
+      responses: { '200': { description: Flag list } }
+
+  /instructor/peer-review-quality-flags:
+    get:
+      tags: [Instructor]
+      summary: Peer-review quality flags
+      responses: { '200': { description: Flag list } }
+
+  /instructor/export-csv:
+    get:
+      tags: [Instructor]
+      summary: Export file reviews as CSV
       responses:
         '200':
-          description: With page/pageSize returns { students, total }; otherwise array
+          description: CSV download
+          content:
+            text/csv: {}
 
+  /instructor/events:
+    get:
+      tags: [Instructor]
+      summary: Server-Sent Events stream
+      description: |
+        SSE feed. Authenticated via cookie only (same-origin).
+        Channels: `course:{courseId}`, `session:{sessionId}`, `global`.
+        Event types include `submission_created`, `review_submitted`,
+        `peer_review_submitted`, `heartbeat`.
+      responses:
+        '200':
+          description: SSE stream
+          content:
+            text/event-stream: {}
+
+  /instructor/submission-policy:
+    get:
+      tags: [Instructor]
+      summary: Get current course's edit/withdraw policy
+      responses: { '200': { description: Policy } }
+    put:
+      tags: [Instructor]
+      summary: Upsert edit/withdraw policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [course_id, allow_edit_withdraw_after_reviews]
+              properties:
+                course_id: { type: string }
+                allow_edit_withdraw_after_reviews: { type: boolean }
+      responses: { '200': { description: Saved } }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Peer Review
+  # ═══════════════════════════════════════════════════════════════════════════
   /peer-review/sessions:
     get:
-      tags: [Peer Review]
-      summary: List sessions
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: List of sessions
+      tags: [PeerReview]
+      summary: List sessions visible to current user
+      responses: { '200': { description: Array of sessions } }
     post:
-      tags: [Peer Review]
-      summary: Create session (instructor)
+      tags: [PeerReview]
+      summary: Create a session
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -353,23 +560,50 @@ paths:
               required: [title]
               properties:
                 title: { type: string }
-                deadline: { type: string, format: date-time }
                 course_id: { type: string }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '201':
-          description: Session created
+                deadline: { type: string, format: date-time }
+                anonymity:
+                  type: string
+                  enum: [none, single_blind, double_blind]
+      responses: { '200': { description: Created session } }
+
+  /peer-review/sessions/{sessionId}/my-team:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [PeerReview]
+      summary: Team current user is assigned to review
+      responses: { '200': { description: Team members } }
+
+  /peer-review/sessions/{sessionId}/draft:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [PeerReview]
+      summary: Get draft form state
+      responses: { '200': { description: Draft } }
+    patch:
+      tags: [PeerReview]
+      summary: Save draft form state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload: { type: object }
+                draft_version: { type: integer }
+      responses: { '200': { description: Saved } }
 
   /peer-review/sessions/{sessionId}/submit:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
     post:
-      tags: [Peer Review]
-      summary: Submit peer reviews
-      parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
+      tags: [PeerReview]
+      summary: Submit team peer reviews
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -381,226 +615,644 @@ paths:
                   items:
                     type: object
                     properties:
-                      reviewee_id: { type: string }
-                      technical_contributions: { type: number, minimum: 1, maximum: 5 }
-                      team_interactions: { type: number, minimum: 1, maximum: 5 }
-                      project_management: { type: number, minimum: 1, maximum: 5 }
+                      reviewee_id: { type: string, format: uuid }
+                      technical_contributions: { type: integer, minimum: 1, maximum: 5 }
+                      team_interactions: { type: integer, minimum: 1, maximum: 5 }
+                      project_management: { type: integer, minimum: 1, maximum: 5 }
                       individual_comments: { type: string }
-                teamChemistry: { type: number, minimum: 1, maximum: 5 }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Submitted
-        '400':
-          description: Validation error
+                team_chemistry: { type: integer, minimum: 1, maximum: 5 }
+      responses: { '200': { description: Saved } }
 
-  /submissions/reviews/my-tasks:
+  /peer-review/sessions/{sessionId}/team-reviews:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
     get:
-      tags: [Submissions]
-      summary: Student review tasks (assigned submissions to review)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: List of tasks with submission and reviewee info
+      tags: [PeerReview]
+      summary: Reviews submitted for current user's team
+      responses: { '200': { description: Reviews } }
 
-  /checkins/context:
+  /peer-review/sessions/{sessionId}/student-scores:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
     get:
-      tags: [Check-ins]
-      summary: Student check-in context (weeks, topics, team)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Context with instructor_weeks, self_weeks, team_peers, etc.
+      tags: [PeerReview]
+      summary: Released student scores
+      responses: { '200': { description: Scores } }
 
-  /checkins/self:
+  /peer-review/appeals/mine:
+    get:
+      tags: [PeerReview]
+      summary: Current student's appeals
+      responses: { '200': { description: Array of appeals } }
+
+  /peer-review/appeals:
+    get:
+      tags: [PeerReview]
+      summary: Session appeals (instructor)
+      responses: { '200': { description: Array of appeals } }
     post:
-      tags: [Check-ins]
-      summary: Submit student self check-in scores
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      tags: [PeerReview]
+      summary: Create an appeal (student)
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [scores]
+              required: [session_id, message]
               properties:
-                scores:
+                session_id: { type: string, format: uuid }
+                target_type: { type: string, enum: [session, review, comment] }
+                target_id: { type: string }
+                message: { type: string }
+      responses: { '200': { description: Created } }
+
+  /peer-review/appeals/{appealId}:
+    parameters:
+      - name: appealId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [PeerReview]
+      summary: Resolve / reply to an appeal (instructor)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [open, resolved, rejected] }
+                instructor_reply: { type: string }
+      responses: { '200': { description: Updated } }
+
+  /peer-review/sessions/{sessionId}/duplicate:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [PeerReview]
+      summary: Duplicate session as template
+      responses: { '200': { description: New session } }
+
+  /peer-review/sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    patch:
+      tags: [PeerReview]
+      summary: Edit session metadata / open state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                is_open: { type: boolean }
+                deadline: { type: string, format: date-time }
+      responses: { '200': { description: Updated } }
+
+  /peer-review/sessions/{sessionId}/release-scores:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    patch:
+      tags: [PeerReview]
+      summary: Release scores to students
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                released: { type: boolean }
+      responses: { '200': { description: Updated } }
+
+  /peer-review/sessions/{sessionId}/results:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [PeerReview]
+      summary: Aggregated session results (instructor)
+      responses: { '200': { description: Results } }
+
+  /peer-review/sessions/{sessionId}/bias-analytics:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [PeerReview]
+      summary: Self-vs-peer bias metrics (|self-peer|≥1.0)
+      responses: { '200': { description: Analytics } }
+
+  /peer-review/sessions/{sessionId}/all-students:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [PeerReview]
+      summary: Students in this session (instructor)
+      responses: { '200': { description: Array } }
+
+  /peer-review/sessions/{sessionId}/instructor-review:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      tags: [PeerReview]
+      summary: Instructor scores all teammates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses: { '200': { description: Saved } }
+
+  /peer-review/sessions/{sessionId}/export-csv:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      tags: [PeerReview]
+      summary: Export session as CSV
+      responses:
+        '200':
+          description: CSV download
+          content: { text/csv: {} }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Check-ins
+  # ═══════════════════════════════════════════════════════════════════════════
+  /checkins/context:
+    get:
+      tags: [CheckIns]
+      summary: Available courses/groups for check-in
+      responses: { '200': { description: Context payload } }
+
+  /checkins/self:
+    post:
+      tags: [CheckIns]
+      summary: Save self check-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                course_id: { type: string }
+                group_id: { type: string }
+                weeks: { type: array, items: { type: object } }
+      responses: { '200': { description: Saved } }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Enrollments
+  # ═══════════════════════════════════════════════════════════════════════════
+  /enrollments:
+    get:
+      tags: [Enrollments]
+      summary: List enrollments visible to current user
+      responses: { '200': { description: Array of enrollments } }
+    post:
+      tags: [Enrollments]
+      summary: Add an enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, course_id]
+              properties:
+                user_id: { type: string, format: uuid }
+                course_id: { type: string }
+                group_id: { type: string }
+                role: { type: string, enum: [student, instructor, ta] }
+                is_primary: { type: boolean }
+      responses: { '200': { description: Created } }
+
+  /enrollments/{enrollmentId}:
+    parameters:
+      - name: enrollmentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Enrollments]
+      summary: Edit enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses: { '200': { description: Updated } }
+    delete:
+      tags: [Enrollments]
+      summary: Remove enrollment
+      responses: { '200': { description: Removed } }
+
+  /enrollments/course/{courseId}/members:
+    parameters:
+      - name: courseId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Enrollments]
+      summary: Roster for a course
+      responses: { '200': { description: Array of members } }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # AI (proxied to Flask)
+  # ═══════════════════════════════════════════════════════════════════════════
+  /api/ai/feedback:
+    post:
+      tags: [AI]
+      summary: Toxicity / politeness / sentiment for a comment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 10000 }
+                review_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: AI feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  toxicity: { type: number, minimum: 0, maximum: 1 }
+                  politeness: { type: number, minimum: 0, maximum: 1 }
+                  sentiment: { type: string, enum: [positive, negative, neutral, mixed] }
+        '503': { description: AI service not configured }
+
+  /api/ai/feedback/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      tags: [AI]
+      summary: Fetch persisted AI feedback
+      responses:
+        '200': { description: Feedback }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/ai/rewrite:
+    post:
+      tags: [AI]
+      summary: AI rewrite of a review comment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 10000 }
+                review_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: '`{ id, original, rewritten, adopted }`'
+
+  /api/ai/rewrite/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      tags: [AI]
+      summary: Fetch persisted rewrite
+      responses:
+        '200': { description: Rewrite }
+
+  /api/ai/rewrite/{reviewId}/adopt:
+    parameters:
+      - $ref: '#/components/parameters/ReviewId'
+    patch:
+      tags: [AI]
+      summary: Adopt suggested rewrite
+      responses:
+        '200': { description: Marked adopted }
+
+  /api/ai/polish:
+    post:
+      tags: [AI]
+      summary: Polish text (grammar / clarity)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 10000 }
+      responses:
+        '200': { description: '`{ polished }`' }
+
+  /api/ai/summarize:
+    post:
+      tags: [AI]
+      summary: Summarise multiple reviews
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviews:
+                  type: array
+                  items: { type: string }
+      responses: { '200': { description: '`{ summary }`' } }
+
+  /api/ai/logs:
+    get:
+      tags: [AI]
+      summary: AI activity log for instructor dashboard
+      responses:
+        '200':
+          description: |
+            Array of activity rows. `user_name` is resolved via JOIN with `users`
+            and may fall back to `user_id` or `'A user'`.
+
+  /api/ai/search:
+    get:
+      tags: [AI]
+      summary: Global search across submissions and users
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: '`{ submissions: [...], students: [...] }`'
+
+  /api/ai/review-depth:
+    post:
+      tags: [AI]
+      summary: Score constructiveness / specificity / actionability
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+      responses: { '200': { description: Depth scores } }
+
+  /api/ai/score-suggestion:
+    post:
+      tags: [AI]
+      summary: Suggest score range for a submission
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submission_id: { type: string, format: uuid }
+                rubric_id: { type: string, format: uuid }
+                text: { type: string }
+      responses: { '200': { description: Suggested range } }
+
+  /api/ai/calibration:
+    post:
+      tags: [AI]
+      summary: Compare reviewer score to peer average
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewer_id: { type: string, format: uuid }
+                submission_id: { type: string, format: uuid }
+      responses: { '200': { description: Calibration result } }
+
+  /api/ai/score-reasoning:
+    post:
+      tags: [AI]
+      summary: Explain a suggested score
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses: { '200': { description: Reasoning text } }
+
+  /api/ai/similarity:
+    post:
+      tags: [AI]
+      summary: TF-IDF cosine similarity between submissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submission_ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses: { '200': { description: Similarity report } }
+
+  /api/ai/similarity/turnitin:
+    post:
+      tags: [AI]
+      summary: Mock Turnitin score (development only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submission_id: { type: string, format: uuid }
+      responses: { '200': { description: Mock report } }
+
+  /api/ai/chat:
+    post:
+      tags: [AI]
+      summary: Multi-turn AI chat (3 context modes)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
                   type: array
                   items:
                     type: object
                     properties:
-                      week_id: { type: string }
-                      self_score: { type: number, minimum: 1, maximum: 5 }
-                      peer_scores: { type: object }
-      responses:
-        '200':
-          description: Saved
-        '400':
-          description: Validation error
+                      role: { type: string, enum: [user, assistant, system] }
+                      content: { type: string }
+                context_type: { type: string, enum: [general, submission, review] }
+                context_id: { type: string, format: uuid }
+      responses: { '200': { description: '`{ reply }`' } }
 
-  /peer-review/sessions/{sessionId}/my-team:
-    get:
-      tags: [Peer Review]
-      summary: Current user's team for a session (student)
-      parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Team members for peer review form
-        '404':
-          description: Session or team not found
-
-  /peer-review/sessions/{sessionId}/results:
-    get:
-      tags: [Peer Review]
-      summary: Session results (instructor): averages, details, bias analytics
-      parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: session, averages, details, completion, etc.
-        '403':
-          description: Instructor only
-
-  /instructor/assign:
-    post:
-      tags: [Instructor]
-      summary: Assign reviewer to submission
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [submission_id, reviewer_id]
-              properties:
-                submission_id: { type: string, format: uuid }
-                reviewer_id: { type: string }
-      responses:
-        '200':
-          description: Assigned
-        '400':
-          description: Validation error
-        '403':
-          description: Instructor only
-
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Notifications
+  # ═══════════════════════════════════════════════════════════════════════════
   /notifications:
     get:
       tags: [Notifications]
-      summary: List user notifications
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: List of notifications
+      summary: List user's notifications
+      responses: { '200': { description: Array } }
 
   /notifications/unread-count:
     get:
       tags: [Notifications]
-      summary: Unread count
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Count of unread notifications
       responses:
         '200':
-          description: { count: number }
+          description: '`{ count }`'
+
+  /notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Per-type notification channel preferences
+      responses: { '200': { description: Preferences } }
+    patch:
+      tags: [Notifications]
+      summary: Update channel preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preferences:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: { type: string }
+                      in_app: { type: boolean }
+                      email: { type: boolean }
+                      push: { type: boolean }
+      responses: { '200': { description: Updated } }
+
+  /notifications/push/public-key:
+    get:
+      tags: [Notifications]
+      summary: Web Push VAPID public key
+      responses: { '200': { description: '`{ public_key }`' } }
+
+  /notifications/push/subscriptions:
+    get:
+      tags: [Notifications]
+      summary: List user's push subscriptions
+      responses: { '200': { description: Array } }
+    post:
+      tags: [Notifications]
+      summary: Register a push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys]
+              properties:
+                endpoint: { type: string }
+                keys:
+                  type: object
+                  properties:
+                    p256dh: { type: string }
+                    auth: { type: string }
+      responses: { '200': { description: Created } }
+    delete:
+      tags: [Notifications]
+      summary: Remove a push subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string }
+      responses: { '200': { description: Removed } }
 
   /notifications/read-all:
     patch:
       tags: [Notifications]
-      summary: Mark all notifications as read
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: All marked read
+      summary: Mark all notifications read
+      responses: { '200': { description: '`{ updated }`' } }
 
   /notifications/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
     patch:
       tags: [Notifications]
-      summary: Mark one notification as read
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Marked read
-        '404':
-          description: Not found
+      summary: Mark one notification read
+      responses: { '200': { description: Updated } }
 
-  # ── Rubrics ──────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Rubrics
+  # ═══════════════════════════════════════════════════════════════════════════
   /rubrics:
     get:
       tags: [Rubrics]
-      summary: List rubrics (filtered by rubric_type, course_id, session_id)
+      summary: Get rubric for a (type, course/session) tuple
       parameters:
         - name: rubric_type
           in: query
-          schema: { type: string, enum: [file_review, peer_technical, peer_interactions, peer_management] }
+          required: true
+          schema:
+            type: string
+            enum: [file_review, peer_technical, peer_interactions, peer_management]
         - name: course_id
           in: query
           schema: { type: string }
         - name: session_id
           in: query
           schema: { type: string, format: uuid }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Array of rubric objects
-        '400':
-          $ref: '#/components/responses/ValidationError'
+      responses: { '200': { description: Rubric } }
     post:
       tags: [Rubrics]
-      summary: Create or update a rubric (instructor only)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      summary: Upsert a rubric
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               required: [rubric_type, levels]
               properties:
-                rubric_type: { type: string, enum: [file_review, peer_technical, peer_interactions, peer_management] }
-                course_id: { type: string, nullable: true }
-                session_id: { type: string, format: uuid, nullable: true }
+                rubric_type: { type: string }
+                course_id: { type: string }
+                session_id: { type: string, format: uuid }
                 levels:
                   type: array
-                  minItems: 5
-                  maxItems: 5
-                  items:
-                    type: object
-                    required: [score, label, desc]
-                    properties:
-                      score: { type: integer, minimum: 1, maximum: 5 }
-                      label: { type: string }
-                      desc: { type: string }
-      responses:
-        '200':
-          description: Rubric saved
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                  items: { type: object }
+      responses: { '200': { description: Saved } }
 
-  # ── Assignment Templates ────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Assignment Templates
+  # ═══════════════════════════════════════════════════════════════════════════
   /assignment-templates:
     get:
-      tags: [Assignment Templates]
-      summary: List assignment templates for the user's course
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
-      responses:
-        '200':
-          description: Array of template objects
+      tags: [AssignmentTemplates]
+      summary: List templates for current user's courses
+      responses: { '200': { description: Array } }
     post:
-      tags: [Assignment Templates]
-      summary: Create assignment template (instructor only)
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      tags: [AssignmentTemplates]
+      summary: Create a template
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -609,125 +1261,137 @@ paths:
               properties:
                 course_id: { type: string }
                 title: { type: string }
-                description: { type: string, default: '' }
-                due_at: { type: string, format: date-time, nullable: true }
-                is_active: { type: boolean, default: true }
-      responses:
-        '200':
-          description: Template created
-        '403':
-          $ref: '#/components/responses/Forbidden'
+                description: { type: string }
+                due_at: { type: string, format: date-time }
+                is_active: { type: boolean }
+                semester_id: { type: string, format: uuid }
+      responses: { '200': { description: Created } }
 
   /assignment-templates/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
     patch:
-      tags: [Assignment Templates]
-      summary: Update assignment template (instructor only)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      tags: [AssignmentTemplates]
+      summary: Update a template
       requestBody:
+        required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                title: { type: string }
-                description: { type: string }
-                due_at: { type: string, format: date-time, nullable: true }
-                is_active: { type: boolean }
-      responses:
-        '200':
-          description: Template updated
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '400':
-          $ref: '#/components/responses/ValidationError'
+            schema: { type: object }
+      responses: { '200': { description: Updated } }
 
-  # ══════════════════════════════════════════════════════════
-  # v3.0 Endpoints (added in migrations 021-036)
-  # ══════════════════════════════════════════════════════════
-
-  /anonymity/sessions/{sessionId}/anonymity:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Semesters
+  # ═══════════════════════════════════════════════════════════════════════════
+  /semesters:
     get:
-      tags: [Anonymity]
-      summary: Get session anonymity configuration
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200': { description: Anonymity level for session }
-    patch:
-      tags: [Anonymity]
-      summary: Update session anonymity level
-      security: [{ bearerAuth: [] }]
+      tags: [Semesters]
+      summary: List semesters
+      responses: { '200': { description: Array } }
+    post:
+      tags: [Semesters]
+      summary: Create a semester
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [name, start_date, end_date]
               properties:
-                anonymity: { type: string, enum: [none, single_blind, double_blind] }
-      responses:
-        '200': { description: Updated anonymity config }
+                name: { type: string }
+                start_date: { type: string, format: date }
+                end_date: { type: string, format: date }
+                is_active: { type: boolean }
+      responses: { '200': { description: Created } }
 
+  /semesters/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
+    patch:
+      tags: [Semesters]
+      summary: Update a semester
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses: { '200': { description: Updated } }
+
+  /semesters/clone:
+    post:
+      tags: [Semesters]
+      summary: Clone a course into a new semester
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_course_id, target_semester_id]
+              properties:
+                source_course_id: { type: string }
+                target_semester_id: { type: string, format: uuid }
+      responses: { '200': { description: Cloned course } }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Revisions
+  # ═══════════════════════════════════════════════════════════════════════════
   /revisions:
     post:
       tags: [Revisions]
-      summary: Create a new revision of a submission
-      security: [{ bearerAuth: [] }]
+      summary: Create a new revision (with file upload)
       requestBody:
+        required: true
         content:
           multipart/form-data:
             schema:
               type: object
+              required: [file, parent_submission_id]
               properties:
+                file: { type: string, format: binary }
                 parent_submission_id: { type: string, format: uuid }
                 title: { type: string }
                 description: { type: string }
-                file: { type: string, format: binary }
-      responses:
-        '201': { description: Revision created }
+      responses: { '200': { description: New submission row } }
 
   /revisions/{submissionId}/history:
+    parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
     get:
       tags: [Revisions]
-      summary: Get revision chain for a submission
-      parameters:
-        - name: submissionId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200': { description: Array of revisions in chain }
+      summary: List revision history
+      responses: { '200': { description: Array of revisions } }
 
   /revisions/{submissionId}/diff:
+    parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
     get:
       tags: [Revisions]
-      summary: Compare current revision with previous
-      parameters:
-        - name: submissionId
-          in: path
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200': { description: Diff between versions }
+      summary: Diff vs previous revision
+      responses: { '200': { description: Diff payload } }
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Grades
+  # ═══════════════════════════════════════════════════════════════════════════
   /grades/weights/{courseId}:
+    parameters:
+      - $ref: '#/components/parameters/CourseId'
     get:
       tags: [Grades]
-      summary: Get grade weight configuration
-      responses:
-        '200': { description: Grade weights }
+      summary: Read grade weights
+      responses: { '200': { description: Weights } }
     put:
       tags: [Grades]
-      summary: Set grade weight configuration
+      summary: Update grade weights
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -738,76 +1402,92 @@ paths:
                 checkin_weight: { type: number }
                 drop_lowest: { type: integer }
                 drop_highest: { type: integer }
-      responses:
-        '200': { description: Updated weights }
+      responses: { '200': { description: Updated } }
 
   /grades/final/{courseId}:
+    parameters:
+      - $ref: '#/components/parameters/CourseId'
     get:
       tags: [Grades]
-      summary: Calculate final grades for all students
-      responses:
-        '200': { description: Array of student grades }
+      summary: Computed final grades for a course
+      responses: { '200': { description: Array of student grades } }
 
   /grades/export/{courseId}:
+    parameters:
+      - $ref: '#/components/parameters/CourseId'
     get:
       tags: [Grades]
-      summary: Export final grades as CSV
+      summary: CSV export (formula-injection-safe; export rate-limited)
       responses:
-        '200': { description: CSV file download }
+        '200':
+          description: CSV
+          content: { text/csv: {} }
+        '429': { description: Export rate-limited (10/60min) }
 
-  /semesters:
-    get:
-      tags: [Semesters]
-      summary: List all semesters
-      responses:
-        '200': { description: Array of semesters }
+  # ═══════════════════════════════════════════════════════════════════════════
+  # LMS (mock)
+  # ═══════════════════════════════════════════════════════════════════════════
+  /lms/lti/launch:
     post:
-      tags: [Semesters]
-      summary: Create a semester
+      tags: [LMS]
+      summary: Mock LTI launch
+      responses: { '200': { description: '`{ launch_url }`' } }
+
+  /lms/lti/grades:
+    post:
+      tags: [LMS]
+      summary: Mock LTI grade passback
+      responses: { '200': { description: Result } }
+
+  /lms/lti/roster:
+    post:
+      tags: [LMS]
+      summary: Mock LTI roster sync
+      responses: { '200': { description: Roster } }
+
+  /lms/{courseId}:
+    parameters:
+      - $ref: '#/components/parameters/CourseId'
+    get:
+      tags: [LMS]
+      summary: Read LMS config
+      responses: { '200': { description: Config } }
+    put:
+      tags: [LMS]
+      summary: Upsert LMS config
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, start_date, end_date]
               properties:
-                name: { type: string }
-                start_date: { type: string, format: date }
-                end_date: { type: string, format: date }
-      responses:
-        '201': { description: Semester created }
+                provider: { type: string }
+                api_url: { type: string }
+                api_key: { type: string }
+                lti_consumer_key: { type: string }
+                lti_secret: { type: string }
+      responses: { '200': { description: Saved } }
 
-  /semesters/{id}:
-    patch:
-      tags: [Semesters]
-      summary: Update a semester
-      responses:
-        '200': { description: Updated semester }
-
-  /semesters/clone:
-    post:
-      tags: [Semesters]
-      summary: Clone course configuration to new semester
-      responses:
-        '201': { description: Clone result }
-
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Deadlines
+  # ═══════════════════════════════════════════════════════════════════════════
   /deadlines/calendar:
     get:
       tags: [Deadlines]
-      summary: Get all upcoming deadlines for current user
-      responses:
-        '200': { description: Array of deadline objects }
+      summary: Calendar feed
+      responses: { '200': { description: Calendar entries } }
 
   /deadlines/extensions:
     get:
       tags: [Deadlines]
-      summary: Get deadline extensions
-      responses:
-        '200': { description: Array of extensions }
+      summary: List extensions
+      responses: { '200': { description: Array } }
     post:
       tags: [Deadlines]
-      summary: Grant a deadline extension
+      summary: Grant an individual extension (instructor)
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -815,30 +1495,44 @@ paths:
               required: [user_id, entity_type, entity_id, extended_to]
               properties:
                 user_id: { type: string, format: uuid }
-                entity_type: { type: string }
+                entity_type: { type: string, enum: [session] }
                 entity_id: { type: string, format: uuid }
                 extended_to: { type: string, format: date-time }
                 reason: { type: string }
       responses:
-        '201': { description: Extension granted }
+        '200': { description: Created }
+        '400': { description: Non-session entity types are rejected (default-deny) }
 
   /deadlines/reminders:
     post:
       tags: [Deadlines]
       summary: Configure reminder hours for an entity
-      responses:
-        '200': { description: Reminders configured }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entity_type, entity_id, reminder_hours]
+              properties:
+                entity_type: { type: string }
+                entity_id: { type: string, format: uuid }
+                reminder_hours: { type: integer }
+      responses: { '200': { description: Saved } }
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Preferences
+  # ═══════════════════════════════════════════════════════════════════════════
   /preferences:
     get:
       tags: [Preferences]
-      summary: Get user preferences
-      responses:
-        '200': { description: User preferences }
+      summary: Read user preferences
+      responses: { '200': { description: Preferences } }
     patch:
       tags: [Preferences]
       summary: Update user preferences
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -847,150 +1541,117 @@ paths:
                 theme: { type: string, enum: [light, dark] }
                 font_size: { type: string, enum: [small, medium, large] }
                 high_contrast: { type: boolean }
-      responses:
-        '200': { description: Updated preferences }
+                preferences: { type: object }
+      responses: { '200': { description: Saved } }
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Compliance
+  # ═══════════════════════════════════════════════════════════════════════════
   /compliance/export/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
     get:
       tags: [Compliance]
-      summary: Export all user data (GDPR)
+      summary: GDPR export for a user (export rate-limited)
       responses:
-        '200': { description: JSON with all user data }
+        '200':
+          description: ZIP archive of user data
+          content: { application/zip: {} }
+        '429': { description: Export rate-limited }
 
   /compliance/deletion-request:
     post:
       tags: [Compliance]
-      summary: Request account data deletion
-      responses:
-        '201': { description: Deletion request created }
+      summary: Request account deletion
+      responses: { '200': { description: Created } }
 
   /compliance/audit:
     get:
       tags: [Compliance]
-      summary: View audit log (admin only)
-      parameters:
-        - name: limit
-          in: query
-          schema: { type: integer, default: 100 }
-        - name: offset
-          in: query
-          schema: { type: integer, default: 0 }
-      responses:
-        '200': { description: Array of audit events }
+      summary: Audit log viewer (admin)
+      responses: { '200': { description: Array of audit rows } }
 
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Similarity
+  # ═══════════════════════════════════════════════════════════════════════════
   /similarity/report/{submissionId}:
+    parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
     get:
       tags: [Similarity]
-      summary: Get similarity report for a submission
-      responses:
-        '200': { description: Similarity matches }
+      summary: Similarity report for one submission
+      responses: { '200': { description: Report } }
 
   /similarity/dashboard:
     get:
       tags: [Similarity]
-      summary: Get similarity dashboard for a course
-      parameters:
-        - name: course_id
-          in: query
-          required: true
-          schema: { type: string }
-      responses:
-        '200': { description: All similarity reports }
+      summary: Course-wide similarity dashboard
+      responses: { '200': { description: Dashboard payload } }
 
-  /lms/{courseId}:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Anonymity
+  # ═══════════════════════════════════════════════════════════════════════════
+  /anonymity/sessions/{sessionId}/anonymity:
+    parameters:
+      - $ref: '#/components/parameters/SessionId'
     get:
-      tags: [LMS]
-      summary: Get LMS configuration
-      responses:
-        '200': { description: LMS config }
-    put:
-      tags: [LMS]
-      summary: Update LMS configuration
-      responses:
-        '200': { description: Updated config }
-
-  /lms/lti/launch:
-    post:
-      tags: [LMS]
-      summary: Mock LTI launch
-      responses:
-        '200': { description: Mock launch result }
-
-  /lms/lti/grades:
-    post:
-      tags: [LMS]
-      summary: Mock grade passback
-      responses:
-        '200': { description: Mock passback result }
-
-  /lms/lti/roster:
-    post:
-      tags: [LMS]
-      summary: Mock roster import
-      responses:
-        '200': { description: Mock roster }
-
-  /quality/helpfulness:
-    post:
-      tags: [Quality]
-      summary: Vote on review helpfulness
+      tags: [Anonymity]
+      summary: Read session anonymity config
+      responses: { '200': { description: Config } }
+    patch:
+      tags: [Anonymity]
+      summary: Update session anonymity config
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [review_id, is_helpful]
+              required: [anonymity]
               properties:
-                review_id: { type: string, format: uuid }
-                is_helpful: { type: boolean }
-      responses:
-        '200': { description: Vote recorded }
+                anonymity:
+                  type: string
+                  enum: [none, single_blind, double_blind]
+      responses: { '200': { description: Updated } }
 
-  /quality/reputation/{userId}:
-    get:
-      tags: [Quality]
-      summary: Get reviewer reputation metrics
-      responses:
-        '200': { description: Reputation scores }
-
-  /quality/consistency:
-    get:
-      tags: [Quality]
-      summary: Get consistency alerts for a course
-      parameters:
-        - name: course_id
-          in: query
-          schema: { type: string }
-      responses:
-        '200': { description: Consistency alert list }
-
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Assignment Strategy
+  # ═══════════════════════════════════════════════════════════════════════════
   /assignment-strategy/strategy:
     patch:
-      tags: [Assignment Strategy]
-      summary: Update assignment strategy for a course
+      tags: [AssignmentStrategy]
+      summary: Update reviewer assignment strategy for a submission
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [course_id, assignment_strategy]
+              required: [submission_id, strategy]
               properties:
-                course_id: { type: string }
-                assignment_strategy: { type: string, enum: [random, load_balanced, reciprocal, manual_only] }
-                min_reviews_required: { type: integer, minimum: 1, maximum: 5 }
-      responses:
-        '200': { description: Strategy updated }
+                submission_id: { type: string, format: uuid }
+                strategy:
+                  type: string
+                  enum: [random, load_balanced, reciprocal, manual_only]
+                min_reviews_required: { type: integer }
+      responses: { '200': { description: Updated } }
 
   /assignment-strategy/exclusions:
     get:
-      tags: [Assignment Strategy]
-      summary: List exclusion rules
-      responses:
-        '200': { description: Array of exclusions }
+      tags: [AssignmentStrategy]
+      summary: List conflict-of-interest exclusions
+      responses: { '200': { description: Array } }
     post:
-      tags: [Assignment Strategy]
-      summary: Add exclusion rule
+      tags: [AssignmentStrategy]
+      summary: Add an exclusion pair
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -1001,75 +1662,51 @@ paths:
                 user_a: { type: string, format: uuid }
                 user_b: { type: string, format: uuid }
                 reason: { type: string }
-      responses:
-        '201': { description: Exclusion added }
+      responses: { '200': { description: Created } }
 
   /assignment-strategy/exclusions/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UUIDPathId'
     delete:
-      tags: [Assignment Strategy]
-      summary: Remove exclusion rule
-      responses:
-        '204': { description: Exclusion removed }
+      tags: [AssignmentStrategy]
+      summary: Remove an exclusion
+      responses: { '200': { description: Removed } }
 
-  /api/ai/review-depth:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Quality
+  # ═══════════════════════════════════════════════════════════════════════════
+  /quality/helpfulness:
     post:
-      tags: [AI]
-      summary: Analyze review depth (constructiveness, specificity, actionability)
-      responses:
-        '200': { description: Depth scores }
-
-  /api/ai/score-suggestion:
-    post:
-      tags: [AI]
-      summary: Get AI score suggestion based on rubric
-      responses:
-        '200': { description: Suggested score range }
-
-  /api/ai/calibration:
-    post:
-      tags: [AI]
-      summary: Get score calibration advice
-      responses:
-        '200': { description: Calibration recommendation }
-
-  /api/ai/score-reasoning:
-    post:
-      tags: [AI]
-      summary: Generate scoring rationale
-      responses:
-        '200': { description: Reasoning text }
-
-  /api/ai/similarity:
-    post:
-      tags: [AI]
-      summary: Run TF-IDF similarity detection between submissions
-      responses:
-        '200': { description: Pairwise similarity scores }
-
-  /api/ai/similarity/turnitin:
-    post:
-      tags: [AI]
-      summary: Mock Turnitin plagiarism check
-      responses:
-        '200': { description: Mock plagiarism report }
-
-  /api/ai/chat:
-    post:
-      tags: [AI]
-      summary: Multi-turn AI conversation
+      tags: [Quality]
+      summary: Vote on a review's helpfulness
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [message, context_type]
+              required: [review_id, is_helpful]
               properties:
-                message: { type: string }
-                context_type: { type: string, enum: [writing_review, reading_review, teacher_summary] }
-                context_id: { type: string, format: uuid }
-                conversation_id: { type: string, format: uuid }
-      responses:
-        '200': { description: AI reply with conversation_id }
+                review_id: { type: string, format: uuid }
+                is_helpful: { type: boolean }
+      responses: { '200': { description: Recorded } }
+
+  /quality/reputation/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Quality]
+      summary: Reviewer reputation summary
+      responses: { '200': { description: Reputation } }
+
+  /quality/consistency:
+    get:
+      tags: [Quality]
+      summary: Consistency alert list (instructor)
+      responses: { '200': { description: Alerts } }
 
 components:
   securitySchemes:
@@ -1077,72 +1714,159 @@ components:
       type: apiKey
       in: cookie
       name: token
-      description: JWT in httpOnly cookie (set by /auth/login or CAS callback)
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    UUIDPathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CourseId:
+      name: courseId
+      in: path
+      required: true
+      schema: { type: string, description: "Text identifier (e.g. 'CSE4939W'), not UUID" }
+
   responses:
-    TooManyRequests:
-      description: Rate limit exceeded
-      headers:
-        RateLimit-Limit:
-          schema: { type: integer }
-          description: Request limit per window
-        RateLimit-Remaining:
-          schema: { type: integer }
-          description: Remaining requests in current window
-        RateLimit-Reset:
-          schema: { type: integer }
-          description: Seconds until the rate limit resets
+    BadRequest:
+      description: Validation or malformed request
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: too_many_requests
-            message: Too many requests, please try again later
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
-      description: Missing or invalid JWT token
+      description: Missing or invalid authentication
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: unauthorized
-            message: No token provided
+          schema: { $ref: '#/components/schemas/Error' }
     Forbidden:
-      description: Insufficient role permissions
+      description: Authenticated but not allowed
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-          example:
-            error: forbidden
-            message: Insufficient permissions
-    ValidationError:
-      description: Request body validation failed
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
       content:
         application/json:
-          schema:
-            type: object
-            properties:
-              error: { type: string, example: validation }
-              message: { type: string }
-              details:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    path: { type: string }
-                    message: { type: string }
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Resource already exists / version conflict
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
     Error:
       type: object
-      required: [error, message]
       properties:
-        error: { type: string }
+        error: { type: string, example: bad_request }
         message: { type: string }
-        details: { type: array, description: Optional validation details }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              message: { type: string }
+
+    User:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [student, instructor, admin, ta] }
+        course_id: { type: string, nullable: true }
+        group_id: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        enrollments:
+          type: array
+          items:
+            type: object
+            properties:
+              enrollment_id: { type: string, format: uuid }
+              course_id: { type: string }
+              group_id: { type: string, nullable: true }
+              role: { type: string }
+              is_primary: { type: boolean }
+              enrolled_at: { type: string, format: date-time }
+
+    Submission:
+      type: object
+      properties:
+        submission_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        filename: { type: string, nullable: true }
+        file_url: { type: string, nullable: true }
+        status: { type: string, enum: [submitted, reviewed] }
+        course_id: { type: string, nullable: true }
+        revision_number: { type: integer }
+        parent_submission_id: { type: string, format: uuid, nullable: true }
+        anonymity: { type: string, enum: [none, single_blind, double_blind] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Review:
+      type: object
+      properties:
+        review_id: { type: string, format: uuid }
+        submission_id: { type: string, format: uuid }
+        reviewer_id: { type: string, format: uuid }
+        score: { type: number, minimum: 1, maximum: 5 }
+        comments: { type: string }
+        comments_html: { type: string, nullable: true }
+        review_round: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    PeerReview:
+      type: object
+      properties:
+        peer_review_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        reviewer_id: { type: string, format: uuid }
+        reviewee_id: { type: string, format: uuid }
+        is_self: { type: boolean }
+        technical_contributions: { type: integer, minimum: 1, maximum: 5 }
+        team_interactions: { type: integer, minimum: 1, maximum: 5 }
+        project_management: { type: integer, minimum: 1, maximum: 5 }
+        individual_comments: { type: string }
+        review_round: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: string, format: uuid }
+        type:
+          type: string
+          enum:
+            - review_assigned
+            - review_received
+            - submission_graded
+            - announcement
+            - deadline_approaching
+            - similarity_alert
+            - grade_released
+            - extension_granted
+            - reminder
+        title: { type: string }
+        body: { type: string, nullable: true }
+        link: { type: string, nullable: true }
+        is_read: { type: boolean }
+        created_at: { type: string, format: date-time }

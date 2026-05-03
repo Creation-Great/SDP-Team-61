@@ -1,728 +1,321 @@
-# SDP Peer Review System — User Guide
+# User Guide
 
-> A comprehensive guide for **students**, **instructors**, and **administrators** using the AI-enhanced Peer Review platform.
+> Walkthroughs for **students**, **instructors**, **TAs**, and **admins** using the SDP Peer Review System.
 
----
-
-## Table of Contents
-
-1. [Getting Started](#1-getting-started)
-   - [System Requirements](#system-requirements)
-   - [Logging In](#logging-in)
-   - [Navigation Overview](#navigation-overview)
-2. [Student Guide](#2-student-guide)
-   - [Dashboard](#student-dashboard)
-   - [Submitting Assignments](#submitting-assignments)
-   - [Completing Assigned Reviews](#completing-assigned-reviews)
-   - [Peer Review Sessions](#peer-review-sessions-student)
-   - [Self-Review](#self-review)
-   - [Viewing Your Released Scores](#viewing-your-released-scores)
-   - [Weekly Check-ins](#weekly-check-ins-student)
-   - [Using AI Tools](#using-ai-tools-student)
-   - [Notifications](#notifications)
-3. [Instructor Guide](#3-instructor-guide)
-   - [Dashboard & Real-Time Events](#instructor-dashboard)
-   - [Managing Peer Review Sessions](#managing-peer-review-sessions)
-   - [Reviewing Session Results](#reviewing-session-results)
-   - [Releasing Scores](#releasing-scores)
-   - [Self-Score Bias Analytics](#self-score-bias-analytics)
-   - [Instructor Review (All Students)](#instructor-review-all-students)
-   - [Review Quality Flags](#review-quality-flags)
-   - [Analytics & CSV Export](#analytics--csv-export)
-   - [Class Check-ins Management](#class-check-ins-management)
-   - [Enrollment Management](#enrollment-management)
-   - [Weekly Scoring & CSV Import](#weekly-scoring--csv-import)
-   - [AI Activity Logs](#ai-activity-logs)
-4. [AI Features](#4-ai-features)
-   - [AI Feedback](#ai-feedback)
-   - [AI Rewrite](#ai-rewrite)
-   - [AI Polish](#ai-polish)
-   - [AI Summarize](#ai-summarize)
-5. [Accessibility](#5-accessibility)
-6. [Troubleshooting](#6-troubleshooting)
+This guide is structured around the 33 pages currently shipped by the frontend ([`frontend/src/App.jsx`](../frontend/src/App.jsx)). For an architectural view, read [ARCHITECTURE.md](ARCHITECTURE.md). For API access, read [API.md](API.md).
 
 ---
 
 ## 1. Getting Started
 
-### System Requirements
+### 1.1 System requirements
 
-- A modern web browser (Chrome, Firefox, Edge, or Safari)
-- JavaScript enabled
-- Internet connection (or local network access if self-hosted)
+- A modern desktop or mobile browser (Chrome, Firefox, Edge, Safari).
+- JavaScript enabled.
+- Network access to the deployment URL.
 
-### Logging In
+### 1.2 Sign in
 
-1. Navigate to the application URL (e.g., `http://localhost:5173` for local development).
-2. You will see the **Login** page with the UConn Blue themed interface.
-3. Enter your **email** and **password**, then click **Sign In**.
-   - For university deployments, click **Sign in with UConn NetID** to use CAS single sign-on (SSO).
-   - For local development, use the seed accounts:
-     | Email | Role | Password |
-     |-------|------|----------|
-     | `instructor@example.com` | Instructor | `password123` |
-     | `alice@example.com` | Student | `password123` |
-     | `bob@example.com` | Student | `password123` |
-     | `carol@example.com` | Student | `password123` |
-
-4. If you don't have an account, click **Create an account** to register (local development only; production uses CAS SSO).
-
-### Navigation Overview
-
-After logging in, the application displays a **collapsible sidebar** on the left and a **header bar** at the top.
-
-#### Sidebar Menu — Student View
-| Menu Item | Description |
+| Mechanism | When to use |
 |-----------|-------------|
-| **Dashboard** | Overview of your submissions and review stats |
-| **My Grades** | Consolidated summary of file-review and released peer-review grades |
-| **Submit Work** | Upload new assignments for review |
-| **Assigned Reviews** | View and complete review tasks assigned to you |
-| **Peer Review** | Participate in peer review sessions |
-| **Weekly Check-ins** | Submit weekly self and team check-ins |
+| Email + password (`/login`) | Local development; demo accounts in [DATABASE.md §10](DATABASE.md#10-operational-notes). |
+| **Sign in with UConn NetID** (CAS) | Production. Click the SSO button on `/login`. |
+| Self-registration (`/register`) | Local dev only. Admin accounts cannot self-register. |
 
-#### Sidebar Menu — Instructor View
-| Menu Item | Description |
-|-----------|-------------|
-| **Overview** | Dashboard with stats, live events, AI activity |
-| **Manage Sessions** | Create and manage peer review sessions |
-| **Weekly Scoring** | Manage weekly peer review scores and CSV import |
-| **Review Analytics** | Score distributions, quality flags, anomaly detection |
-| **Student Check-ins** | View and manage student weekly check-ins |
-| **Enrollments** | Manage course enrollments and team assignments |
-| **Assignment Templates** | Create and manage reusable assignment definitions |
+The platform issues a JWT cookie on sign-in. Sessions last 30 days unless revoked. Click the user menu → *Log out* to revoke immediately.
 
-#### Header Bar
-- **Search bar** (magnifying glass icon): Full-text search across submissions and users
-- **Notification bell**: Shows unread notification count; click to see recent notifications
-- **User menu**: Displays your name and role; click to log out
+### 1.3 Navigation overview
 
-> **Tip:** Click the hamburger icon (☰) at the top of the sidebar to collapse/expand it.
+After sign-in, the layout is:
 
----
+```
+┌────────────┬───────────────────────────────────────────────┐
+│  Sidebar   │  Header (search · notification bell · user)   │
+│            ├───────────────────────────────────────────────┤
+│  Menu      │                                               │
+│            │     Main content (per-page)                   │
+│            │                                               │
+└────────────┴───────────────────────────────────────────────┘
+```
 
-## 2. Student Guide
+- **Sidebar** menu items depend on your role. Click the `☰` button on small screens to toggle.
+- **Header search** (top centre) does global search across submissions and users.
+- **Notification bell** polls every 30 s and shows unread count plus a dropdown.
+- **User menu** displays your name and role.
 
-### Student Dashboard
-
-After logging in as a student, you land on the **Dashboard** page, which shows:
-
-- **Your Submissions**: A list of all assignments you've submitted, with status indicators (reviewed, pending, etc.)
-- **Average Score**: Your average file review score across all reviewed submissions
-- **Review Tasks**: The number of assigned reviews you still need to complete
-- **Recent Activity**: Your latest submissions and reviews
-- **My Submissions actions**: For submissions with no existing reviews, you can edit title/description or withdraw directly on dashboard
-
-### Submitting Assignments
-
-1. Click **Submit Work** in the sidebar.
-2. Fill in the assignment details:
-   - **Title**: A descriptive title for your submission
-   - **Course**: Your enrolled course (auto-filled if you have one enrollment)
-   - **File**: Click **Choose File** to select your assignment file (accepted formats: PDF, ZIP, TXT, etc.)
-3. Click **Upload** to submit.
-4. You'll see a success message, and the submission will appear on your Dashboard.
-
-> **File size limit**: Files must not exceed the configured maximum (typically 10 MB). Only valid file types are accepted (the server verifies via magic-byte checks).
->
-> **Edit/withdraw policy**: Before any review is submitted for your file, you can edit metadata or withdraw that submission from your dashboard.
-> In some courses, instructors may allow edit/withdraw even after reviews exist.
->
-> **Assignment templates**: If your course has predefined assignments, select one in the upload form to link your submission.
-
-### Completing Assigned Reviews
-
-1. Click **Assigned Reviews** in the sidebar.
-2. You'll see a list of review tasks assigned to you, each showing the submission title, author, and due status.
-3. Click a review task to open the **Review Page**.
-4. On the Review Page:
-   - **View the submission**: The submitted file is displayed or available for download.
-   - **Score selector**: Rate the submission from 1–5 using the accessible score buttons.
-     - A **Rubric Panel** is available next to the score selector — click **Show Rubric** to expand detailed scoring criteria:
-       | Score | Level | Description |
-       |-------|-------|-------------|
-       | 5 | Excellent | Exceeds expectations in all areas |
-       | 4 | Good | Meets expectations with minor issues |
-       | 3 | Satisfactory | Meets basic requirements |
-       | 2 | Needs Improvement | Below expectations in several areas |
-       | 1 | Poor | Does not meet minimum requirements |
-   - **Comments**: Write detailed review comments in the text area.
-   - **AI Tools** (if enabled): Use AI Feedback, AI Rewrite, or AI Polish to improve your review (see [AI Features](#4-ai-features)).
-5. Click **Submit Review** to finalize.
-
-> **Keyboard accessibility**: Use arrow keys to navigate between score options, and Enter/Space to select.
->
-> **Draft protection**: In-progress score/comments are auto-saved in browser localStorage and restored when reopening the same review page on the same device/browser.
-> The system also stores backend drafts, so you can continue on another device/browser after logging in.
-
-### Peer Review Sessions (Student)
-
-1. Click **Peer Review** in the sidebar.
-2. You'll see a list of active peer review sessions created by your instructor.
-3. Each session shows:
-   - **Session title** and creator
-   - **Status**: Open (accepting submissions) or Closed
-   - **Deadline**: If set, a live countdown timer shows remaining time
-   - **Your status**: Whether you've already submitted reviews
-   - **Scores Released**: If the instructor has released scores, a **View Scores** button appears
-4. Click a session to open the **Peer Review Form**.
-5. On the Peer Review Form page:
-   - Your **teammates** are listed (determined by your team/group enrollment).
-   - **Including yourself** — you can (and should) review yourself (see [Self-Review](#self-review)).
-   - For each teammate (and yourself), rate three categories on a 1–5 scale:
-     - **Technical Contributions**: Quality and quantity of technical work
-     - **Team Interactions**: Communication, collaboration, and responsiveness
-     - **Project Management**: Task planning, time management, and organization
-   - Each category has a **Rubric Panel** — click **Show Rubric** to see detailed level descriptions.
-   - **Individual Comments**: Write specific comments for each person.
-   - **Team Chemistry**: Rate your overall team's collaboration on a 1–5 scale.
-6. Click **Submit Peer Reviews** to finalize all reviews at once.
-
-> **Important**: You can re-submit to update your reviews while the session is open. Once the session closes (manually or via deadline), no further changes are accepted.
->
-> **Draft protection**: In-progress peer review form content is auto-saved in browser localStorage and restored after refresh/reopen on the same device/browser.
-> The system also stores backend drafts, so your progress can be restored cross-device.
-
-### Self-Review
-
-- When completing peer reviews, **you will see your own name** in the teammate list.
-- Your self-review is automatically tagged with a blue **"Self"** badge.
-- Rate yourself honestly using the same 1–5 scale for all three categories.
-- The `is_self` flag is set automatically — you don't need to do anything special.
-- Your instructor can view self-review data separately and compare it with how your peers rated you via the **Bias Analytics** feature.
-
-### Viewing Your Released Scores
-
-Once your instructor releases scores for a session:
-
-1. Go to **Peer Review** in the sidebar.
-2. Sessions with released scores show a green **"View Scores"** button.
-3. Click **View Scores** to open the **Student Scores Page**, which displays:
-   - **Technical Contributions** average (out of 5.0)
-   - **Team Interactions** average (out of 5.0)
-   - **Project Management** average (out of 5.0)
-   - **Team Chemistry** average (out of 5.0)
-   - **Total reviews received** (including self-review count)
-4. If scores are **not yet released**, you'll see a lock icon with the message: *"Your instructor has not released scores for this session yet. Check back later."*
-
-> **Privacy**: You can only see your own aggregated scores. Individual reviewer identities and other students' scores are never visible to you.
-
-### My Grades
-
-1. Click **My Grades** in the sidebar.
-2. The page aggregates:
-   - **File Review Summary**: per-submission average score and review count
-   - **Peer Review Sessions (Released)**: released session-level averages for technical/interactions/management/chemistry
-3. Use this page as your semester-level grade history view.
-
-### Weekly Check-ins (Student)
-
-1. Click **Weekly Check-ins** in the sidebar.
-2. You'll see a form to rate yourself and your teammates for the current week.
-3. For each person (including yourself):
-   - Rate their contribution on a 1–5 scale
-   - Add optional comments
-4. Click **Save Check-in** to submit.
-
-### Using AI Tools (Student)
-
-See the [AI Features](#4-ai-features) section for detailed instructions on:
-- Getting AI feedback on your review writing
-- Using AI to rewrite your comments
-- Polishing your review text for grammar and clarity
-
-### Notifications
-
-- The **bell icon** in the header shows your unread notification count.
-- Click the bell to open the **Notification Panel**, which lists:
-  - **Review received**: Someone has reviewed your submission
-  - **Review assigned**: A new review task has been assigned to you
-  - **Deadline reminders**: Upcoming session deadlines
-  - **AI complete**: Your AI analysis is ready
-  - **System messages**: Announcements and system-level notifications
-- Click a notification to mark it as read.
-- Click **Mark all as read** to clear all unread notifications.
-- Notifications refresh automatically every 30 seconds.
-- Event-triggered notifications currently include review assignment, review received, and deadline reminders.
-- Notification channels are configurable in **Notification Preferences** (in-app/email/push).
-- Browser push can be enabled/disabled from **Notification Preferences**.
+Every section has its own error boundary — if one part of the page fails, the rest of the application keeps working.
 
 ---
 
-## 3. Instructor Guide
+## 2. Roles and what they can do
 
-### Instructor Dashboard
+| Role | Sees | Can change |
+|------|------|------------|
+| **Student** | Own submissions, assigned reviews, released scores, calendar, grades, AI chat, notifications, preferences | Own submissions; reviews assigned to them; own self-checkins; own preferences |
+| **TA** | Same reads as instructor for the courses they assist | Cannot create new peer-review sessions |
+| **Instructor** | Everything inside courses they teach | Sessions, rubrics, grade weights, anonymity, deadlines, LMS config, announcements, similarity reports for their courses |
+| **Admin** | All courses (bypasses course-ownership checks); audit log | Anything an instructor can plus the audit viewer and account-deletion approvals |
 
-After logging in as an instructor, you land on the **Overview** dashboard, which shows:
-
-- **Stats Cards**: Total submissions, reviews, students, and active sessions
-- **Weekly Trends**: Submissions and review activity trend chart
-- **AI Activity Logs**: Recent AI usage (feedback, rewrite, polish, summarize) with user names and timestamps
-- **Live Events Feed** (SSE):
-  - A green **"Live"** badge with pulse animation indicates the real-time connection is active.
-  - Events scroll in automatically as they occur:
-    - 🟢 `submission_created` — A student uploaded an assignment
-    - 🔵 `review_submitted` — A file review was submitted
-    - 🟣 `peer_review_submitted` — A peer review was submitted
-  - Each event shows the student name, action, and timestamp.
-
-> **Real-time**: The dashboard uses Server-Sent Events (SSE). No need to refresh — new events appear instantly.
-
-### Managing Peer Review Sessions
-
-#### Creating a Session
-
-1. Go to **Manage Sessions** in the sidebar or click **Peer Review** in the header.
-2. Click **Create New Session**.
-3. Fill in:
-   - **Title**: e.g., "Sprint 3 Peer Review"
-   - **Course**: Select the course (auto-filled if only one)
-   - **Deadline** (optional): Set a date and time after which the session will auto-close
-4. Click **Create**.
-5. The session appears in the sessions list with status **Open**.
-
-#### Opening / Closing a Session
-
-- In the sessions list, use the **toggle button** to open or close a session.
-- **Open**: Students can submit and update their peer reviews.
-- **Closed**: No further peer review submissions are accepted.
-- Sessions with a deadline will **auto-close** when the deadline passes (checked lazily on the next API access).
-
-#### Editing or Duplicating a Session
-
-- Use **Edit** to update title/deadline/open state for an existing session.
-- Use **Duplicate** to create a metadata copy of an existing session, then adjust and open it.
-
-#### Session Table Columns
-
-| Column | Description |
-|--------|-------------|
-| Title | Session name |
-| Created By | Instructor who created the session |
-| Status | Open / Closed badge |
-| Progress | X/Y reviews submitted (e.g., "2/3") |
-| Scores | Release/hide toggle button (instructor only) |
-| Deadline | Countdown timer or "No deadline" |
-| Actions | View Results, Open/Close toggle |
-
-### Reviewing Session Results
-
-1. From the sessions list, click **View Results** on a session.
-2. The **Results Page** has multiple sections:
-
-#### Submission Progress
-- Shows which students have submitted reviews and which haven't.
-- Completion percentage bar.
-
-#### Averages per Student
-- Table showing each student's aggregated scores:
-  | Column | Description |
-  |--------|-------------|
-  | Team | Student's team/group |
-  | Name | Student name |
-  | Technical | Avg technical contributions score |
-  | Interactions | Avg team interactions score |
-  | Management | Avg project management score |
-  | Chemistry | Avg team chemistry score |
-  | Reviews | Number of reviews received |
-- Supports **search** (by name or team) and **pagination**.
-
-#### Raw Review Details (Collapsible)
-- Click to expand the **Raw Review Details** section.
-- Shows every individual review record:
-  | Column | Description |
-  |--------|-------------|
-  | Team | Reviewer's team |
-  | Reviewer | Who wrote the review |
-  | Reviewee | Who was reviewed |
-  | Self? | Y/N — indicates self-reviews |
-  | Technical / Interactions / Management / Chemistry | Individual scores |
-  | Comments | The reviewer's comments |
-- Filter by team, search by name, or toggle **"Self-reviews only"** checkbox.
-
-#### Export CSV
-- Click **Export CSV** in the header to download all session data as a CSV file.
-
-### Releasing Scores
-
-This feature controls when students can see their peer review scores. By default, scores are **hidden**.
-
-#### From the Sessions List Page
-1. In the **Scores** column, click the **Release Scores** button (eye icon).
-2. The button toggles to **Hide Scores** (eye-off icon) — click again to revoke access.
-3. Students will see a **"View Scores"** button on their Peer Review page only when scores are released.
-
-#### From the Results Page
-1. Open a session's results.
-2. At the top right, click the **Release Scores** button.
-3. When released: button shows "Scores Released ✓" with a checkmark.
-4. When hidden: button shows "Release Scores" — students see a lock icon.
-
-> **Toggle behavior**: You can release and hide scores any number of times. Hiding scores immediately blocks student access, even if they previously viewed them.
-
-### Self-Score Bias Analytics
-
-This feature helps instructors identify students who score themselves significantly higher or lower than their peers rate them.
-
-1. On the **Results Page**, scroll to the **Self-Score Bias Analytics** section (collapsible — click to expand).
-2. The analytics table shows:
-
-| Column | Description |
-|--------|-------------|
-| Team | Student's team |
-| Student | Student name |
-| Self Avg | Average score the student gave themselves |
-| Peer Avg | Average score peers gave this student |
-| Bias | Self Avg − Peer Avg (positive = inflated, negative = deflated) |
-| Flag | Warning badge if \|bias\| ≥ 1.0 |
-
-3. **Color coding**:
-   - **Red text (+)**: Bias > +0.5 — student may be over-rating themselves
-   - **Blue text (−)**: Bias < −0.5 — student may be under-rating themselves
-   - **Amber highlight row**: |Bias| ≥ 1.0 — flagged for instructor attention
-   - **⬆ Inflated** badge: Self-score significantly higher than peer score
-   - **⬇ Deflated** badge: Self-score significantly lower than peer score
-   - **"—"**: Displayed when the student did not submit a self-review
-
-4. Students who didn't submit a self-review show "—" for Self Avg and Bias (no false 0.00 values).
-
-> **Use case**: If Bob gives himself 5/5/5 but his peers rate him 3/4/3, the bias will be +1.67 and flagged with "⬆ Inflated", alerting you to a potential disconnect.
-
-### Instructor Review (All Students)
-
-This feature lets you (the instructor) review any and all students on a single page — not limited to team boundaries.
-
-1. On the **Results Page**, scroll to the **Instructor Review (All Students)** section (collapsible — click to expand).
-2. You'll see every student in the course listed, organized by team.
-3. For each student:
-   - Set scores (1–5) for **Technical Contributions**, **Team Interactions**, and **Project Management** using clickable numbered buttons.
-   - Add optional **Comments** in the text field.
-   - Active selections are highlighted in UConn Blue.
-4. If you previously submitted instructor reviews, your existing scores and comments are **pre-filled automatically**.
-5. Click **Submit Instructor Reviews** at the bottom to save.
-6. Only students with at least one score filled in will be submitted.
-7. Instructor reviews are included in the student's average scores (visible on the Student Scores page once released).
-
-> **Note**: Instructor reviews use `is_self = false` and do not affect the bias analytics self-score calculation.
-
-### Review Quality Flags
-
-Quality flags help identify potentially low-effort reviews.
-
-#### File Review Quality Flags
-Navigate to **Review Analytics** → scroll to the **Quality Flags** section.
-
-| Flag | Description |
-|------|-------------|
-| **Identical Scores** | A reviewer gave the same score to multiple different submissions |
-| **Short Comments** | A review comment is less than 20 characters long |
-
-#### Peer Review Quality Flags
-Navigate to **Review Analytics** → scroll to the **Peer Review Quality Flags** section.
-
-| Flag | Description |
-|------|-------------|
-| **Identical Likert Scores** | A reviewer gave the same score (e.g., all 5s) across all three categories (technical, teamwork, management) for a reviewee |
-| **Short Individual Comments** | A peer review comment is less than 20 characters |
-
-Each flag shows the reviewer name, reviewee name, and the specific issue. Use these to follow up with students about review quality.
-
-### Analytics & CSV Export
-
-Navigate to **Review Analytics** in the sidebar:
-
-- **Score Distribution**: Histogram of all file review scores
-- **Anomaly Detection**: Statistical outliers in scoring patterns
-- **Roster CSV Export**: Download the full student roster as CSV
-- **File Review CSV Export**: Download a per-submission breakdown of all file review scores as CSV (server-side generated)
-- **Scoped filters**: Course/group/date-range filters are available and reused by dashboard/analytics/export workflows
-- **Anonymized export**: Enable anonymized mode when exporting peer-review/file-review data
-- **Rubric configuration**: Configure rubric levels by scope (global/course/session)
-- **Appeal queue**: Process student clarification/appeal requests (resolve/reject + reply)
-- **Submission policy**: Configure whether students may edit/withdraw after reviews exist (course-level)
-- **Export Center**: Unified export entry point for file-review, peer-review, and roster CSV exports
-
-### Assignment Templates
-
-Navigate to **Assignment Templates** in the sidebar:
-
-1. Set a **Course ID** and create templates with title/description/due time.
-2. Enable/disable templates for each course as needed.
-3. Students can select active templates during upload, which links submissions to assignment definitions.
-
-### Class Check-ins Management
-
-Navigate to **Student Check-ins** in the sidebar. This page has **3 tabs**:
-
-| Tab | Description |
-|-----|-------------|
-| **Insights** | Comparison view of self vs. peer ratings with trends |
-| **Weekly Scores** | Matrix view of all students' weekly scores with inline editing |
-| **Students** | Student list with individual score history |
-
-- **CSV Upload**: Click the upload area to import a CSV file of weekly scores. The system:
-  - Auto-detects column mappings
-  - Pre-fills scores for all students
-  - If an **Individual Comments** column is present, automatically opens the Comments panel
-- **Manual Entry**: Use the inline score editors to set or update individual scores
-
-### Enrollment Management
-
-Navigate to **Enrollments** in the sidebar:
-
-1. View all enrolled students organized by course and team.
-2. **Add Enrollment**: Click **Add** to enroll a student in a course with a specific team.
-3. **Edit**: Change a student's team assignment or set a primary enrollment.
-4. **Remove**: Delete an enrollment (with confirmation dialog).
-5. Students automatically see teammates in peer review sessions based on their enrolled team.
-
-### Weekly Scoring & CSV Import
-
-Navigate to **Weekly Scoring** in the sidebar:
-
-1. Upload **CSV files** with peer review scores from external sources.
-2. The system aggregates the data with per-student and per-category breakdowns.
-3. If the CSV contains an **Individual Comments** column, those comments are:
-   - Extracted and displayed alongside scores
-   - Included in the aggregate CSV export
-4. Click **Download Aggregate CSV** to export the combined results.
-
-### AI Activity Logs
-
-On the **Overview** dashboard, the **AI Activity Logs** section shows:
-- All recent AI tool usage across students
-- Each entry shows: user name, action type (feedback / rewrite / polish / summarize), timestamp
-- Use this to monitor how students are leveraging AI assistance
+Course access is enforced at the API layer by `verifyCourseAccess()` and `verifySessionAccess()` ([`backend/src/utils/enrollment.ts`](../backend/src/utils/enrollment.ts)).
 
 ---
 
-## 4. AI Features
+## 3. Student Walkthrough
 
-The platform integrates OpenAI GPT-4o-mini to enhance review quality. These features are optional and require the AI service to be running.
+### 3.1 Dashboard (`/dashboard` → `StudentDashboardPage`)
 
-### AI Feedback
+Lands here after sign-in (unless your primary role is instructor or admin). Shows submission counts, pending review tasks, recent activity, and the next upcoming deadline.
 
-**Available on**: File Review Page
+### 3.2 Submit work (`/upload` → `UploadAssignment`)
 
-1. After writing your review, click the **AI Feedback** button.
-2. The system analyzes your review for:
-   - **Toxicity**: Whether the language is respectful
-   - **Politeness**: Tone and courtesy level
-   - **Sentiment**: Overall positive/negative/neutral tone
-   - **Constructiveness**: How actionable and helpful the feedback is
-3. Results appear as a card below your review with scores and suggestions.
+1. Choose a course (only courses you're enrolled in are listed).
+2. (Optional) Pick an assignment template — fills in title and due date.
+3. Drag-and-drop or click to upload. Default size cap is 10 MiB; oversized uploads return `413`.
+4. Provide a title (required) and description (optional).
+5. Click **Submit**.
 
-### AI Rewrite
+Allowed file types are configured server-side and validated by magic-byte check, not just extension.
 
-**Available on**: File Review Page
+After upload, the file is stored under `UPLOAD_DIR` (or your configured object store) and an `assignments` row is created when the instructor or auto-strategy assigns reviewers.
 
-1. Click the **AI Rewrite** button to get a suggested rewrite of your review.
-2. The AI generates an improved version with:
-   - Better grammar and clarity
-   - More constructive and professional tone
-   - Maintained factual content
-3. You can **Adopt** the rewrite (replaces your review text) or dismiss it.
+### 3.3 Edit / replace / withdraw a submission
 
-### AI Polish
+Open an existing submission from the dashboard. Depending on the per-course `submission_policies.allow_edit_withdraw_after_reviews` flag and whether reviews already exist, you can:
 
-**Available on**: Peer Review Form Page
+- Edit title and description (`PATCH /submissions/:id`).
+- Replace the file (`PATCH /submissions/:id/replace-file`).
+- Withdraw (`DELETE /submissions/:id`).
 
-1. After writing individual comments for a teammate, click the **Polish** button.
-2. The AI improves your comment for:
-   - Grammar and spelling
-   - Professional tone
-   - Clarity and conciseness
-3. The polished text replaces your original comment automatically.
+### 3.4 Assigned reviews (`/reviews` → `AssignedReviewsPage`)
 
-### AI Summarize
+Lists every assignment with status `pending`. Each row links to:
 
-**Available on**: View Review Page (instructor view)
+- **Review** (`/review/:id` → `ReviewPage`): score 1-5, comments, optional rich-text formatting via TipTap. Drafts auto-save with conflict detection (`draft_version`).
+- **View Review** (`/view-review/:submissionId` → `ViewReviewPage`): a read-only summary if you're the submission owner.
 
-1. When viewing a submission that has multiple reviews, click the **Summarize** button.
-2. The AI generates a concise summary of all reviews, identifying:
-   - Common themes across reviewers
-   - Key strengths mentioned
-   - Areas for improvement
-   - Conflicting opinions between reviewers
+Click **Submit** when finished. AI-powered tools available inside the review form:
 
----
+| Tool | Action |
+|------|--------|
+| AI Feedback | Toxicity / politeness / sentiment scoring of your draft. |
+| AI Polish | Tighten grammar and clarity. |
+| AI Rewrite | Suggested rewrite; *Adopt* replaces your text. |
 
-## 5. Accessibility
+### 3.5 Peer review sessions (`/peer-review` → `PeerReviewSessionsPage`)
 
-The application is built with **WCAG 2.1** compliance in mind:
+Lists every session in your enrolled courses. Click a session to:
 
-| Feature | Implementation |
-|---------|---------------|
-| **Score selectors** | ARIA `role="radiogroup"` and `role="radio"` with full keyboard navigation (arrow keys, Enter/Space) |
-| **Error messages** | `role="alert"` + `aria-live="assertive"` for screen reader announcements |
-| **Data tables** | Semantic `<caption>` elements and `scope="col"` on all header cells |
-| **Form labels** | All inputs have associated `<label>` elements (visually hidden when placeholders are used) |
-| **Keyboard navigation** | All interactive elements (buttons, links, score selectors) support keyboard operation |
-| **Color contrast** | UConn Blue (#000E2F) on white backgrounds meets WCAG AAA contrast ratio |
-| **Focus indicators** | Visible focus rings on all interactive elements |
+| Path | Page | Purpose |
+|------|------|---------|
+| `/peer-review/:sessionId` | `PeerReviewFormPage` | Score each teammate (3 dimensions, 1-5) plus team-chemistry, plus optional comments. Self-review is enabled when you appear in your own team. |
+| `/peer-review/:sessionId/my-scores` | `StudentScoresPage` | View released scores once the instructor releases them. |
 
----
+The form auto-saves to `peer_review_drafts`. You see only your own released scores (other students filtered server-side).
 
-## 6. Troubleshooting
+### 3.6 Weekly check-ins (`/student/checkins` → `StudentCheckinsPage`)
 
-### Cannot Log In
+Per-week self-evaluation across the topics your instructor configured. Each row scopes by `(course_id, group_id)`.
 
-- **Wrong credentials**: Verify your email and password. For development, use the seed accounts listed in [Logging In](#logging-in).
-- **Account not registered**: If using local auth, ensure you've registered first. If using CAS SSO, contact your administrator.
-- **Cookies blocked**: The system uses httpOnly cookies for authentication. Ensure third-party cookies are not blocked for the application domain.
+### 3.7 Grades (`/my-grades` → `StudentGradesPage`)
 
-### Peer Review Session Not Visible
+Read-only consolidation of file-review and released peer-review grades, weighted by the per-course `grade_weights`. Supports drop-lowest / drop-highest if configured.
 
-- **Session may be closed**: Students only see sessions that are **open** or have **released scores**. Contact your instructor.
-- **Wrong course**: You must be enrolled in the same course as the session. Check your enrollment.
+### 3.8 Calendar (`/calendar` → `CalendarPage`)
 
-### Cannot Submit Peer Reviews
+Aggregates session deadlines, assignment-template due dates, and any individual extensions granted to you.
 
-- **Session closed**: The session may have been closed by the instructor or the deadline has passed.
-- **Session mismatch**: If you see a warning banner about session mismatch, log out and log back in — this can happen when switching between accounts in the same browser.
-- **Not in a team**: You must be assigned to a team via enrollment to submit peer reviews.
+### 3.9 Revision history (`/submissions/:id/revisions` → `RevisionHistoryPage`)
 
-### Scores Show "Not Yet Released"
+If your submission was revised, this page shows the chain (`parent_submission_id`) and a diff between adjacent revisions.
 
-- This is expected behavior. Your instructor controls when scores become visible.
-- Check back after your instructor announces that scores have been released.
-- The **View Scores** button only appears on the Peer Review page when scores are released.
+### 3.10 AI chat (`/ai-assistant` → `AiChatPage`)
 
-### AI Features Not Working
+Multi-turn conversational AI with three context modes:
 
-- The AI service must be running separately (Flask on port 5001).
-- An OpenAI API key must be configured in the AI service's environment variables.
-- If you see "AI unavailable" messages, contact your instructor or system administrator.
+- **General** — open chat about coursework concepts.
+- **Submission** — pinned to a specific submission for clarification questions.
+- **Review** — pinned to a review for follow-up.
 
-### Mobile / Small Screen
-
-- Data tables support **horizontal scroll** — swipe or scroll horizontally to see all columns on small screens.
-- The sidebar collapses to a hamburger menu; the header remains usable. For complex tables, consider exporting CSV and viewing on a larger screen.
-
-### Real-Time Events Not Updating
-
-- The green **"Live"** indicator on the instructor dashboard shows the SSE connection status.
-- If the indicator is not green, the connection is retrying automatically (with exponential backoff up to 30 seconds).
-- Hard-refresh the page (Ctrl+Shift+R) if events are persistently not updating.
-
-### CSV Upload Errors
-
-- Ensure your CSV file uses proper column headers matching the expected format.
-- The system auto-detects column mappings, but ambiguous headers may need manual mapping.
-- Maximum file size limits apply — check with your administrator if large files fail to upload.
+History is persisted to `ai_conversations`.
 
 ---
 
-## Quick Reference — Keyboard Shortcuts
+## 4. Instructor Walkthrough
 
-| Context | Key | Action |
-|---------|-----|--------|
-| Score selector | ← → | Move between score options |
-| Score selector | Enter / Space | Select the focused score |
-| Sidebar | Click ☰ | Toggle sidebar collapse |
-| Any page | Ctrl + K | Focus global search bar |
-| Notifications | Click bell | Toggle notification panel |
+### 4.1 Dashboard (`/instructor` → `InstructorDashboardPage`)
 
----
+Combines stats, AI activity logs, live SSE events, and the latest submissions. The SSE stream connects to `/instructor/events` and re-establishes itself with exponential backoff on disconnect.
 
-## Quick Reference — User Roles
+### 4.2 Manage peer review (`/instructor/peer-review` → `InstructorPeerReviewPage`)
 
-| Capability | Student | Instructor |
-|------------|---------|------------|
-| Submit assignments | ✅ | ❌ |
-| Complete assigned file reviews | ✅ | ❌ |
-| Participate in peer review sessions | ✅ | ❌ |
-| Submit self-review | ✅ | ❌ |
-| View released peer review scores | ✅ | ❌ |
-| Weekly check-ins | ✅ | ❌ |
-| Use AI feedback / rewrite / polish | ✅ | ✅ |
-| Create / manage peer review sessions | ❌ | ✅ |
-| Release / hide scores | ❌ | ✅ |
-| View bias analytics | ❌ | ✅ |
-| Review all students (instructor review) | ❌ | ✅ |
-| View quality flags | ❌ | ✅ |
-| Export CSV reports | ❌ | ✅ |
-| Manage enrollments | ❌ | ✅ |
-| View AI activity logs | ❌ | ✅ |
-| View real-time SSE events | ❌ | ✅ |
-| Manage class check-ins | ❌ | ✅ |
+Create and manage sessions:
 
----
+1. **Create**: title, course, deadline (optional), open/closed flag, anonymity level (`none` / `single_blind` / `double_blind`).
+2. **Edit / duplicate**: PATCH the session or POST `/duplicate` to clone as a template.
+3. **Release scores**: PATCH `/release-scores` once aggregation is complete.
+4. **Bulk reviewer assignment**: import a CSV or use the *Auto-assign* button which honours the configured `assignment_strategy`.
 
-## v3.0 Features Guide
+After students submit, drill into a session to see:
 
-### Anonymous Reviews
-**For Instructors:**
-1. When creating a peer review session, select the **Anonymity Level** dropdown:
-   - **None**: Full names visible to all parties
-   - **Single Blind**: Author can see reviewer names, but reviewers see "Anonymous Reviewer #N"
-   - **Double Blind**: Both parties see pseudonyms instead of real names
-2. Instructors always see real names regardless of anonymity setting.
+| Tab | Page route | Content |
+|-----|------------|---------|
+| Results | `/peer-review/:sessionId/results` (`PeerReviewResultsPage`) | Per-student aggregated scores, including team-chemistry deduplication. |
+| Bias | (link inside Results) | Self-vs-peer flags where `|self − peer|` ≥ 1.0. |
+| Quality flags | Analytics page | Identical-score patterns, suspiciously short comments. |
+| Appeals | (link inside Results) | Open student appeals; reply or change status. |
+| Instructor review | (button inside Results) | Score every teammate yourself in one form. |
+| CSV export | (button inside Results) | Download the session CSV (formula-injection-safe). |
 
-**For Students:**
-- When anonymity is active, you'll see "Anonymous Reviewer #N" instead of real names
-- Your pseudonym number stays consistent within a session (same reviewer = same number)
+### 4.3 Analytics (`/instructor/analytics` → `InstructorAnalyticsPage`)
 
-### Multi-Round Revisions
-**Submitting a Revision:**
-1. Go to **Dashboard** → find a submission with status "Reviewed"
-2. Click **Revise** to create a new version
-3. Upload the revised file with updated title/description
-4. Original reviewers are automatically reassigned to review the revision
+Score distribution, anomaly detection, file-review and peer-review quality flags, appeal queue, rubric editor, CSV export.
 
-**Viewing History:**
-1. Click **View History** on any submission to see all revisions
-2. Use **Diff** to compare changes between versions
+### 4.4 Advanced analytics (`/instructor/advanced-analytics` → `AdvancedAnalyticsPage`)
 
-### Grade Management (Instructor)
-1. Navigate to **Grade Management** from the sidebar
-2. Configure weight sliders: File Review %, Peer Review %, Check-in %
-3. Set Drop Lowest / Drop Highest counts
-4. View calculated final grades in the table below
-5. Click **Export CSV** to download grades
+Heatmaps, radar charts, semester-wide activity trend, reviewer reputation breakdown.
 
-### AI Assistant
-**During Review Writing:**
-- The AI Chat widget appears at the bottom-right of the review page
-- Ask for help writing constructive feedback
-- Context: `writing_review` mode
+### 4.5 Class check-ins (`/instructor/class-checkins` → `ClassCheckinsPage`)
 
-**After Receiving Reviews:**
-- Visit `/ai-assistant` and select **Reading Review** context
-- Paste feedback you received and ask the AI to help interpret it
+Three tabs:
 
-**For Instructors:**
-- Select **Teacher Summary** context to analyze student performance patterns
+- **Insights** — aggregated metrics across teams.
+- **Weekly Scores** — assign and review peer-review scores per week.
+- **Students** — drill into individual students' check-in history.
 
-### Calendar & Deadlines
-- Visit **Calendar** from the sidebar to see all upcoming deadlines
-- Color coding: Blue = peer review sessions, Green = assignments, Orange = extensions
-- Click any date to see details
+### 4.6 Enrollments (`/instructor/enrollments` → `EnrollmentManagementPage`)
 
-### Dark Mode & Preferences
-1. Toggle dark mode via the **moon/sun icon** in the sidebar
-2. Visit **Settings → Preferences** for font size and high contrast options
-3. Settings persist across sessions
+Add, edit, and remove enrollments. Each user can have multiple enrollments across courses; one is marked primary and synced into `users.course_id` / `users.group_id` automatically (trigger `sync_primary_enrollment`).
 
-### Data Export (GDPR)
-1. Visit **Settings → Data Export**
-2. Click **Export My Data** to download all your data as JSON
-3. To request account deletion, click **Request Deletion** (requires confirmation)
+### 4.7 Assignment templates (`/instructor/assignment-templates` → `AssignmentTemplatesPage`)
 
-### Similarity Detection (Instructor)
-1. Navigate to **Similarity Check** from the sidebar
-2. Click **Run Similarity Check** to analyze all submissions in a course
-3. Results show pairwise similarity scores with color coding:
-   - Green (< 30%): Low similarity
-   - Yellow (30-50%): Moderate similarity
-   - Red (> 50%): High similarity — investigate
+Create reusable assignments scoped to a course (and optionally a semester). Templates are referenced by `submissions.assignment_template_id`.
 
-### Semester Management (Instructor)
-1. Navigate to **Semesters** from the sidebar
-2. Create semesters with name, start date, end date
-3. Toggle active/inactive status
-4. Use **Clone Course** to copy settings from a previous semester
+### 4.8 Grade management (`/instructor/grades` → `GradeManagementPage`)
+
+- Set per-course **weight** for file reviews / peer reviews / check-ins (default 40 / 40 / 20).
+- Configure **drop-lowest / drop-highest**.
+- View **final calculated grades** (`GET /grades/final/:courseId`).
+- Export CSV (rate-limited 10 req/h, formula-injection-safe).
+
+### 4.9 LMS integration (`/instructor/lms` → `LmsConfigPage`)
+
+Mock LTI 1.3 integration. Configure consumer key / shared secret, then trigger:
+
+- **Launch** — simulated LTI launch flow.
+- **Grades** — passback final grades to the LMS.
+- **Roster** — sync class roster.
+
+In the shipped build the LMS provider is mocked; outgoing payloads are logged for inspection.
+
+### 4.10 Semester management (`/instructor/semesters` → `SemesterManagementPage`)
+
+CRUD over `semesters` plus a *Clone course* action that copies enrollments, sessions, and templates from a source course into a target semester.
+
+### 4.11 Similarity dashboard (`/instructor/similarity` → `SimilarityDashboardPage`)
+
+Course-wide TF-IDF cosine similarity and a mock Turnitin score for each pair of submissions. Per-submission report at `/similarity/report/:submissionId`.
+
+### 4.12 Export centre (`/instructor/exports` → `ExportCenterPage`)
+
+One-stop CSV exports: file-review, peer-review per session, grades.
 
 ---
 
-*Document version: 2.0 — Last updated: March 2026. For deployment and troubleshooting, see [DEPLOYMENT.md](DEPLOYMENT.md).*
+## 5. Admin Walkthrough
+
+### 5.1 Audit log (`/admin/audit` → `AuditLogPage`)
+
+Filter and search the `audit` table. Every privileged action records an event row with `actor`, `action`, `entity`, `entity_id`, and a free-form `meta_json`.
+
+### 5.2 Compliance / data export
+
+The student-facing **Data Export** page (`/settings/data-export` → `DataExportPage`) lets any user export their own data. Admins can run exports on behalf of any user via the API. Account-deletion requests submitted via the same page appear in the admin queue and require an admin to action them.
+
+### 5.3 Course-ownership bypass
+
+Admins implicitly pass `verifyCourseAccess()` and `verifySessionAccess()`. There is no separate admin UI for course management — all instructor pages work for admins across every course.
+
+---
+
+## 6. Shared Pages (any role)
+
+| Path | Page | Purpose |
+|------|------|---------|
+| `/settings/notifications` | `NotificationPreferencesPage` | Toggle in-app / email / push per notification type. |
+| `/settings/preferences` | `UserPreferencesPage` | Theme (light / dark), font size, high-contrast mode. |
+| `/settings/data-export` | `DataExportPage` | GDPR-style export and deletion request. |
+
+---
+
+## 7. AI Features
+
+The AI service is invoked through the backend; nothing in the browser talks to it directly. All AI operations are rate-limited (300 req/min default per endpoint, tighter on heavy ones).
+
+| Feature | Where it shows up | What it does |
+|---------|-------------------|--------------|
+| AI Feedback | Inside a review form | Toxicity (0-1), politeness (0-1), sentiment, identity / evidence spans |
+| AI Rewrite | Inside a review form | Generates an alternative wording you can adopt |
+| AI Polish | Inside a review or comment editor | Light grammar / clarity edit |
+| AI Summarize | Instructor results page | Aggregated summary of a session's comments |
+| AI Score Suggestion (Beta) | Inside instructor scoring | Suggests a score range with reasoning |
+| AI Calibration (Beta) | Bias analytics | Flags reviewer scores deviating from peer average |
+| AI Review Depth (Beta) | Quality flags | Constructiveness / specificity / actionability scores |
+| AI Chat (Beta) | `/ai-assistant` | Multi-turn conversation in 3 context modes |
+| Similarity (Beta, mock Turnitin available) | `/instructor/similarity` | TF-IDF cosine similarity reports |
+
+When the AI service is not configured (`AI_API_KEY` missing), every AI button fails with a friendly error rather than a crash.
+
+---
+
+## 8. Notifications
+
+| Type | Triggered by | Default channels |
+|------|-------------|------------------|
+| `review_assigned` | Reviewer assignment | in-app |
+| `review_received` | A review is submitted on your work | in-app |
+| `submission_graded` | Final grade released | in-app |
+| `announcement` | Instructor posts an announcement | in-app |
+| `deadline_approaching` | Reminder scheduler (configurable hours before) | in-app |
+| `similarity_alert` | High-similarity report | in-app |
+| `grade_released` | Instructor releases peer-review scores | in-app |
+| `extension_granted` | Instructor grants an individual extension | in-app |
+| `reminder` | Generic reminder | in-app |
+
+Configure per-type channels (in-app / email / push) at `/settings/notifications`. Web Push requires you to allow notifications when prompted; the VAPID public key is fetched from `/notifications/push/public-key`.
+
+---
+
+## 9. Accessibility
+
+- WCAG 2.1 *Skip to main content* link exposed when the main region is focused.
+- Keyboard navigation: `Tab` cycles focus; `Esc` closes modals; tables expose horizontal scrolling for narrow viewports.
+- Per-section error boundaries — a single broken widget does not take down the page.
+- High-contrast and large-font modes at `/settings/preferences`.
+- Light and dark themes, both designed intentionally.
+- Reduced-motion is respected — animations honour the OS preference.
+
+---
+
+## 10. Troubleshooting
+
+| Symptom | Probable cause | Fix |
+|---------|---------------|-----|
+| "Session expired" loop | JWT secret rotated or cookie domain mismatch | Sign in again |
+| AI button greys out, error mentions `not_configured` | AI service is up but `AI_API_KEY` is unset | Contact your admin |
+| Notifications never arrive | Browser blocked notifications, or service worker not registered | Re-enable in browser settings; reload page |
+| Peer-review form will not submit | Cookie identity mismatch detected (e.g. logged in as someone else in another tab) | Reload the page; you'll be re-validated |
+| Calendar shows no items | No deadlines or extensions exist for your enrolled courses | Confirm you're enrolled in the right course |
+| Sidebar shows a different role's items | Stale auth context | Log out and log back in |
+| Submission disappears on Internet Explorer | IE is unsupported | Use a modern browser (Chrome / Firefox / Edge / Safari) |
+
+For deeper issues, contact your instructor (or the admin) with the `X-Request-Id` from the browser network tab — it lets the operator find your request in the server logs.
+
+---
+
+## 11. References
+
+- Frontend routes: [`frontend/src/App.jsx`](../frontend/src/App.jsx)
+- Sidebar menu: [`frontend/src/components/Sidebar.jsx`](../frontend/src/components/Sidebar.jsx)
+- API client: [`frontend/src/services/api.js`](../frontend/src/services/api.js)
+- API reference: [API.md](API.md)
+- System architecture: [ARCHITECTURE.md](ARCHITECTURE.md)

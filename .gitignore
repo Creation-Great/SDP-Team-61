@@ -45,3 +45,6 @@ frontend/debug-*.png
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Claude working notes — kept local only, not pushed.
+CLAUDE.md

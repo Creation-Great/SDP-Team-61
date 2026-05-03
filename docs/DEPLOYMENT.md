@@ -1,179 +1,246 @@
-# Production Deployment
+# Deployment Guide
 
-This document describes security and configuration for deploying the SDP Peer Review System in production or non-local environments.
+> Production / staging operations for the SDP Peer Review System. Covers environment, secrets, JWT rotation, backups, monitoring, and incident response.
 
----
-
-## 0. Architecture and Ports
-
-- See the Architecture section in the root [README.md](../README.md) for the diagram and data flow.
-- Services and default ports:
-
-| Service | Port | Notes |
-|---------|------|--------|
-| Frontend (Vite dev) | 5173 | Development only; production serves static assets via nginx |
-| Frontend (nginx) | 80 / 443 | Production reverse proxy and static assets |
-| Backend (Express) | 8080 | API, SSE, auth |
-| PostgreSQL | 5432 | Database |
-| AI Service (Flask) | 5001 | Feedback, rewrite, polish, summarize, search, chat, scoring |
-| Redis | 6379 | Cache, token blacklist, rate limiting (optional — graceful fallback to in-memory) |
-
-Ensure the backend, DB, and AI service can reach each other in production; the frontend talks to the backend (and AI) via nginx proxy.
+For dev setup, read [DEVELOPMENT.md](DEVELOPMENT.md). For architecture, read [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
-## 1. Seed Data and Default Accounts
+## 1. Topology
 
-### 1.1 Default accounts are for development only
+| Service | Port (host) | Image / Build | Notes |
+|---------|------|---------------|-------|
+| `frontend` | 80 / 443 | `./frontend/Dockerfile` (multi-stage → nginx) | Static assets + reverse proxy |
+| `backend` | 8080 | `./backend/Dockerfile` | Express, runs migrations on startup |
+| `ai-service` | 5001 | `./ai-service/Dockerfile` | Gunicorn 4 workers (gevent), 100 connections each |
+| `db` | 5432 | `postgres:16` | Persistent volume `dbdata` |
+| `redis` | 6379 | `redis:7-alpine` | `maxmemory 256mb`, `allkeys-lru`, AOF on; persistent volume `redisdata` |
 
-- `backend/sql/seed.sql` creates sample users; all use password **password123**:
-  - instructor@example.com (instructor)
-  - alice@example.com, bob@example.com, carol@example.com (students)
-- **Do not use these accounts or passwords in production or any non-local environment.**
-
-### 1.2 How to handle seed in production
-
-- **Option A (recommended)**: Do **not** run seed.sql in production.
-  - With Docker: do not mount `seed.sql` into `docker-entrypoint-initdb.d` (e.g. use a copy of `docker-compose.yml` as `docker-compose.prod.yml` without the `./backend/sql/seed.sql` volume; keep only migrations.sql).
-  - With a standalone PostgreSQL: run only `migrations.sql` (or versioned migrations), not `seed.sql`.
-- **Option B**: If you must run seed (e.g. for a demo), **immediately** after deployment:
-  - Change all seed account passwords, or
-  - Remove unneeded seed accounts and use normal registration or CAS login instead.
-
-### 1.3 Controlling seed execution via environment (optional)
-
-- The current `docker-compose.yml` runs both `migrations.sql` and `seed.sql` on first DB init (via PostgreSQL `docker-entrypoint-initdb.d`).
-- To never run seed in production, remove the `seed.sql` mount from the production Compose file and keep only the migrations mount, or use an init script that runs only migrations.
+The backend talks to AI service over `AI_SERVICE_URL` (default `http://ai-service:5001` inside Docker). The frontend talks to the backend through nginx; nothing else is reachable from the public network.
 
 ---
 
 ## 2. Environment Variables
 
-- Required and optional variables are documented in **backend/.env.example** and **ai-service/.env.example**.
-- The root **.env.example** is for docker-compose and root-level config; per-service config lives in each subdirectory.
-- In production, set:
-  - **POSTGRES_PASSWORD**: Strong database password (required — docker-compose will refuse to start without it).
-  - **JWT_SECRET**: Strong random string (e.g. `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`).
-  - **NODE_ENV=production** (backend).
-  - **FRONTEND_URL** / **CORS_ORIGINS** to the actual frontend origin(s).
-  - If using the AI service: **OPENAI_API_KEY** and **AI_API_KEY** matching the backend.
-  - **REDIS_URL** (optional): `redis://redis:6379` — both backend and ai-service support it for rate limiting and caching.
+Three `.env.example` files document the surface — root, `backend/`, `ai-service/`. Frontend gets its env from `frontend/.env.example` (mostly build-time).
+
+### 2.1 Root `.env` (consumed by docker-compose)
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `POSTGRES_PASSWORD` | **Yes** | PostgreSQL superuser password. `docker compose up` refuses to start without it. |
+| `POSTGRES_USER` | No (default `postgres`) | DB user. |
+| `POSTGRES_DB` | No (default `peerreview`) | DB name. |
+| `JWT_SECRET` | **Yes** in prod | ≥ 64 hex chars. Generate: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`. |
+| `JWT_EXPIRES_IN` | No (default `30d`) | Token lifetime. |
+| `FRONTEND_URL` | **Yes** in prod | The browser-visible origin. Production fatal-exits if this contains `localhost`. |
+| `CORS_ORIGINS` | No | Comma-separated list of allowed origins. Falls back to `FRONTEND_URL`. |
+| `OPENAI_API_KEY` | If using AI | Forwarded to `ai-service`. |
+| `OPENAI_MODEL` | No (default `gpt-4o-mini`) | The actual upstream is `https://api.x.ai/v1` — see [ARCHITECTURE.md §7](ARCHITECTURE.md#7-ai-service-architecture). |
+| `AI_API_KEY` | **Yes** in prod | Shared secret between `backend` and `ai-service`. AI service rejects all requests when unset. |
+
+### 2.2 Backend `backend/.env` (only when running outside Docker)
+
+Inside Docker, all backend env comes from compose. Outside Docker (dev or bare metal), inherit from root `.env` and supplement with backend-specific knobs:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/peerreview` | pg connection string |
+| `PORT` | `8080` | Express listen port |
+| `HOST` | `0.0.0.0` | bind address |
+| `NODE_ENV` | `development` | Set to `production` in production |
+| `SKIP_MIGRATE` | `false` | Set to `true` if migrations are run by an external job |
+| `TRUST_PROXY` | unset | Set to `1` (or hop count) when running behind nginx / load balancer |
+| `UPLOAD_DIR` | `./uploads` | Local file upload dir; mounted as `backend_uploads` volume in Docker |
+| `MAX_FILE_SIZE` | `10485760` (10 MiB) | Per-file upload cap |
+| `MAX_CSV_FILE_SIZE` | `2097152` (2 MiB) | CSV upload cap (instructor) |
+| `PG_POOL_MAX` | `20` | pg pool size |
+| `PG_IDLE_TIMEOUT_MS` | `30000` | idle reclaim |
+| `PG_CONN_TIMEOUT_MS` | `5000` | acquisition timeout |
+| `LOG_LEVEL` | `info` | Pino log level (`debug`, `info`, `warn`, `error`) |
+| `REDIS_URL` | unset | Enable Redis when set; in-memory fallback otherwise |
+| `EMAIL_NOTIFICATIONS_ENABLED` | `false` | Enable SMTP notifications |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | unset | SMTP config |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | unset | Web Push (browser notifications) |
+| `MV_DEBOUNCE_MS` | `5000` | Materialized view refresh debounce |
+| `MV_PERIODIC_MS` | `600000` | Periodic MV refresh interval |
+| `REMINDER_CHECK_INTERVAL_MS` | `900000` (15 min) | Deadline reminder scheduler |
+| `OBJECT_STORAGE_TYPE` | `local` | `local` or `mock-s3` |
+| `S3_BUCKET` / `S3_REGION` / `S3_ENDPOINT` / `S3_ACCESS_KEY` / `S3_SECRET_KEY` | unset | S3 (or MinIO) config when storage type is not `local` |
+
+> **Documentation drift**: The "Rate Limiting" comments in `backend/.env.example` (lines 91-96) describe legacy values. The actual rate-limit configuration lives in [`backend/src/app.ts`](../backend/src/app.ts#L141-L187) — see §6 below for the current numbers.
+
+### 2.3 AI Service `ai-service/.env`
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENAI_API_KEY` | unset | Forwarded to OpenAI-compatible API at `https://api.x.ai/v1` |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Default model |
+| `AI_API_KEY` | unset | Shared secret with backend; **fail-closed** when unset |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/peerreview` | psycopg2 DSN |
+| `FRONTEND_URL` | `http://localhost:5173` | CORS allowlist |
+| `REDIS_URL` | unset | flask-limiter storage |
+| `AI_PORT` | `5001` | Listen port |
+| `FLASK_DEBUG` | `0` | Set to `1` only in dev |
 
 ---
 
-## 3. SSE and Nginx
+## 3. Production Deployment Path
 
-- The instructor real-time event stream uses **GET /instructor/events** (SSE).
-- If nginx is used as reverse proxy in production, configure **/instructor/events** separately: disable `proxy_buffering`, set a longer `proxy_read_timeout`, etc. See **frontend/nginx.conf** under `location /instructor/events`.
-- With same-origin deployment, the browser sends the JWT via cookie automatically. SSE (EventSource) works with cookies on same-origin requests. Query param `?token=` has been removed for security (tokens in URLs leak to logs and browser history).
-
----
-
-## 4. Database Connection Pool (optional tuning)
-
-- The backend uses `pg.Pool`. You can tune it via environment variables:
-  - **PG_POOL_MAX** (default `20`): Maximum pool size; increase for higher concurrency (e.g. 50), and align with PostgreSQL `max_connections`.
-  - **PG_IDLE_TIMEOUT_MS** (default `30000`): Idle connection reclaim time (ms).
-  - **PG_CONN_TIMEOUT_MS** (default `5000`): Connection acquisition timeout (ms).
-- See `backend/src/db.ts`. If you hit connection exhaustion in production, try increasing `PG_POOL_MAX` and monitor DB connections.
-
----
-
-## 5. Health Check and Logging
-
-- **Backend health**: **GET /healthz**. When `DATABASE_URL` is set, it runs a DB connectivity check (`SELECT 1`); if the DB is unreachable it returns **503** with `{ ok: false, db: 'error' }`, suitable for K8s/Docker readiness probes or load balancer health checks.
-- In production, set **LOG_LEVEL** to `info` or `warn` and avoid logging sensitive data (e.g. full cookies, tokens).
-
----
-
-## 6. Troubleshooting
-
-- **Cannot log in**: Ensure JWT_SECRET is the same for the service that issued the login; ensure cookie domain and path are correct (for same-origin, usually no change needed).
-- **No SSE events**: Ensure nginx has buffering disabled for `/instructor/events`; ensure the instructor account has a `course_id` (otherwise the channel is `instructor:${user_id}`, which must match the backend event channel).
-- **AI features unavailable**: Ensure the AI service is running and that `AI_SERVICE_URL` and `AI_API_KEY` match the ai-service configuration.
-
----
-
-## 7. Branches and Release
-
-- **main**: Primary branch for stable releases. CI runs on push and on PRs (backend, frontend, AI service, Docker).
-- **integrated**: Integration branch; CI also runs for this branch (see `.github/workflows/ci.yml`). If used as a long-lived integration branch:
-  - Develop on feature branches and merge into `integrated` for integration and testing;
-  - Merge `integrated` into `main` via PR for release;
-  - After release, tag `main` (e.g. `v1.0.0`) for rollback and traceability.
-- For production, build images from `main` or a specific tag; avoid building from unmerged `integrated`.
-
----
-
-## 8. JWT Secret Rotation
-
-When rotating `JWT_SECRET` in production:
-
-1. **Generate a new secret**: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
-2. **Minimum length**: 64 characters (256 bits). The server refuses to start with shorter keys in production.
-3. **Rolling update**:
-   - Set the new `JWT_SECRET` in your secrets manager.
-   - Restart backend service(s). All existing tokens become invalid immediately.
-   - Users will be logged out and must re-authenticate.
-4. **No downtime rotation**: Not currently supported (would require dual-key verification). Plan rotation during low-traffic windows.
-5. **In-memory token blacklist**: Restarting the server clears the blacklist. For multi-instance deployments, consider Redis-backed blacklist.
-
----
-
-## 9. Database Backup & Recovery
-
-### 9.1 Automated Backups
+### 3.1 Full-stack via Docker Compose
 
 ```bash
-# Daily backup with pg_dump (add to cron or CI/CD schedule)
-pg_dump -U postgres -h localhost -d peerreview -F c -f backup_$(date +%Y%m%d).dump
+# 1. Prepare secrets (do NOT commit)
+cp .env.example .env
+$EDITOR .env   # set POSTGRES_PASSWORD, JWT_SECRET, AI_API_KEY, OPENAI_API_KEY, FRONTEND_URL
 
-# Restore from backup
-pg_restore -U postgres -h localhost -d peerreview -c backup_20260315.dump
+# 2. Build and start
+docker compose up --build -d
+
+# 3. Watch logs
+docker compose logs -f backend ai-service
+
+# 4. Health check
+curl -f http://localhost:8080/healthz
+curl -f http://localhost:5001/healthz
 ```
 
-### 9.2 Backup Strategy
+### 3.2 Without seed data
 
-- **Frequency**: Daily full backups; keep 7 days of rolling backups minimum.
-- **Upload volume**: Back up `backend_uploads` Docker volume (submitted files).
-- **Test restores**: Periodically restore a backup to a staging environment to verify integrity.
+`docker-compose.yml` mounts both `migrations.sql` and `seed.sql` into PostgreSQL's `docker-entrypoint-initdb.d`. **The seed contains demo accounts with weak passwords (`password123`)** and must not run in production.
 
-### 9.3 Disaster Recovery
+Two options:
 
-- **RTO target**: 1 hour (restore from backup + redeploy services).
-- **RPO target**: 24 hours (daily backups). For tighter RPO, enable WAL archiving or use managed PostgreSQL with continuous backup.
+1. **Recommended**: Maintain a `docker-compose.prod.yml` overlay that omits the `seed.sql` mount. Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`.
+2. **Quick**: Do not let any production database initialise from this compose file. Instead, point `DATABASE_URL` to an externally managed PostgreSQL and let `npm run migrate` apply schema only.
+
+### 3.3 Numbered migrations
+
+Migrations `001-037` are applied automatically at backend startup via [`migrateUp()`](../backend/src/migrate.ts) unless `SKIP_MIGRATE=true`. To run them out of band:
+
+```bash
+cd backend
+npm run migrate
+npm run migrate:down       # rollback last
+npm run migrate:redo       # down + up
+```
+
+The legacy `backend/sql/migrations.sql` is the bootstrap for fresh Docker DBs; numbered migrations layer on top.
 
 ---
 
-## 10. Monitoring & Observability
+## 4. JWT Secret Rotation
 
-### 10.1 Health Checks
+```bash
+# 1. Generate
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 
-| Service | Endpoint | Healthy | Unhealthy |
-|---------|----------|---------|-----------|
+# 2. Update secrets manager / .env
+
+# 3. Restart backend (zero-downtime not currently supported)
+docker compose restart backend
+```
+
+Effects:
+
+- **All existing tokens become invalid immediately.** Users are logged out and must re-authenticate.
+- Token blacklist is per-process when Redis is unavailable. Multi-instance deployments must use Redis to keep blacklist consistent.
+- The backend rejects `JWT_SECRET` shorter than 64 chars in production.
+- Plan rotations during low-traffic windows.
+
+---
+
+## 5. Database Backup and Recovery
+
+### 5.1 Backup
+
+```bash
+# Daily — schedule via cron / systemd timer / managed Postgres
+pg_dump -U postgres -h <host> -d peerreview -F c -f backup_$(date +%Y%m%d).dump
+
+# Verify
+pg_restore --list backup_$(date +%Y%m%d).dump | head
+```
+
+### 5.2 Restore
+
+```bash
+pg_restore -U postgres -h <host> -d peerreview -c backup_YYYYMMDD.dump
+```
+
+### 5.3 Strategy
+
+| Knob | Recommendation |
+|------|----------------|
+| Frequency | Daily full dump |
+| Retention | 7 rolling days minimum, 30 days for monthly snapshots |
+| RTO | ≤ 1 hour (restore + redeploy) |
+| RPO | ≤ 24 hours with daily dumps; tighten with WAL archiving or managed PG continuous backup |
+| Upload volume | Snapshot the `backend_uploads` Docker volume on the same cadence as the DB |
+| Test restores | Restore to a staging environment monthly |
+
+### 5.4 Volumes
+
+`docker-compose.yml` declares three named volumes: `dbdata` (PostgreSQL), `backend_uploads` (file submissions), `redisdata` (Redis AOF). Back up `dbdata` and `backend_uploads`; `redisdata` is recoverable from source-of-truth state.
+
+---
+
+## 6. Rate Limiting (Reference)
+
+Source: [`backend/src/app.ts`](../backend/src/app.ts#L141-L187) and [`backend/src/middleware/exportLimiter.ts`](../backend/src/middleware/exportLimiter.ts).
+
+| Tier | Window | Max | Key | Routes |
+|------|--------|-----|-----|--------|
+| Global | 60 s | 600 | per user (JWT) or IP fallback | All routes |
+| Auth | 15 min | 100 | per IP only | `/auth/*` |
+| Write | 10 min | 300 | per user | `/instructor`, `/peer-review`, `/enrollments`, `/semesters`, `/lms`, `/assignment-strategy` |
+| Upload | 10 min | 50 | per user | `/submissions`, `/revisions` |
+| Export | 60 min | 10 | per user | `/grades/export/:courseId`, `/compliance/export/:userId` |
+
+AI service has per-endpoint limits via Flask-Limiter (Redis-backed when available). Default `300 per minute`; check the `@limiter.limit(...)` decorators in `ai-service/routes/*.py`.
+
+When `TRUST_PROXY=1` is set, `req.ip` is the forwarded client IP; otherwise it is the proxy's IP and per-IP keys collapse onto the proxy.
+
+---
+
+## 7. Health Checks and Observability
+
+### 7.1 Endpoints
+
+| Service | URL | Healthy | Unhealthy |
+|---------|-----|---------|-----------|
 | Backend | `GET /healthz` | `200 { ok: true, db: "ok" }` | `503 { ok: false, db: "error" }` |
-| AI Service | `GET /healthz` | `200 { status: "ok" }` | Connection refused |
-| Frontend | `GET /` (nginx) | `200` | Connection refused |
-| Database | `pg_isready -U postgres` | Exit 0 | Exit non-zero |
+| AI Service | `GET /healthz` | `200 { status: "ok" }` (Blueprint registered as `health_bp`) | Connection refused |
+| Frontend | `GET /` | nginx returns the SPA shell | Connection refused |
+| Database | `pg_isready -U postgres` | exit 0 | non-zero |
+| Redis | `redis-cli ping` → `PONG` | — | — |
 
-### 10.2 Key Metrics to Monitor
+### 7.2 Logs
 
-- **Backend**: Request latency (p50/p95/p99), error rate (5xx), active DB connections.
-- **AI Service**: OpenAI API latency, token usage per request (logged as structured JSON), retry count.
-- **Database**: Active connections vs pool max, query latency, disk usage.
-- **Frontend**: Nginx access log error rate (4xx/5xx).
+- **Backend**: structured JSON via Pino (`logger`), correlation ID per request (`X-Request-Id` or auto-generated UUID). Pipe stdout to your log aggregator (ELK / Datadog / CloudWatch / Loki).
+- **AI Service**: structured JSON via the formatter in [`config.py:41`](../ai-service/config.py#L41). Each OpenAI call logs `prompt_tokens`, `completion_tokens`, `total_tokens`.
+- **Nginx**: standard access/error logs at `/var/log/nginx/`.
 
-### 10.3 Log Aggregation
+### 7.3 Metrics worth watching
 
-- Backend outputs structured JSON logs (Pino) — pipe to ELK, Datadog, or CloudWatch.
-- AI service outputs structured JSON logs — same destination.
-- Nginx access/error logs available at `/var/log/nginx/`.
+- Request latency (p50/p95/p99) and 5xx rate per service.
+- pg pool: active vs `PG_POOL_MAX`, wait time for new connections.
+- AI service: OpenAI latency, retry count, tokens per minute.
+- Redis: memory pressure (eviction count under `allkeys-lru`).
 
 ---
 
-## 11. Resource Limits (Docker)
+## 8. SSE and Nginx
 
-The `docker-compose.yml` sets resource limits for all services:
+- The instructor real-time event stream is `GET /instructor/events`.
+- Nginx must **disable buffering** and **extend the read timeout** for that path. The shipped [`frontend/nginx.conf`](../frontend/nginx.conf) handles this — copy the `location /instructor/events { ... }` block when porting to a different reverse proxy.
+- SSE is authenticated by the same-origin cookie (`token`). Tokens in the URL (`?token=`) are no longer accepted by the auth middleware ([`backend/src/middleware/auth.ts:36`](../backend/src/middleware/auth.ts#L36)).
+
+---
+
+## 9. Resource Limits
+
+The shipped compose file declares limits per service:
 
 | Service | CPU | Memory |
 |---------|-----|--------|
@@ -181,111 +248,81 @@ The `docker-compose.yml` sets resource limits for all services:
 | backend | 1 | 1 GB |
 | ai-service | 1 | 1 GB |
 | frontend | 0.5 | 256 MB |
+| redis | 0.5 | 512 MB |
 
-Adjust based on actual load. AI service may need more memory if handling large text inputs.
-
----
-
-## 12. Security Headers (Nginx)
-
-The production nginx.conf includes these security headers:
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: DENY`
-- `X-XSS-Protection: 1; mode=block`
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy: geolocation=(), microphone=(), camera=()`
-- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+Tune for actual load. AI service may need extra memory under large submission summarisation; PostgreSQL benefits from more memory once `shared_buffers` is raised.
 
 ---
 
-## 13. Functional Rollout Notes
+## 10. Security Headers
 
-- The current deployment includes additional functional modules:
-  - Rubrics API (`GET/POST /rubrics`)
-  - Submission edit/withdraw and grade summary (`PATCH/DELETE /submissions/:id`, `GET /submissions/my-grades`)
-  - Instructor bulk assignment (`POST /instructor/assign/bulk`)
-  - Peer-review appeals (`/peer-review/appeals*`)
-- Ensure backend migrations are up-to-date before rollout so new tables/columns exist (`submissions.course_id`, `rubrics`, `peer_review_appeals`).
+Production nginx (per [`frontend/nginx.conf`](../frontend/nginx.conf)) sets:
 
----
+```
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-XSS-Protection: 1; mode=block
+Referrer-Policy: strict-origin-when-cross-origin
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
 
-## 14. Mobile and Responsive
-
-- Tables use horizontal scroll (`overflow-x-auto`); on small screens users can scroll horizontally to see all columns.
-- Validate on a real device or emulator: login, sidebar collapse, table scroll, modals and forms on small screens; touch targets are designed to be tappable and focusable.
-- If tables are hard to read on small screens, prefer “Export CSV” and view on desktop.
+Backend additionally applies a Helmet-managed CSP — see [`backend/src/app.ts:58-70`](../backend/src/app.ts#L58-L70).
 
 ---
 
-## v3.0 Deployment Notes
+## 11. Production Pre-flight Checklist
 
-### Redis Service
-- Docker Compose includes `redis:7-alpine` on port 6379
-- Backend connects via `REDIS_URL` env var (defaults to `redis://redis:6379` in Docker)
-- Redis is **optional**: system degrades gracefully to in-memory caching/blacklisting
-- Recommended: 256MB maxmemory with `allkeys-lru` eviction policy
-
-### New Database Migrations (021-037)
-Run automatically on backend startup via `migrateUp()`. Key tables added:
-- `semesters` — Academic semester management
-- `announcements` — Enhanced announcements with pinned/scheduled/attachments
-- `anonymous_reviewer_map` — Stable pseudonyms for anonymous reviews
-- `review_exclusions` — Conflict-of-interest rules for reviewer assignment
-- `review_helpfulness` — Student votes on review usefulness
-- `reviewer_reputation` — Aggregate reviewer quality metrics
-- `review_depth_scores` — AI-computed review depth metrics
-- `grade_weights` — Per-course grading weight configuration
-- `similarity_reports` — Plagiarism/similarity detection results
-- `ai_conversations` — Multi-turn AI chat history
-- `lms_config` — LMS integration configuration (mock)
-- `deadline_reminders` / `deadline_extensions` — Reminder and extension management
-- `review_attachments` — Rich text review file attachments
-- `user_preferences` — User theme/font/contrast settings
-- `data_deletion_requests` — GDPR account deletion requests
-- `ai_score_suggestions` / `ai_calibration_results` — AI scoring assistant data
-
-### New Environment Variables
-| Variable | Service | Default | Description |
-|----------|---------|---------|-------------|
-| `POSTGRES_PASSWORD` | Root .env | _(required)_ | PostgreSQL password for docker-compose |
-| `REDIS_URL` | Backend + AI | _(none)_ | Redis connection URL; optional with in-memory fallback |
-| `OBJECT_STORAGE_TYPE` | Backend | `local` | `local` or `mock-s3` |
-| `REMINDER_CHECK_INTERVAL_MS` | Backend | `900000` | Deadline reminder check interval (ms) |
-
-### AI Service Dependencies
-- New pip package: `scikit-learn>=1.3.0` (for TF-IDF similarity detection)
-- 7 new AI endpoints added (review-depth, score-suggestion, calibration, score-reasoning, similarity, similarity/turnitin, chat)
-
-### Frontend Changes
-- 11 new pages (33 total, all lazy-loaded)
-- PWA support via vite-plugin-pwa (generates sw.js + workbox runtime caching)
-- Dark mode (Tailwind `darkMode: 'class'` + CSS variables)
-- New npm packages: recharts, @tiptap/react, react-pdf, vite-plugin-pwa, diff, react-virtuoso
-
-### Nginx Configuration
-Ensure all new route prefixes have proxy `location` blocks:
-`/anonymity`, `/assignment-strategy`, `/quality`, `/semesters`, `/revisions`, `/grades`, `/lms`, `/deadlines`, `/preferences`, `/compliance`, `/similarity`, `/rubrics`, `/assignment-templates`
-
-### Scheduler
-- Deadline reminder scheduler starts automatically on backend boot
-- Runs every 15 minutes (configurable via `REMINDER_CHECK_INTERVAL_MS`)
-- Creates notifications for students with approaching deadlines
-
-### TA Role
-- New `ta` value in `user_role` enum (migration 022)
-- TA has instructor-level read access but cannot create peer review sessions
-- Configure via `user_enrollments` table with `role = 'ta'`
+- [ ] `JWT_SECRET` set, ≥ 64 chars, **not** the example value
+- [ ] `AI_API_KEY` set, **identical** in backend env and AI service env
+- [ ] `OPENAI_API_KEY` set if AI features are enabled
+- [ ] `POSTGRES_PASSWORD` set to a strong value (no `postgres:postgres`)
+- [ ] `FRONTEND_URL` (and `CORS_ORIGINS` if used) point at the **production** domain — backend fatal-exits otherwise
+- [ ] `NODE_ENV=production`
+- [ ] `TRUST_PROXY=1` if behind nginx / load balancer
+- [ ] Seed file is **not** mounted into the production database
+- [ ] `.env` files are excluded from version control (verified by `.gitignore`)
+- [ ] Daily DB backup configured and **tested by a real restore**
+- [ ] `backend_uploads` volume is included in backups
+- [ ] TLS terminates at nginx with a current certificate
+- [ ] Log aggregation collects backend + AI structured JSON
+- [ ] Alerts wired for: backend `/healthz` 5xx, pg pool saturation, OpenAI 5xx > threshold, disk usage > 80 %
 
 ---
 
-### Authorization Enforcement (v3.1)
-- All grade/LMS/deadline/anonymity routes now enforce **course ownership** via `verifyCourseAccess()` / `verifySessionAccess()` in `backend/src/utils/enrollment.ts`
-- Instructors can only access data for courses they teach; admins bypass all checks
-- `deadlineRoutes` reject non-session entity types with 400 (default-deny)
-- Grade CSV export includes formula-injection protection (`safeCsv()` prefixes `=+\-@` characters)
+## 12. Troubleshooting
 
-### Request Tracing (v3.1)
-- Every request receives a correlation ID (`X-Request-Id` header or auto-generated UUID)
-- Injected into all Pino log entries via `customProps` for end-to-end tracing
+| Symptom | Root cause | Fix |
+|---------|-----------|-----|
+| Backend exits with `Cannot start in production with failed security checks` | Required env var missing or `FRONTEND_URL` contains `localhost` | Set the missing variable; restart |
+| Browser cannot log in | `JWT_SECRET` rotated, or cookie domain/path mismatch | Verify cookie `Domain` matches site; users re-auth |
+| AI features return `{ error: "not_configured" }` | `AI_API_KEY` empty in either service | Set in both, restart both |
+| AI features return `{ error: "unauthorized" }` | Backend and AI service have different `AI_API_KEY` values | Reconcile; restart |
+| SSE stream silently disconnects | Nginx buffering enabled or read timeout too short | Apply the `/instructor/events` location block |
+| `ECONNREFUSED redis:6379` | Redis missing | Start Redis or unset `REDIS_URL` (in-memory fallback) |
+| Backend logs many `Idle-client error in pg Pool` | Network or DB restart | Investigate DB; pool will reconnect automatically |
+| Migration error on boot | Manual schema drift | Inspect `migrations` table; reconcile or `migrate:down` and re-apply |
+| Frontend cannot reach a new backend prefix | `vite.config.js` updated but `nginx.conf` not (or vice versa) | Update **both** in lockstep |
+| Backend rate-limit headers say tiny limits | `TRUST_PROXY` not set; per-IP keys collapse on proxy IP | Set `TRUST_PROXY=1` |
 
-*Document version: 3.1 — 2026-04*
+---
+
+## 13. Branches and Releases
+
+- `main` — protected, source of release builds. Tag with `vMAJOR.MINOR.PATCH` after each release.
+- `integrated` — long-lived integration branch; CI runs but releases never come from here directly.
+- Build production images from `main` or a tag, never from `integrated`.
+
+CI is described in §1 of this repo's [README.md](../README.md#ci) — five jobs (backend, frontend, ai-service, docker, security) on every push to `main`/`integrated` and every PR into `main`.
+
+---
+
+## 14. References
+
+- [`docker-compose.yml`](../docker-compose.yml)
+- [`.env.example`](../.env.example), [`backend/.env.example`](../backend/.env.example), [`ai-service/.env.example`](../ai-service/.env.example)
+- [`frontend/nginx.conf`](../frontend/nginx.conf)
+- [`backend/src/server.ts`](../backend/src/server.ts) — startup security checks
+- [`backend/src/migrate.ts`](../backend/src/migrate.ts) — migration runner
+- [ARCHITECTURE.md](ARCHITECTURE.md) — system architecture
+- [DEVELOPMENT.md](DEVELOPMENT.md) — daily workflow
